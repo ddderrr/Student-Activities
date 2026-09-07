@@ -1,6 +1,5 @@
 <script setup>
 import Sidebar from './components/Admin/AdminSideBar.vue'
-import AdminStudentActivities from './components/Admin/AdminStudentActivities.vue'
 </script>
 
 <template>
@@ -8,7 +7,7 @@ import AdminStudentActivities from './components/Admin/AdminStudentActivities.vu
     <Sidebar />
 
     <main class="main-content">
-      <AdminStudentActivities />
+      <RouterView />
     </main>
   </div>
 </template>
@@ -36,5 +35,6 @@ body {
 .main-content {
   flex: 1;
   min-width: 0;
+  min-height: 100vh;
 }
 </style>

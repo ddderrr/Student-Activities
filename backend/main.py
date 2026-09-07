@@ -1,9 +1,11 @@
 from io import BytesIO
 from pathlib import Path
+import unicodedata
 
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 
 app = FastAPI()
@@ -23,9 +25,22 @@ app.add_middleware(
 )
 
 
-# ชื่อ column จาก Google Forms / Excel -> ชื่อมาตรฐานที่ frontend ใช้
+# ============================================================
+# TEST STORAGE ONLY
+# ข้อมูลส่วนนี้อยู่แค่ใน RAM และจะหายเมื่อ restart backend
+# ภายหลังเปลี่ยนเป็น PostgreSQL
+# ============================================================
+
+activity_participants: dict[int, dict[str, dict]] = {}
+
+
+# ============================================================
+# COLUMN NORMALIZATION
+# ============================================================
+
 COLUMN_ALIASES = {
     "รหัสนักศึกษา": "student_id",
+    "รหัสนักศึกษษา": "student_id",
     "Student ID": "student_id",
     "student_id": "student_id",
 
@@ -38,47 +53,46 @@ COLUMN_ALIASES = {
     "last_name": "last_name",
 
     "CMU Email": "email",
+    "อีเมล": "email",
     "Email": "email",
     "email": "email",
+
+    # optional
+    "สาขาวิชา": "major",
+    "Major": "major",
+    "major": "major",
 }
 
 
-def normalize_student_columns(df: pd.DataFrame) -> pd.DataFrame:
+def normalize_text(text: str) -> str:
+    text = str(text)
+    text = text.replace("\ufeff", "")
+    text = text.replace("\u200b", "")
+    text = text.strip()
 
-    # ทำความสะอาดชื่อ column
+    return unicodedata.normalize("NFC", text)
+
+
+def normalize_student_columns(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = [
-        str(column)
-        .replace("\ufeff", "")
-        .replace("\u200b", "")
-        .strip()
+        normalize_text(column)
         for column in df.columns
     ]
 
-    print("CSV columns:", df.columns.tolist())
-
-    column_aliases = {
-        "รหัสนักศึกษา": "student_id",
-        "รหัสนักศึกษษา" : "student_id",
-        "student_id": "student_id",
-        "Student ID": "student_id",
-
-        "ชื่อ": "first_name",
-        "first_name": "first_name",
-        "First Name": "first_name",
-
-        "นามสกุล": "last_name",
-        "last_name": "last_name",
-        "Last Name": "last_name",
-
-        "CMU Email": "email",
-        "อีเมล": "email",
-        "Email": "email",
-        "email": "email",
+    normalized_aliases = {
+        normalize_text(key): value
+        for key, value in COLUMN_ALIASES.items()
     }
 
-    df = df.rename(columns=column_aliases)
+    rename_map = {}
 
-    print("After rename:", df.columns.tolist())
+    for column in df.columns:
+        normalized_column = normalize_text(column)
+
+        if normalized_column in normalized_aliases:
+            rename_map[column] = normalized_aliases[normalized_column]
+
+    df = df.rename(columns=rename_map)
 
     required_columns = [
         "student_id",
@@ -103,22 +117,21 @@ def normalize_student_columns(df: pd.DataFrame) -> pd.DataFrame:
             ),
         )
 
-    df = df[required_columns].copy()
+    keep_columns = required_columns.copy()
 
+    if "major" in df.columns:
+        keep_columns.append("major")
+
+    df = df[keep_columns].copy()
     df = df.fillna("")
 
-    for column in required_columns:
+    for column in keep_columns:
         df[column] = df[column].astype(str).str.strip()
 
-    return df   
+    return df
 
 
 def validate_students(df: pd.DataFrame) -> list[dict]:
-    """
-    Validation เบื้องต้นสำหรับหน้า Preview
-    ยังไม่มีการบันทึกลง PostgreSQL
-    """
-
     invalid_rows = []
 
     for index, row in df.iterrows():
@@ -141,7 +154,6 @@ def validate_students(df: pd.DataFrame) -> list[dict]:
         if errors:
             invalid_rows.append(
                 {
-                    # +2 เพราะ index เริ่ม 0 และแถวแรกของไฟล์เป็น header
                     "row": int(index) + 2,
                     "errors": errors,
                 }
@@ -151,10 +163,6 @@ def validate_students(df: pd.DataFrame) -> list[dict]:
 
 
 async def read_student_file(file: UploadFile) -> dict:
-    """
-    อ่าน CSV / Excel แล้วคืนข้อมูลสำหรับ Preview
-    """
-
     filename = file.filename or ""
     extension = Path(filename).suffix.lower()
 
@@ -193,7 +201,6 @@ async def read_student_file(file: UploadFile) -> dict:
     df = normalize_student_columns(df)
 
     invalid_rows = validate_students(df)
-
     students = df.to_dict(orient="records")
 
     return {
@@ -206,25 +213,91 @@ async def read_student_file(file: UploadFile) -> dict:
     }
 
 
-# Endpoint ใหม่สำหรับหน้า Vue ที่ทำ Preview ก่อน Import จริง
-@app.post("/api/students/import/preview")
-async def preview_import_students(file: UploadFile = File(...)):
-    return await read_student_file(file)
+# ============================================================
+# IMPORT STUDENTS INTO A SPECIFIC ACTIVITY
+# ============================================================
+
+@app.post(
+    "/api/activities/{activity_id}/participants/import/preview"
+)
+async def preview_activity_participants(
+    activity_id: int,
+    file: UploadFile = File(...),
+):
+    result = await read_student_file(file)
+
+    return {
+        "activity_id": activity_id,
+        **result,
+    }
 
 
-# เก็บ endpoint เดิมของคุณไว้ด้วย
-# เพื่อให้ code เก่าที่ยิง POST /students/import ยังใช้ได้
-@app.post("/students/import")
-async def import_students(file: UploadFile = File(...)):
-    return await read_student_file(file)
+class ConfirmImportRequest(BaseModel):
+    students: list[dict]
 
 
-# ขั้นต่อไปค่อยทำ endpoint สำหรับบันทึกลง PostgreSQL จริง เช่น:
-#
-# @app.post("/api/students/import/confirm")
-# async def confirm_import_students(...):
-#     1. ตรวจข้อมูลอีกครั้ง
-#     2. เช็ก student_id ซ้ำใน database
-#     3. insert Student
-#     4. insert ActivityRegistration
-#     5. commit transaction
+@app.post(
+    "/api/activities/{activity_id}/participants/import/confirm"
+)
+def confirm_activity_participants(
+    activity_id: int,
+    payload: ConfirmImportRequest,
+):
+    """
+    TEST ONLY:
+    เก็บ participant แยกตาม activity_id ใน memory
+
+    activity 1 -> student A, B
+    activity 2 -> student A, C
+
+    นักศึกษาคนเดียวสามารถอยู่หลายกิจกรรมได้
+    """
+
+    if activity_id not in activity_participants:
+        activity_participants[activity_id] = {}
+
+    participants = activity_participants[activity_id]
+
+    imported_count = 0
+    duplicate_count = 0
+
+    for student in payload.students:
+        student_id = str(
+            student.get("student_id", "")
+        ).strip()
+
+        if not student_id:
+            raise HTTPException(
+                status_code=400,
+                detail="พบข้อมูลที่ไม่มี student_id",
+            )
+
+        if student_id in participants:
+            duplicate_count += 1
+            continue
+
+        participants[student_id] = student
+        imported_count += 1
+
+    return {
+        "activity_id": activity_id,
+        "imported_count": imported_count,
+        "duplicate_count": duplicate_count,
+        "total_participants": len(participants),
+    }
+
+
+@app.get("/api/activities/{activity_id}/participants")
+def get_activity_participants(activity_id: int):
+    participants = activity_participants.get(
+        activity_id,
+        {},
+    )
+
+    return {
+        "activity_id": activity_id,
+        "total": len(participants),
+        "students": list(participants.values()),
+    }
+
+
