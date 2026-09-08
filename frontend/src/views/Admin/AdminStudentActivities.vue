@@ -19,7 +19,13 @@ import {
   TriangleAlert,
   CheckCircle2,
   UserPlus,
-  ChevronDown
+  ChevronDown,
+  Settings2,
+  Pencil,
+  CircleCheckBig,
+  RotateCcw,
+  Ban,
+  Trash2
 } from 'lucide-vue-next'
 
 const searchText = ref('')
@@ -69,8 +75,28 @@ const importLoading = ref(false)
 const confirmLoading = ref(false)
 const importSuccess = ref('')
 
-// Manage participants
+// Manage participants / activities
 const openManageMenuId = ref(null)
+const openActivityMenuId = ref(null)
+
+const showEditActivityModal = ref(false)
+const editActivityLoading = ref(false)
+const editActivityError = ref('')
+const activityActionLoadingId = ref(null)
+
+const editActivityForm = ref({
+  name: '',
+  activity_type: '',
+  start_at: '',
+  end_at: '',
+  department: '',
+  responsible_person: '',
+  advisor: '',
+  location: '',
+  description: '',
+  status: 'active'
+})
+
 const showAddStudentModal = ref(false)
 const addStudentLoading = ref(false)
 const addStudentError = ref('')
@@ -87,132 +113,7 @@ const manualStudent = ref({
   role: 'participant'
 })
 
-/*
-  Mock data สำหรับทดสอบ UI ก่อน
-  ภายหลังเปลี่ยนเป็นข้อมูลจาก Backend ได้
-*/
-const activities = ref([
-  {
-    id: 1,
-    uid: 'SC-2026-001',
-    name: 'Annual Chemistry Expo',
-    organizer: 'Chemistry Society',
-    category: 'Academic',
-    date: '2026-09-02',
-    participants: 45,
-    capacity: 50
-  },
-  {
-    id: 2,
-    uid: 'SC-2026-002',
-    name: 'Community Lab Visit',
-    organizer: 'Dept. of Life Sciences',
-    category: 'Community',
-    date: '2026-09-04',
-    participants: 12,
-    capacity: 15
-  },
-  {
-    id: 3,
-    uid: 'SC-2026-003',
-    name: 'Peer Mentorship Workshop',
-    organizer: 'Faculty Council',
-    category: 'Workshop',
-    date: '2026-09-06',
-    participants: 30,
-    capacity: 30
-  },
-  {
-    id: 4,
-    uid: 'SC-2026-004',
-    name: 'Sci-Comm Symposium',
-    organizer: 'Communications Lab',
-    category: 'Seminar',
-    date: '2026-09-08',
-    participants: 114,
-    capacity: 200
-  },
-  {
-    id: 5,
-    uid: 'SC-2026-005',
-    name: 'Data Science Bootcamp',
-    organizer: 'Computer Science',
-    category: 'Workshop',
-    date: '2026-09-10',
-    participants: 68,
-    capacity: 80
-  },
-  {
-    id: 6,
-    uid: 'SC-2026-006',
-    name: 'Biology Field Study',
-    organizer: 'Biology Department',
-    category: 'Academic',
-    date: '2026-09-12',
-    participants: 28,
-    capacity: 35
-  },
-  {
-    id: 7,
-    uid: 'SC-2026-007',
-    name: 'Physics Open House',
-    organizer: 'Physics Department',
-    category: 'Academic',
-    date: '2026-09-14',
-    participants: 74,
-    capacity: 100
-  },
-  {
-    id: 8,
-    uid: 'SC-2026-008',
-    name: 'Environmental Volunteer Day',
-    organizer: 'Green Science Club',
-    category: 'Community',
-    date: '2026-09-16',
-    participants: 52,
-    capacity: 70
-  },
-  {
-    id: 9,
-    uid: 'SC-2026-009',
-    name: 'Research Poster Day',
-    organizer: 'Research Affairs',
-    category: 'Seminar',
-    date: '2026-09-18',
-    participants: 83,
-    capacity: 120
-  },
-  {
-    id: 10,
-    uid: 'SC-2026-010',
-    name: 'Science Career Talk',
-    organizer: 'Student Affairs',
-    category: 'Seminar',
-    date: '2026-09-20',
-    participants: 95,
-    capacity: 150
-  },
-  {
-    id: 11,
-    uid: 'SC-2026-011',
-    name: 'Mathematics Challenge',
-    organizer: 'Mathematics Department',
-    category: 'Academic',
-    date: '2026-09-22',
-    participants: 42,
-    capacity: 60
-  },
-  {
-    id: 12,
-    uid: 'SC-2026-012',
-    name: 'Innovation Hackathon',
-    organizer: 'Innovation Center',
-    category: 'Workshop',
-    date: '2026-09-24',
-    participants: 101,
-    capacity: 120
-  }
-])
+const activities = ref([])
 
 const categories = computed(() => {
   const unique = [...new Set(activities.value.map((item) => item.category))]
@@ -226,13 +127,13 @@ const filteredActivities = computed(() => {
   return activities.value.filter((activity) => {
     const matchMain =
       !mainKeyword ||
-      activity.name.toLowerCase().includes(mainKeyword)
+      String(activity.name || '').toLowerCase().includes(mainKeyword)
 
     const matchQuick =
       !quickKeyword ||
-      activity.name.toLowerCase().includes(quickKeyword) ||
-      activity.organizer.toLowerCase().includes(quickKeyword) ||
-      activity.uid.toLowerCase().includes(quickKeyword)
+      String(activity.name || '').toLowerCase().includes(quickKeyword) ||
+      String(activity.organizer || '').toLowerCase().includes(quickKeyword) ||
+      String(activity.uid || '').toLowerCase().includes(quickKeyword)
 
     const matchCategory =
       selectedCategory.value === 'all' ||
@@ -240,7 +141,7 @@ const filteredActivities = computed(() => {
 
     const matchDate =
       !selectedDate.value ||
-      activity.date === selectedDate.value
+      dateOnly(activity.start_at) === selectedDate.value
 
     return matchMain && matchQuick && matchCategory && matchDate
   })
@@ -266,7 +167,7 @@ const monthlyParticipants = computed(() => {
 
   return activities.value
     .filter((activity) => {
-      const date = new Date(`${activity.date}T00:00:00`)
+      const date = new Date(activity.start_at)
       return (
         date.getFullYear() === currentYear &&
         date.getMonth() === currentMonth
@@ -275,7 +176,12 @@ const monthlyParticipants = computed(() => {
     .reduce((sum, activity) => sum + activity.participants, 0)
 })
 
-const activeActivities = computed(() => activities.value.length)
+const activeActivities = computed(
+  () =>
+    activities.value.filter(
+      (activity) => (activity.status || 'active') === 'active'
+    ).length
+)
 
 /*
   Placeholder ก่อนเชื่อม Backend จริง
@@ -292,7 +198,11 @@ function goToPage(page) {
 }
 
 function formatDate(dateString) {
-  const date = new Date(`${dateString}T00:00:00`)
+  if (!dateString) return '-'
+
+  const date = new Date(dateString)
+  if (Number.isNaN(date.getTime())) return '-'
+
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: '2-digit',
@@ -300,30 +210,79 @@ function formatDate(dateString) {
   }).format(date)
 }
 
+
+function dateOnly(value) {
+  if (!value) return ''
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+function toDateTimeLocal(value) {
+  if (!value) return ''
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  const pad = (number) => String(number).padStart(2, '0')
+
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  )
+}
+
+function statusLabel(status) {
+  const labels = {
+    active: 'Active',
+    completed: 'Completed',
+    cancelled: 'Cancelled'
+  }
+
+  return labels[status || 'active'] || status
+}
+
+function statusClass(status) {
+  return `status-${status || 'active'}`
+}
+
 function participantPercent(activity) {
   if (!activity.capacity) return 0
   return Math.min(100, (activity.participants / activity.capacity) * 100)
 }
 
-onMounted(() => {
-  /*
-    DEMO ONLY:
-    ให้เห็น Full-page Skeleton ตอนเปิด/refresh หน้า
+async function fetchActivities() {
+  pageLoading.value = true
+  tableLoading.value = true
 
-    พอเชื่อม Backend จริง:
-    - ตั้ง pageLoading = true ก่อน fetch ข้อมูลหน้า Activities
-    - fetch summary + filters + activities
-    - ตั้ง pageLoading = false ใน finally
-    - tableLoading เอาไว้ใช้ตอน reload/filter ตารางเฉพาะส่วน
-  */
-  setTimeout(() => {
+  try {
+    const response = await fetch(`${API_BASE}/api/activities`)
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.detail || 'ไม่สามารถโหลดกิจกรรมได้')
+    }
+
+    activities.value = data.activities || []
+  } catch (error) {
+    console.error(error)
+    activities.value = []
+  } finally {
     pageLoading.value = false
     tableLoading.value = false
-  }, 700)
-})
+  }
+}
+
+onMounted(fetchActivities)
 
 function createActivity() {
-  console.log('Create New Activity')
+  router.push('/admin/activities/create')
 }
 
 function viewActivity(activity) {
@@ -331,15 +290,185 @@ function viewActivity(activity) {
 }
 
 function toggleManageMenu(activityId) {
+  openActivityMenuId.value = null
+
   openManageMenuId.value =
     openManageMenuId.value === activityId
       ? null
       : activityId
 }
 
+function toggleActivityMenu(activityId) {
+  openManageMenuId.value = null
+
+  openActivityMenuId.value =
+    openActivityMenuId.value === activityId
+      ? null
+      : activityId
+}
+
+function openEditActivity(activity) {
+  openActivityMenuId.value = null
+  editActivityError.value = ''
+
+  editActivityForm.value = {
+    name: activity.name || '',
+    activity_type: activity.activity_type || activity.category || '',
+    start_at: toDateTimeLocal(activity.start_at),
+    end_at: toDateTimeLocal(activity.end_at),
+    department: activity.department || '',
+    responsible_person: activity.responsible_person || '',
+    advisor: activity.advisor || '',
+    location: activity.location || '',
+    description: activity.description || '',
+    status: activity.status || 'active'
+  }
+
+  selectedActivity.value = activity
+  showEditActivityModal.value = true
+}
+
+function closeEditActivityModal() {
+  if (editActivityLoading.value) return
+
+  showEditActivityModal.value = false
+  editActivityError.value = ''
+  selectedActivity.value = null
+}
+
+async function patchActivity(activityId, payload) {
+  const response = await fetch(
+    `${API_BASE}/api/activities/${activityId}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    }
+  )
+
+  const data = await response.json()
+
+  if (!response.ok) {
+    throw new Error(data.detail || 'แก้ไขกิจกรรมไม่สำเร็จ')
+  }
+
+  const index = activities.value.findIndex(
+    (activity) => activity.id === activityId
+  )
+
+  if (index !== -1) {
+    activities.value[index] = data
+  }
+
+  return data
+}
+
+async function saveActivityEdits() {
+  if (!selectedActivity.value) return
+
+  const form = editActivityForm.value
+
+  if (
+    !form.name.trim() ||
+    !form.activity_type.trim() ||
+    !form.start_at ||
+    !form.end_at ||
+    !form.responsible_person.trim() ||
+    !form.location.trim()
+  ) {
+    editActivityError.value =
+      'กรุณากรอกชื่อ ประเภท วันเวลา ผู้รับผิดชอบ และสถานที่ให้ครบ'
+    return
+  }
+
+  editActivityLoading.value = true
+  editActivityError.value = ''
+
+  try {
+    await patchActivity(selectedActivity.value.id, {
+      name: form.name.trim(),
+      activity_type: form.activity_type.trim(),
+      start_at: form.start_at,
+      end_at: form.end_at,
+      department: form.department.trim(),
+      responsible_person: form.responsible_person.trim(),
+      advisor: form.advisor.trim(),
+      location: form.location.trim(),
+      description: form.description.trim(),
+      status: form.status
+    })
+
+    showEditActivityModal.value = false
+    selectedActivity.value = null
+  } catch (error) {
+    editActivityError.value =
+      error.message || 'ไม่สามารถเชื่อมต่อ Backend ได้'
+  } finally {
+    editActivityLoading.value = false
+  }
+}
+
+async function setActivityStatus(activity, status) {
+  openActivityMenuId.value = null
+  activityActionLoadingId.value = activity.id
+
+  try {
+    await patchActivity(activity.id, { status })
+  } catch (error) {
+    window.alert(error.message || 'เปลี่ยนสถานะกิจกรรมไม่สำเร็จ')
+  } finally {
+    activityActionLoadingId.value = null
+  }
+}
+
+async function deleteActivity(activity) {
+  openActivityMenuId.value = null
+
+  const confirmed = window.confirm(
+    `ต้องการลบกิจกรรม "${activity.name}" หรือไม่?\nการลบจะลบสมาชิกและ Skill ที่ผูกกับกิจกรรมนี้ด้วย`
+  )
+
+  if (!confirmed) return
+
+  activityActionLoadingId.value = activity.id
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/activities/${activity.id}`,
+      {
+        method: 'DELETE'
+      }
+    )
+
+    if (!response.ok) {
+      let detail = 'ลบกิจกรรมไม่สำเร็จ'
+
+      try {
+        const data = await response.json()
+        detail = data.detail || detail
+      } catch {
+        // 204 / response ที่ไม่มี JSON
+      }
+
+      throw new Error(detail)
+    }
+
+    activities.value = activities.value.filter(
+      (item) => item.id !== activity.id
+    )
+  } catch (error) {
+    window.alert(error.message || 'ไม่สามารถเชื่อมต่อ Backend ได้')
+  } finally {
+    activityActionLoadingId.value = null
+  }
+}
+
 function openAddStudent(activity) {
   selectedActivity.value = activity
   openManageMenuId.value = null
+  openActivityMenuId.value = null
 
   manualStudent.value = {
     student_id: '',
@@ -467,6 +596,7 @@ async function addStudentManually() {
 
 function openImportParticipants(activity) {
   openManageMenuId.value = null
+  openActivityMenuId.value = null
   importParticipants(activity)
 }
 
@@ -645,16 +775,25 @@ async function confirmParticipantsImport() {
 
       <!-- table skeleton -->
       <section class="activities-table-card">
-        <div class="table-scroll">
+        <div
+          class="table-scroll"
+          :class="{
+            'menu-open':
+              openManageMenuId !== null ||
+              openActivityMenuId !== null
+          }"
+        >
           <table>
             <thead>
               <tr>
                 <th>ACTIVITY NAME</th>
                 <th>ORGANIZER</th>
-                <th>DATE</th>
+                <th>START DATE</th>
+                <th>END DATE</th>
                 <th>PARTICIPANTS</th>
                 <th>DETAILS</th>
                 <th>MANAGE PARTICIPANTS</th>
+                <th>MANAGE ACTIVITY</th>
               </tr>
             </thead>
 
@@ -680,6 +819,10 @@ async function confirmParticipantsImport() {
                 </td>
 
                 <td>
+                  <div class="skeleton skeleton-text short"></div>
+                </td>
+
+                <td>
                   <div class="skeleton-stack">
                     <div class="skeleton skeleton-text short"></div>
                     <div class="skeleton skeleton-progress"></div>
@@ -688,6 +831,10 @@ async function confirmParticipantsImport() {
 
                 <td>
                   <div class="skeleton skeleton-pill"></div>
+                </td>
+
+                <td>
+                  <div class="skeleton skeleton-button"></div>
                 </td>
 
                 <td>
@@ -820,16 +967,25 @@ async function confirmParticipantsImport() {
 
     <!-- TABLE -->
     <section class="activities-table-card">
-      <div class="table-scroll">
+      <div
+        class="table-scroll"
+        :class="{
+          'menu-open':
+            openManageMenuId !== null ||
+            openActivityMenuId !== null
+        }"
+      >
         <table>
           <thead>
             <tr>
               <th>ACTIVITY NAME</th>
               <th>ORGANIZER</th>
-              <th>DATE</th>
+              <th>START DATE</th>
+              <th>END DATE</th>
               <th>PARTICIPANTS</th>
               <th>DETAILS</th>
               <th>MANAGE PARTICIPANTS</th>
+              <th>MANAGE ACTIVITY</th>
             </tr>
           </thead>
 
@@ -857,6 +1013,10 @@ async function confirmParticipantsImport() {
                 </td>
 
                 <td>
+                  <div class="skeleton skeleton-text short"></div>
+                </td>
+
+                <td>
                   <div class="skeleton-stack">
                     <div class="skeleton skeleton-text short"></div>
                     <div class="skeleton skeleton-progress"></div>
@@ -865,6 +1025,10 @@ async function confirmParticipantsImport() {
 
                 <td>
                   <div class="skeleton skeleton-pill"></div>
+                </td>
+
+                <td>
+                  <div class="skeleton skeleton-button"></div>
                 </td>
 
                 <td>
@@ -881,7 +1045,15 @@ async function confirmParticipantsImport() {
               <td>
                 <div class="activity-name">
                   <strong>{{ activity.name }}</strong>
-                  <small>UID: {{ activity.uid }}</small>
+                  <div class="activity-meta">
+                    <small>UID: {{ activity.uid }}</small>
+                    <span
+                      class="activity-status"
+                      :class="statusClass(activity.status)"
+                    >
+                      {{ statusLabel(activity.status) }}
+                    </span>
+                  </div>
                 </div>
               </td>
 
@@ -890,16 +1062,21 @@ async function confirmParticipantsImport() {
               </td>
 
               <td>
-                {{ formatDate(activity.date) }}
+                {{ formatDate(activity.start_at) }}
+              </td>
+
+              <td>
+                {{ formatDate(activity.end_at) }}
               </td>
 
               <td>
                 <div class="participant-cell">
                   <strong>
-                    {{ activity.participants }}/{{ activity.capacity }}
+                    {{ activity.participants }}
+                    <span v-if="activity.capacity">/{{ activity.capacity }}</span>
                   </strong>
 
-                  <div class="progress-track">
+                  <div v-if="activity.capacity" class="progress-track">
                     <div
                       class="progress-value"
                       :style="{ width: `${participantPercent(activity)}%` }"
@@ -950,12 +1127,74 @@ async function confirmParticipantsImport() {
                   </div>
                 </div>
               </td>
+
+              <td>
+                <div class="manage-participants">
+                  <button
+                    class="manage-button activity-manage-button"
+                    :disabled="activityActionLoadingId === activity.id"
+                    @click="toggleActivityMenu(activity.id)"
+                  >
+                    <Settings2 :size="14" />
+                    Manage
+                    <ChevronDown :size="14" />
+                  </button>
+
+                  <div
+                    v-if="openActivityMenuId === activity.id"
+                    class="manage-menu activity-manage-menu"
+                  >
+                    <button
+                      class="manage-menu-item"
+                      @click="openEditActivity(activity)"
+                    >
+                      <Pencil :size="15" />
+                      Edit Activity
+                    </button>
+
+                    <button
+                      v-if="(activity.status || 'active') !== 'completed'"
+                      class="manage-menu-item"
+                      @click="setActivityStatus(activity, 'completed')"
+                    >
+                      <CircleCheckBig :size="15" />
+                      Mark as Completed
+                    </button>
+
+                    <button
+                      v-else
+                      class="manage-menu-item"
+                      @click="setActivityStatus(activity, 'active')"
+                    >
+                      <RotateCcw :size="15" />
+                      Reopen Activity
+                    </button>
+
+                    <button
+                      v-if="(activity.status || 'active') !== 'cancelled'"
+                      class="manage-menu-item"
+                      @click="setActivityStatus(activity, 'cancelled')"
+                    >
+                      <Ban :size="15" />
+                      Cancel Activity
+                    </button>
+
+                    <button
+                      class="manage-menu-item danger"
+                      @click="deleteActivity(activity)"
+                    >
+                      <Trash2 :size="15" />
+                      Delete Activity
+                    </button>
+                  </div>
+                </div>
+              </td>
             </tr>
 
             <tr v-if="!paginatedActivities.length">
-              <td colspan="6">
+              <td colspan="8">
                 <div class="empty-table">
-                  ไม่พบกิจกรรมที่ตรงกับเงื่อนไข
+                  ยังไม่มีกิจกรรม หรือไม่พบกิจกรรมที่ตรงกับเงื่อนไข
                 </div>
               </td>
             </tr>
@@ -1373,6 +1612,155 @@ async function confirmParticipantsImport() {
         </div>
       </div>
     </div>
+
+    <!-- EDIT ACTIVITY MODAL -->
+    <div
+      v-if="showEditActivityModal"
+      class="modal-backdrop"
+      @click.self="closeEditActivityModal"
+    >
+      <div class="import-modal edit-activity-modal">
+        <div class="modal-header">
+          <div>
+            <p class="modal-eyebrow">MANAGE ACTIVITY</p>
+            <h2>Edit Activity</h2>
+            <p v-if="selectedActivity" class="selected-activity">
+              {{ selectedActivity.uid }}
+            </p>
+          </div>
+
+          <button
+            class="modal-close"
+            :disabled="editActivityLoading"
+            @click="closeEditActivityModal"
+          >
+            <X :size="20" />
+          </button>
+        </div>
+
+        <div class="activity-edit-grid">
+          <label class="edit-field full">
+            <span>Activity Name *</span>
+            <input
+              v-model="editActivityForm.name"
+              type="text"
+              placeholder="ชื่อกิจกรรม"
+            />
+          </label>
+
+          <label class="edit-field">
+            <span>Activity Type *</span>
+            <input
+              v-model="editActivityForm.activity_type"
+              type="text"
+              placeholder="ประเภทกิจกรรม"
+            />
+          </label>
+
+          <label class="edit-field">
+            <span>Status</span>
+            <select v-model="editActivityForm.status">
+              <option value="active">Active</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </label>
+
+          <label class="edit-field">
+            <span>Start Date / Time *</span>
+            <input
+              v-model="editActivityForm.start_at"
+              type="datetime-local"
+            />
+          </label>
+
+          <label class="edit-field">
+            <span>End Date / Time *</span>
+            <input
+              v-model="editActivityForm.end_at"
+              type="datetime-local"
+            />
+          </label>
+
+          <label class="edit-field">
+            <span>Department</span>
+            <input
+              v-model="editActivityForm.department"
+              type="text"
+            />
+          </label>
+
+          <label class="edit-field">
+            <span>Responsible Person *</span>
+            <input
+              v-model="editActivityForm.responsible_person"
+              type="text"
+            />
+          </label>
+
+          <label class="edit-field">
+            <span>Advisor</span>
+            <input
+              v-model="editActivityForm.advisor"
+              type="text"
+            />
+          </label>
+
+          <label class="edit-field">
+            <span>Location *</span>
+            <input
+              v-model="editActivityForm.location"
+              type="text"
+            />
+          </label>
+
+          <label class="edit-field full">
+            <span>Description</span>
+            <textarea
+              v-model="editActivityForm.description"
+              rows="4"
+            ></textarea>
+          </label>
+        </div>
+
+        <div
+          v-if="editActivityError"
+          class="import-message error"
+        >
+          <TriangleAlert :size="17" />
+          {{ editActivityError }}
+        </div>
+
+        <div class="modal-actions">
+          <button
+            class="modal-secondary-button"
+            :disabled="editActivityLoading"
+            @click="closeEditActivityModal"
+          >
+            Cancel
+          </button>
+
+          <button
+            class="modal-confirm-button"
+            :disabled="editActivityLoading"
+            @click="saveActivityEdits"
+          >
+            <LoaderCircle
+              v-if="editActivityLoading"
+              class="spin"
+              :size="17"
+            />
+            <Pencil v-else :size="17" />
+
+            {{
+              editActivityLoading
+                ? 'Saving...'
+                : 'Save Changes'
+            }}
+          </button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -1577,7 +1965,7 @@ async function confirmParticipantsImport() {
 }
 
 .activities-table-card {
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid #e5ebf3;
   border-radius: 14px;
   background: #fff;
@@ -1585,11 +1973,16 @@ async function confirmParticipantsImport() {
 
 .table-scroll {
   overflow-x: auto;
+  transition: padding-bottom 0.18s ease;
+}
+
+.table-scroll.menu-open {
+  padding-bottom: 118px;
 }
 
 table {
   width: 100%;
-  min-width: 900px;
+  min-width: 1260px;
   border-collapse: collapse;
 }
 
@@ -1630,6 +2023,37 @@ td {
 .activity-name small {
   color: #93a5bc;
   font-size: 9px;
+}
+
+.activity-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.activity-status {
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.activity-status.status-active {
+  background: #eaf3ff;
+  color: #1667d9;
+}
+
+.activity-status.status-completed {
+  background: #e9f8ef;
+  color: #238454;
+}
+
+.activity-status.status-cancelled {
+  background: #fff0f0;
+  color: #bd3b3b;
 }
 
 .organizer {
@@ -1704,6 +2128,20 @@ td {
   background: #dfebff;
 }
 
+.manage-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.activity-manage-button {
+  background: #f3efff;
+  color: #7335ba;
+}
+
+.activity-manage-button:hover {
+  background: #ebe2ff;
+}
+
 .manage-menu {
   position: absolute;
   top: calc(100% + 7px);
@@ -1734,6 +2172,19 @@ td {
 .manage-menu-item:hover {
   background: #f3f7fc;
   color: #1769dc;
+}
+
+.activity-manage-menu {
+  width: 195px;
+}
+
+.manage-menu-item.danger {
+  color: #b94242;
+}
+
+.manage-menu-item.danger:hover {
+  background: #fff0f0;
+  color: #a92f2f;
 }
 
 .empty-table {
@@ -2488,4 +2939,78 @@ td {
     flex-direction: column;
   }
 }
+
+
+/* ============================= */
+/* EDIT ACTIVITY MODAL */
+/* ============================= */
+
+.edit-activity-modal {
+  width: min(760px, 100%);
+}
+
+.activity-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.edit-field.full {
+  grid-column: 1 / -1;
+}
+
+.edit-field > span {
+  color: #66758c;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.edit-field input,
+.edit-field select,
+.edit-field textarea {
+  width: 100%;
+  border: 1px solid #dce5ef;
+  border-radius: 9px;
+  outline: none;
+  background: #fff;
+  color: #34445a;
+  font: inherit;
+  font-size: 13px;
+}
+
+.edit-field input,
+.edit-field select {
+  height: 42px;
+  padding: 0 12px;
+}
+
+.edit-field textarea {
+  min-height: 105px;
+  padding: 11px 12px;
+  resize: vertical;
+}
+
+.edit-field input:focus,
+.edit-field select:focus,
+.edit-field textarea:focus {
+  border-color: #7bb1f5;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+@media (max-width: 700px) {
+  .activity-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .edit-field.full {
+    grid-column: auto;
+  }
+}
+
 </style>

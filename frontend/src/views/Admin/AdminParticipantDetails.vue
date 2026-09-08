@@ -46,53 +46,7 @@ const activity = ref({
   name: 'Annual Chemistry Expo'
 })
 
-const participants = ref([
-  {
-    id: 1,
-    student_id: '65010001',
-    first_name: 'Nattapong',
-    last_name: 'Srisuk',
-    faculty: 'Faculty of Science',
-    major: 'เคมี',
-    role: 'participant'
-  },
-  {
-    id: 2,
-    student_id: '65010002',
-    first_name: 'Krittin',
-    last_name: 'Chaiyasit',
-    faculty: 'Faculty of Science',
-    major: 'วิทยาการคอมพิวเตอร์',
-    role: 'organizer'
-  },
-  {
-    id: 3,
-    student_id: '65010003',
-    first_name: 'Ploypailin',
-    last_name: 'Wongsa',
-    faculty: 'Faculty of Science',
-    major: 'ชีววิทยา',
-    role: 'participant'
-  },
-  {
-    id: 4,
-    student_id: '65010004',
-    first_name: 'Thanawat',
-    last_name: 'Boonmee',
-    faculty: 'Faculty of Science',
-    major: 'สถิติ',
-    role: 'organizer'
-  },
-  {
-    id: 5,
-    student_id: '65010005',
-    first_name: 'Siriporn',
-    last_name: 'Kanjana',
-    faculty: 'Faculty of Science',
-    major: 'จุลชีววิทยา',
-    role: 'participant'
-  }
-])
+const participants = ref([])
 
 const editingRowId = ref(null)
 const editDraft = ref(null)

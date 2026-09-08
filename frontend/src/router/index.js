@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import AdminStudentActivities from '../views/Admin/AdminStudentActivities.vue'
 import AdminParticipantDetails from '../views/Admin/AdminParticipantDetails.vue'
-
+import AdminCreateActivity from '../views/Admin/AdminCreateActivity.vue'
 const routes = [
   {
     path: '/admin/activities',
@@ -16,6 +16,10 @@ const routes = [
   {
     path: '/admin/activities/:activityId/details',
     component: AdminParticipantDetails
+  }, 
+  {
+    path: '/admin/activities/create',
+    component: AdminCreateActivity
   }
 ]
 
