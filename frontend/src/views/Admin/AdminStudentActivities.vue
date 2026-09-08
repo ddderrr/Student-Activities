@@ -9,7 +9,6 @@ import {
   FileText,
   ChevronLeft,
   ChevronRight,
-  MoreVertical,
   Eye,
   Upload,
   CalendarDays,
@@ -17,7 +16,9 @@ import {
   FileSpreadsheet,
   LoaderCircle,
   TriangleAlert,
-  CheckCircle2
+  CheckCircle2,
+  UserPlus,
+  ChevronDown
 } from 'lucide-vue-next'
 
 const searchText = ref('')
@@ -38,6 +39,21 @@ const importError = ref('')
 const importLoading = ref(false)
 const confirmLoading = ref(false)
 const importSuccess = ref('')
+
+// Manage participants
+const openManageMenuId = ref(null)
+const showAddStudentModal = ref(false)
+const addStudentLoading = ref(false)
+const addStudentError = ref('')
+const addStudentSuccess = ref('')
+const manualStudent = ref({
+  student_id: '',
+  first_name: '',
+  last_name: '',
+  email: '',
+  major: '',
+  role: 'participant'
+})
 
 /*
   Mock data สำหรับทดสอบ UI ก่อน
@@ -263,6 +279,124 @@ function createActivity() {
 
 function viewActivity(activity) {
   console.log('View activity:', activity)
+}
+
+function toggleManageMenu(activityId) {
+  openManageMenuId.value =
+    openManageMenuId.value === activityId
+      ? null
+      : activityId
+}
+
+function openAddStudent(activity) {
+  selectedActivity.value = activity
+  openManageMenuId.value = null
+
+  manualStudent.value = {
+    student_id: '',
+    first_name: '',
+    last_name: '',
+    email: '',
+    major: '',
+    role: 'participant'
+  }
+
+  addStudentError.value = ''
+  addStudentSuccess.value = ''
+  showAddStudentModal.value = true
+}
+
+function closeAddStudentModal() {
+  if (addStudentLoading.value) return
+
+  showAddStudentModal.value = false
+  selectedActivity.value = null
+  addStudentError.value = ''
+  addStudentSuccess.value = ''
+}
+
+async function addStudentManually() {
+  if (!selectedActivity.value) return
+
+  const student = {
+    student_id: manualStudent.value.student_id.trim(),
+    first_name: manualStudent.value.first_name.trim(),
+    last_name: manualStudent.value.last_name.trim(),
+    email: manualStudent.value.email.trim(),
+    major: manualStudent.value.major.trim(),
+    role: manualStudent.value.role
+  }
+
+  if (
+    !student.student_id ||
+    !student.first_name ||
+    !student.last_name ||
+    !student.email ||
+    !student.role
+  ) {
+    addStudentError.value =
+      'กรุณากรอกรหัสนักศึกษา ชื่อ นามสกุล อีเมล และ Role ให้ครบ'
+    return
+  }
+
+  if (!student.email.includes('@')) {
+    addStudentError.value = 'รูปแบบอีเมลไม่ถูกต้อง'
+    return
+  }
+
+  addStudentLoading.value = true
+  addStudentError.value = ''
+  addStudentSuccess.value = ''
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/activities/${selectedActivity.value.id}/participants/import/confirm`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          students: [student]
+        })
+      }
+    )
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.detail || 'เพิ่มนักศึกษาไม่สำเร็จ')
+    }
+
+    selectedActivity.value.participants = data.total_participants
+
+    if (data.duplicate_count > 0) {
+      addStudentError.value =
+        'นักศึกษาคนนี้มีอยู่ในกิจกรรมแล้ว'
+      return
+    }
+
+    addStudentSuccess.value = 'เพิ่มนักศึกษาเข้ากิจกรรมสำเร็จ'
+
+    manualStudent.value = {
+      student_id: '',
+      first_name: '',
+      last_name: '',
+      email: '',
+      major: '',
+      role: 'participant'
+    }
+  } catch (error) {
+    addStudentError.value =
+      error.message || 'ไม่สามารถเชื่อมต่อ Backend ได้'
+  } finally {
+    addStudentLoading.value = false
+  }
+}
+
+function openImportParticipants(activity) {
+  openManageMenuId.value = null
+  importParticipants(activity)
 }
 
 function importParticipants(activity) {
@@ -509,7 +643,7 @@ async function confirmParticipantsImport() {
               <th>DATE</th>
               <th>PARTICIPANTS</th>
               <th>DETAILS</th>
-              <th>IMPORT PARTICIPANTS</th>
+              <th>MANAGE PARTICIPANTS</th>
             </tr>
           </thead>
 
@@ -559,22 +693,35 @@ async function confirmParticipantsImport() {
               </td>
 
               <td>
-                <div class="import-actions">
+                <div class="manage-participants">
                   <button
-                    class="import-button"
-                    title="Import participants"
-                    @click="importParticipants(activity)"
+                    class="manage-button"
+                    @click="toggleManageMenu(activity.id)"
                   >
-                    <Upload :size="15" />
-                    Import
+                    Manage
+                    <ChevronDown :size="14" />
                   </button>
 
-                  <button
-                    class="more-button"
-                    title="More actions"
+                  <div
+                    v-if="openManageMenuId === activity.id"
+                    class="manage-menu"
                   >
-                    <MoreVertical :size="17" />
-                  </button>
+                    <button
+                      class="manage-menu-item"
+                      @click="openAddStudent(activity)"
+                    >
+                      <UserPlus :size="15" />
+                      Add Student
+                    </button>
+
+                    <button
+                      class="manage-menu-item"
+                      @click="openImportParticipants(activity)"
+                    >
+                      <Upload :size="15" />
+                      Import from File
+                    </button>
+                  </div>
                 </div>
               </td>
             </tr>
@@ -632,6 +779,135 @@ async function confirmParticipantsImport() {
       </footer>
     </section>
 
+    <!-- ADD STUDENT MODAL -->
+    <div
+      v-if="showAddStudentModal"
+      class="modal-backdrop"
+      @click.self="closeAddStudentModal"
+    >
+      <div class="import-modal add-student-modal">
+        <div class="modal-header">
+          <div>
+            <p class="modal-eyebrow">ADD STUDENT</p>
+            <h2>Add Student Manually</h2>
+            <p v-if="selectedActivity" class="selected-activity">
+              {{ selectedActivity.name }}
+              <span>• {{ selectedActivity.uid }}</span>
+            </p>
+          </div>
+
+          <button
+            class="modal-close"
+            @click="closeAddStudentModal"
+          >
+            <X :size="20" />
+          </button>
+        </div>
+
+        <div class="manual-form">
+          <label>
+            <span>Student ID *</span>
+            <input
+              v-model="manualStudent.student_id"
+              type="text"
+              placeholder="เช่น 670510001"
+            />
+          </label>
+
+          <div class="form-row">
+            <label>
+              <span>First Name *</span>
+              <input
+                v-model="manualStudent.first_name"
+                type="text"
+                placeholder="ชื่อ"
+              />
+            </label>
+
+            <label>
+              <span>Last Name *</span>
+              <input
+                v-model="manualStudent.last_name"
+                type="text"
+                placeholder="นามสกุล"
+              />
+            </label>
+          </div>
+
+          <label>
+            <span>Email *</span>
+            <input
+              v-model="manualStudent.email"
+              type="email"
+              placeholder="student@cmu.ac.th"
+            />
+          </label>
+
+          <label>
+            <span>Major</span>
+            <input
+              v-model="manualStudent.major"
+              type="text"
+              placeholder="สาขาวิชา (ไม่บังคับ)"
+            />
+          </label>
+
+          <label>
+            <span>Role *</span>
+            <select v-model="manualStudent.role">
+              <option value="participant">Participant</option>
+              <option value="organizer">Organizer</option>
+            </select>
+          </label>
+        </div>
+
+        <div
+          v-if="addStudentError"
+          class="import-message error"
+        >
+          <TriangleAlert :size="17" />
+          {{ addStudentError }}
+        </div>
+
+        <div
+          v-if="addStudentSuccess"
+          class="import-message success"
+        >
+          <CheckCircle2 :size="17" />
+          {{ addStudentSuccess }}
+        </div>
+
+        <div class="modal-actions">
+          <button
+            class="modal-secondary-button"
+            :disabled="addStudentLoading"
+            @click="closeAddStudentModal"
+          >
+            Cancel
+          </button>
+
+          <button
+            class="modal-confirm-button"
+            :disabled="addStudentLoading"
+            @click="addStudentManually"
+          >
+            <LoaderCircle
+              v-if="addStudentLoading"
+              class="spin"
+              :size="17"
+            />
+            <UserPlus v-else :size="17" />
+
+            {{
+              addStudentLoading
+                ? 'Adding...'
+                : 'Add Student'
+            }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- IMPORT PARTICIPANTS MODAL -->
     <div
       v-if="showImportModal"
@@ -641,7 +917,7 @@ async function confirmParticipantsImport() {
       <div class="import-modal">
         <div class="modal-header">
           <div>
-            <p class="modal-eyebrow">IMPORT PARTICIPANTS</p>
+            <p class="modal-eyebrow">IMPORT FROM FILE</p>
             <h2>Import Student List</h2>
             <p v-if="selectedActivity" class="selected-activity">
               {{ selectedActivity.name }}
@@ -664,7 +940,7 @@ async function confirmParticipantsImport() {
             {{
               selectedFile
                 ? selectedFile.name
-                : 'Select CSV or Excel file'
+                : 'Select File'
             }}
           </strong>
 
@@ -1098,8 +1374,8 @@ td {
 }
 
 .detail-button,
-.import-button,
-.more-button {
+.manage-button,
+.manage-menu-item {
   border: 0;
   font-family: inherit;
   cursor: pointer;
@@ -1118,37 +1394,58 @@ td {
   font-size: 10px;
 }
 
-.import-actions {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+.manage-participants {
+  position: relative;
+  display: inline-block;
 }
 
-.import-button {
-  min-height: 30px;
-  padding: 0 10px;
+.manage-button {
+  min-height: 31px;
+  padding: 0 11px;
   border-radius: 7px;
   background: #edf4ff;
   color: #1468dc;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   font-size: 11px;
   font-weight: 700;
 }
 
-.more-button {
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
-  background: transparent;
-  color: #8194ad;
-  display: grid;
-  place-items: center;
+.manage-button:hover {
+  background: #dfebff;
 }
 
-.more-button:hover {
-  background: #f3f6fa;
+.manage-menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  z-index: 40;
+  width: 170px;
+  padding: 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+}
+
+.manage-menu-item {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: transparent;
+  color: #46566d;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  text-align: left;
+}
+
+.manage-menu-item:hover {
+  background: #f3f7fc;
+  color: #1769dc;
 }
 
 .empty-table {
@@ -1434,6 +1731,55 @@ td {
   }
 }
 
+
+.add-student-modal {
+  width: min(580px, 100%);
+}
+
+.manual-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.manual-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.manual-form label > span {
+  color: #66758c;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.manual-form input,
+.manual-form select {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid #dce5ef;
+  border-radius: 9px;
+  outline: none;
+  background: #fff;
+  color: #34445a;
+  font: inherit;
+  font-size: 13px;
+}
+
+.manual-form input:focus,
+.manual-form select:focus {
+  border-color: #7bb1f5;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
 @media (max-width: 1000px) {
   .summary-grid {
     grid-template-columns: 1fr;
@@ -1449,6 +1795,10 @@ td {
 }
 
 @media (max-width: 700px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
   .activities-page {
     padding: 20px 14px 32px;
   }
