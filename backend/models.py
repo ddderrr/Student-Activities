@@ -148,6 +148,40 @@ class Skill(Base):
     label = Column(String(150), nullable=False)
 
 
+class StudentRequest(Base):
+    __tablename__ = "student_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    requester_name = Column(String(150), nullable=False)
+    requester_student_id = Column(String(30), nullable=False)
+
+    request_type = Column(String(40), nullable=False)
+    detail = Column(String(255), nullable=False, default="")
+
+    status = Column(
+        String(20),
+        nullable=False,
+        default="pending",
+        server_default="pending",
+    )
+
+    submitted_at = Column(
+        DateTime(timezone=False),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    decided_at = Column(DateTime(timezone=False), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected')",
+            name="ck_student_request_status",
+        ),
+    )
+
+
 class ActivitySkill(Base):
     __tablename__ = "activity_skills"
 

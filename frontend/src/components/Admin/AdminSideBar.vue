@@ -9,7 +9,8 @@ import {
   CircleCheck,
   Settings,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  LogOut
 } from 'lucide-vue-next'
 
 const collapsed = ref(false)
@@ -76,6 +77,17 @@ const goToSettings = () => {
         <Settings class="menu-icon" :size="19" />
         <span v-if="!collapsed">Settings</span>
       </button>
+
+      <div class="profile-card" :class="{ collapsed: collapsed }">
+        <span class="profile-avatar">SC</span>
+
+        <div v-if="!collapsed" class="profile-info">
+          <strong>Dr. Sarah Chen</strong>
+          <small>Admin | Science Faculty</small>
+        </div>
+
+        <LogOut v-if="!collapsed" class="profile-logout" :size="15" />
+      </div>
     </div>
   </aside>
 </template>
@@ -225,4 +237,62 @@ const goToSettings = () => {
 }
 
 .sidebar.collapsed .menu-item.active::after { right: -12px; }
+
+.profile-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f4f7fc;
+}
+
+.profile-card.collapsed {
+  justify-content: center;
+  padding: 8px 0;
+}
+
+.profile-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #a855f7, #6366f1);
+}
+
+.profile-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.profile-info strong {
+  font-size: 12.5px;
+  color: #1c293d;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-info small {
+  font-size: 10.5px;
+  color: #8ea0ba;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-logout {
+  margin-left: auto;
+  color: #8ea0ba;
+  flex-shrink: 0;
+}
 </style>

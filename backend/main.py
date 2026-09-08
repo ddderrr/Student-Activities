@@ -18,6 +18,7 @@ from models import (
     ActivitySkill,
     Skill,
     Student,
+    StudentRequest,
 )
 
 
@@ -1082,3 +1083,190 @@ def update_activity_participant(
         "major": student.major,
         "role": member.role,
     }
+
+
+# ============================================================
+# STUDENT REQUESTS (Approvals)
+# ============================================================
+
+
+REQUEST_TYPE_DEFINITIONS = {
+    "skill_validation": "Skill Validation",
+    "special_request": "Special Request",
+}
+
+
+class StudentRequestCreate(BaseModel):
+    requester_name: str
+    requester_student_id: str
+    request_type: str
+    detail: str = ""
+
+
+class RequestDecision(BaseModel):
+    status: str
+
+
+def serialize_request(request: StudentRequest) -> dict:
+    return {
+        "id": request.id,
+        "requester_name": request.requester_name,
+        "requester_student_id": request.requester_student_id,
+        "request_type": request.request_type,
+        "request_type_label": REQUEST_TYPE_DEFINITIONS.get(
+            request.request_type,
+            request.request_type,
+        ),
+        "detail": request.detail,
+        "status": request.status,
+        "submitted_at": request.submitted_at,
+        "decided_at": request.decided_at,
+    }
+
+
+@app.get("/api/requests/stats")
+def get_request_stats(
+    db: Session = Depends(get_db),
+):
+    today_start = datetime.now().replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+    total_pending = (
+        db.query(func.count(StudentRequest.id))
+        .filter(StudentRequest.status == "pending")
+        .scalar()
+        or 0
+    )
+
+    approved_today = (
+        db.query(func.count(StudentRequest.id))
+        .filter(
+            StudentRequest.status == "approved",
+            StudentRequest.decided_at >= today_start,
+        )
+        .scalar()
+        or 0
+    )
+
+    rejected_today = (
+        db.query(func.count(StudentRequest.id))
+        .filter(
+            StudentRequest.status == "rejected",
+            StudentRequest.decided_at >= today_start,
+        )
+        .scalar()
+        or 0
+    )
+
+    return {
+        "total_pending": total_pending,
+        "approved_today": approved_today,
+        "rejected_today": rejected_today,
+    }
+
+
+@app.get("/api/requests")
+def list_requests(
+    status: str | None = "pending",
+    request_type: str | None = None,
+    sort: str = "date_desc",
+    page: int = 1,
+    page_size: int = 10,
+    db: Session = Depends(get_db),
+):
+    query = db.query(StudentRequest)
+
+    if status:
+        query = query.filter(StudentRequest.status == status)
+
+    if request_type:
+        query = query.filter(StudentRequest.request_type == request_type)
+
+    if sort == "date_asc":
+        query = query.order_by(StudentRequest.submitted_at.asc())
+    else:
+        query = query.order_by(StudentRequest.submitted_at.desc())
+
+    total = query.count()
+
+    page = max(page, 1)
+    page_size = max(1, min(page_size, 100))
+
+    items = (
+        query
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "requests": [serialize_request(item) for item in items],
+    }
+
+
+@app.post("/api/requests", status_code=201)
+def create_request(
+    payload: StudentRequestCreate,
+    db: Session = Depends(get_db),
+):
+    if payload.request_type not in REQUEST_TYPE_DEFINITIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="request_type ไม่ถูกต้อง",
+        )
+
+    request = StudentRequest(
+        requester_name=payload.requester_name.strip(),
+        requester_student_id=payload.requester_student_id.strip(),
+        request_type=payload.request_type,
+        detail=payload.detail.strip(),
+        status="pending",
+    )
+
+    db.add(request)
+    db.commit()
+    db.refresh(request)
+
+    return serialize_request(request)
+
+
+@app.patch("/api/requests/{request_id}")
+def decide_request(
+    request_id: int,
+    payload: RequestDecision,
+    db: Session = Depends(get_db),
+):
+    if payload.status not in {"approved", "rejected"}:
+        raise HTTPException(
+            status_code=400,
+            detail="status ต้องเป็น approved หรือ rejected",
+        )
+
+    request = db.get(StudentRequest, request_id)
+
+    if not request:
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบคำขอนี้",
+        )
+
+    if request.status != "pending":
+        raise HTTPException(
+            status_code=400,
+            detail="คำขอนี้ถูกดำเนินการไปแล้ว",
+        )
+
+    request.status = payload.status
+    request.decided_at = datetime.now()
+
+    db.commit()
+    db.refresh(request)
+
+    return serialize_request(request)
