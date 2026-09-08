@@ -1,5 +1,6 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   Plus,
   Search,
@@ -27,6 +28,34 @@ const selectedCategory = ref('all')
 const selectedDate = ref('')
 const currentPage = ref(1)
 const rowsPerPage = 10
+const router = useRouter()
+// Loading states
+// pageLoading = ใช้ตอนเปิด/refresh หน้า เพื่อทำ Skeleton ทั้งหน้า
+// tableLoading = ใช้ตอน reload เฉพาะตารางในอนาคต
+const pageLoading = ref(true)
+const tableLoading = ref(true)
+const skeletonRows = Array.from({ length: rowsPerPage }, (_, index) => index)
+
+const majorOptions = [
+  'เคมี',
+  'เคมีอุตสาหกรรม',
+  'จุลชีววิทยา',
+  'ชีวเคมีและชีวเคมีนวัตกรรม',
+  'ชีววิทยา',
+  'ธรณีวิทยา',
+  'ฟิสิกส์และวัสดุศาสตร์',
+  'สัตววิทยา',
+  'วิทยาการคอมพิวเตอร์',
+  'วิทยาการข้อมูล',
+  'วิทยาศาสตร์สิ่งแวดล้อม (หลักสูตรนานาชาติ)',
+  'สถิติ',
+  'อัญมณีวิทยา'
+]
+
+const roleOptions = [
+  { value: 'participant', label: 'Participant' },
+  { value: 'organizer', label: 'Organizer' }
+]
 
 const API_BASE = 'http://localhost:8000'
 
@@ -46,6 +75,9 @@ const showAddStudentModal = ref(false)
 const addStudentLoading = ref(false)
 const addStudentError = ref('')
 const addStudentSuccess = ref('')
+const showMajorDropdown = ref(false)
+const showRoleDropdown = ref(false)
+
 const manualStudent = ref({
   student_id: '',
   first_name: '',
@@ -273,12 +305,29 @@ function participantPercent(activity) {
   return Math.min(100, (activity.participants / activity.capacity) * 100)
 }
 
+onMounted(() => {
+  /*
+    DEMO ONLY:
+    ให้เห็น Full-page Skeleton ตอนเปิด/refresh หน้า
+
+    พอเชื่อม Backend จริง:
+    - ตั้ง pageLoading = true ก่อน fetch ข้อมูลหน้า Activities
+    - fetch summary + filters + activities
+    - ตั้ง pageLoading = false ใน finally
+    - tableLoading เอาไว้ใช้ตอน reload/filter ตารางเฉพาะส่วน
+  */
+  setTimeout(() => {
+    pageLoading.value = false
+    tableLoading.value = false
+  }, 700)
+})
+
 function createActivity() {
   console.log('Create New Activity')
 }
 
 function viewActivity(activity) {
-  console.log('View activity:', activity)
+  router.push(`/admin/activities/${activity.id}/details`)
 }
 
 function toggleManageMenu(activityId) {
@@ -303,6 +352,8 @@ function openAddStudent(activity) {
 
   addStudentError.value = ''
   addStudentSuccess.value = ''
+  showMajorDropdown.value = false
+  showRoleDropdown.value = false
   showAddStudentModal.value = true
 }
 
@@ -310,9 +361,28 @@ function closeAddStudentModal() {
   if (addStudentLoading.value) return
 
   showAddStudentModal.value = false
+  showMajorDropdown.value = false
+  showRoleDropdown.value = false
   selectedActivity.value = null
   addStudentError.value = ''
   addStudentSuccess.value = ''
+}
+
+function selectMajor(major) {
+  manualStudent.value.major = major
+  showMajorDropdown.value = false
+}
+
+function selectRole(role) {
+  manualStudent.value.role = role.value
+  showRoleDropdown.value = false
+}
+
+function roleLabel(value) {
+  return (
+    roleOptions.find((role) => role.value === value)?.label ||
+    'เลือก Role'
+  )
 }
 
 async function addStudentManually() {
@@ -332,10 +402,11 @@ async function addStudentManually() {
     !student.first_name ||
     !student.last_name ||
     !student.email ||
+    !student.major ||
     !student.role
   ) {
     addStudentError.value =
-      'กรุณากรอกรหัสนักศึกษา ชื่อ นามสกุล อีเมล และ Role ให้ครบ'
+      'กรุณากรอกรหัสนักศึกษา ชื่อ นามสกุล อีเมล สาขาวิชา และ Role ให้ครบ'
     return
   }
 
@@ -520,6 +591,121 @@ async function confirmParticipantsImport() {
 <template>
   <section class="activities-page">
 
+    <!-- FULL PAGE SKELETON -->
+    <div
+      v-if="pageLoading"
+      class="page-skeleton"
+      aria-label="Loading activities"
+    >
+      <!-- top action skeleton -->
+      <div class="skeleton-top-action">
+        <div class="skeleton skeleton-create-button"></div>
+      </div>
+
+      <!-- summary skeleton -->
+      <div class="summary-grid">
+        <article
+          v-for="card in 3"
+          :key="`summary-skeleton-${card}`"
+          class="summary-card"
+        >
+          <div class="skeleton skeleton-summary-icon"></div>
+
+          <div class="skeleton-summary-content">
+            <div class="skeleton skeleton-label"></div>
+            <div class="skeleton skeleton-number"></div>
+          </div>
+        </article>
+      </div>
+
+      <!-- filter skeleton -->
+      <section class="filter-card skeleton-filter-card">
+        <div class="skeleton-filter-group wide">
+          <div class="skeleton skeleton-filter-label"></div>
+          <div class="skeleton skeleton-filter-input"></div>
+        </div>
+
+        <div class="skeleton-filter-group">
+          <div class="skeleton skeleton-filter-label"></div>
+          <div class="skeleton skeleton-filter-input"></div>
+        </div>
+
+        <div class="skeleton-filter-group">
+          <div class="skeleton skeleton-filter-label"></div>
+          <div class="skeleton skeleton-filter-input"></div>
+        </div>
+
+        <div class="skeleton skeleton-filter-button"></div>
+      </section>
+
+      <!-- quick search skeleton -->
+      <div class="skeleton-quick-search-row">
+        <div class="skeleton skeleton-quick-search"></div>
+      </div>
+
+      <!-- table skeleton -->
+      <section class="activities-table-card">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>ACTIVITY NAME</th>
+                <th>ORGANIZER</th>
+                <th>DATE</th>
+                <th>PARTICIPANTS</th>
+                <th>DETAILS</th>
+                <th>MANAGE PARTICIPANTS</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr
+                v-for="row in skeletonRows"
+                :key="`page-skeleton-row-${row}`"
+                class="skeleton-row"
+              >
+                <td>
+                  <div class="skeleton-stack">
+                    <div class="skeleton skeleton-title"></div>
+                    <div class="skeleton skeleton-subtitle"></div>
+                  </div>
+                </td>
+
+                <td>
+                  <div class="skeleton skeleton-text medium"></div>
+                </td>
+
+                <td>
+                  <div class="skeleton skeleton-text short"></div>
+                </td>
+
+                <td>
+                  <div class="skeleton-stack">
+                    <div class="skeleton skeleton-text short"></div>
+                    <div class="skeleton skeleton-progress"></div>
+                  </div>
+                </td>
+
+                <td>
+                  <div class="skeleton skeleton-pill"></div>
+                </td>
+
+                <td>
+                  <div class="skeleton skeleton-button"></div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <footer class="table-footer">
+          <div class="skeleton skeleton-footer-info"></div>
+          <div class="skeleton skeleton-pagination"></div>
+        </footer>
+      </section>
+    </div>
+
+    <template v-else>
     <!-- TOP ACTION -->
     <div class="top-action">
       <button class="create-button" @click="createActivity">
@@ -648,6 +834,46 @@ async function confirmParticipantsImport() {
           </thead>
 
           <tbody>
+            <!-- Skeleton rows -->
+            <template v-if="tableLoading">
+              <tr
+                v-for="row in skeletonRows"
+                :key="`skeleton-${row}`"
+                class="skeleton-row"
+              >
+                <td>
+                  <div class="skeleton-stack">
+                    <div class="skeleton skeleton-title"></div>
+                    <div class="skeleton skeleton-subtitle"></div>
+                  </div>
+                </td>
+
+                <td>
+                  <div class="skeleton skeleton-text medium"></div>
+                </td>
+
+                <td>
+                  <div class="skeleton skeleton-text short"></div>
+                </td>
+
+                <td>
+                  <div class="skeleton-stack">
+                    <div class="skeleton skeleton-text short"></div>
+                    <div class="skeleton skeleton-progress"></div>
+                  </div>
+                </td>
+
+                <td>
+                  <div class="skeleton skeleton-pill"></div>
+                </td>
+
+                <td>
+                  <div class="skeleton skeleton-button"></div>
+                </td>
+              </tr>
+            </template>
+
+            <template v-else>
             <tr
               v-for="activity in paginatedActivities"
               :key="activity.id"
@@ -733,13 +959,14 @@ async function confirmParticipantsImport() {
                 </div>
               </td>
             </tr>
+            </template>
           </tbody>
         </table>
       </div>
 
       <!-- PAGINATION -->
       <footer class="table-footer">
-        <span class="rows-info">
+        <span v-if="!tableLoading" class="rows-info">
           Showing
           {{ filteredActivities.length ? (currentPage - 1) * rowsPerPage + 1 : 0 }}
           -
@@ -749,7 +976,7 @@ async function confirmParticipantsImport() {
           of {{ filteredActivities.length }}
         </span>
 
-        <div class="pagination">
+        <div v-if="!tableLoading" class="pagination">
           <button
             class="page-arrow"
             :disabled="currentPage === 1"
@@ -778,6 +1005,8 @@ async function confirmParticipantsImport() {
         </div>
       </footer>
     </section>
+
+    </template>
 
     <!-- ADD STUDENT MODAL -->
     <div
@@ -844,20 +1073,79 @@ async function confirmParticipantsImport() {
           </label>
 
           <label>
-            <span>Major</span>
-            <input
-              v-model="manualStudent.major"
-              type="text"
-              placeholder="สาขาวิชา (ไม่บังคับ)"
-            />
+            <span>Major *</span>
+
+            <div class="major-select">
+              <button
+                type="button"
+                class="major-select-button"
+                @click="showMajorDropdown = !showMajorDropdown"
+              >
+                <span
+                  :class="{ placeholder: !manualStudent.major }"
+                >
+                  {{
+                    manualStudent.major ||
+                    'เลือกสาขาวิชา'
+                  }}
+                </span>
+
+                <ChevronDown
+                  :size="16"
+                  :class="{ rotated: showMajorDropdown }"
+                />
+              </button>
+
+              <div
+                v-if="showMajorDropdown"
+                class="major-dropdown"
+              >
+                <button
+                  v-for="major in majorOptions"
+                  :key="major"
+                  type="button"
+                  class="major-option"
+                  @click="selectMajor(major)"
+                >
+                  {{ major }}
+                </button>
+              </div>
+            </div>
           </label>
 
           <label>
             <span>Role *</span>
-            <select v-model="manualStudent.role">
-              <option value="participant">Participant</option>
-              <option value="organizer">Organizer</option>
-            </select>
+
+            <div class="role-select">
+              <button
+                type="button"
+                class="role-select-button"
+                @click="showRoleDropdown = !showRoleDropdown"
+              >
+                <span>{{ roleLabel(manualStudent.role) }}</span>
+
+                <ChevronDown
+                  :size="16"
+                  :class="{ rotated: showRoleDropdown }"
+                />
+              </button>
+
+              <div
+                v-if="showRoleDropdown"
+                class="role-dropdown"
+              >
+                <button
+                  v-for="role in roleOptions"
+                  :key="role.value"
+                  type="button"
+                  class="role-option"
+                  :class="{ selected: manualStudent.role === role.value }"
+                  @click="selectRole(role)"
+                >
+                  {{ role.label }}
+                </button>
+              </div>
+            </div>
           </label>
         </div>
 
@@ -940,7 +1228,7 @@ async function confirmParticipantsImport() {
             {{
               selectedFile
                 ? selectedFile.name
-                : 'Select File'
+                : 'Select CSV or Excel file'
             }}
           </strong>
 
@@ -1505,6 +1793,192 @@ td {
 }
 
 
+
+
+/* ============================= */
+/* FULL PAGE SKELETON */
+/* ============================= */
+
+.page-skeleton {
+  width: 100%;
+}
+
+.skeleton-top-action {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 26px;
+}
+
+.skeleton-create-button {
+  width: 185px;
+  height: 44px;
+  border-radius: 10px;
+}
+
+.skeleton-summary-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 11px;
+  flex-shrink: 0;
+}
+
+.skeleton-summary-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.skeleton-label {
+  width: 120px;
+  height: 9px;
+  margin-bottom: 9px;
+}
+
+.skeleton-number {
+  width: 62px;
+  height: 26px;
+}
+
+.skeleton-filter-card {
+  align-items: flex-end;
+}
+
+.skeleton-filter-group {
+  width: 180px;
+}
+
+.skeleton-filter-group.wide {
+  width: 220px;
+}
+
+.skeleton-filter-label {
+  width: 78px;
+  height: 9px;
+  margin-bottom: 7px;
+}
+
+.skeleton-filter-input {
+  width: 100%;
+  height: 42px;
+  border-radius: 9px;
+}
+
+.skeleton-filter-button {
+  width: 132px;
+  height: 42px;
+  margin-left: auto;
+  border-radius: 9px;
+}
+
+.skeleton-quick-search-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.skeleton-quick-search {
+  width: 290px;
+  height: 36px;
+  border-radius: 999px 999px 0 0;
+}
+
+.skeleton-footer-info {
+  width: 100px;
+  height: 10px;
+}
+
+.skeleton-pagination {
+  width: 112px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+/* ============================= */
+/* TABLE SKELETON */
+/* ============================= */
+
+.skeleton-row td {
+  height: 92px;
+}
+
+.skeleton-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #edf1f6;
+}
+
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.72),
+    transparent
+  );
+  animation: skeleton-shimmer 1.25s infinite;
+}
+
+.skeleton-title {
+  width: 150px;
+  height: 14px;
+}
+
+.skeleton-subtitle {
+  width: 95px;
+  height: 8px;
+}
+
+.skeleton-text {
+  height: 12px;
+}
+
+.skeleton-text.medium {
+  width: 120px;
+}
+
+.skeleton-text.short {
+  width: 72px;
+}
+
+.skeleton-progress {
+  width: 90px;
+  height: 4px;
+  border-radius: 999px;
+}
+
+.skeleton-pill {
+  width: 74px;
+  height: 27px;
+  border-radius: 999px;
+}
+
+.skeleton-button {
+  width: 78px;
+  height: 31px;
+  border-radius: 7px;
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after,
+  .spin {
+    animation: none;
+  }
+}
+
 /* ============================= */
 /* IMPORT PARTICIPANTS MODAL */
 /* ============================= */
@@ -1734,6 +2208,7 @@ td {
 
 .add-student-modal {
   width: min(580px, 100%);
+  overflow: visible;
 }
 
 .manual-form {
@@ -1754,8 +2229,7 @@ td {
   font-weight: 700;
 }
 
-.manual-form input,
-.manual-form select {
+.manual-form input {
   width: 100%;
   height: 42px;
   padding: 0 12px;
@@ -1768,10 +2242,177 @@ td {
   font-size: 13px;
 }
 
-.manual-form input:focus,
-.manual-form select:focus {
+.manual-form input:focus {
   border-color: #7bb1f5;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+
+.major-select {
+  position: relative;
+  width: 100%;
+}
+
+.major-select-button {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #dce5ef;
+  border-radius: 9px;
+  background: #fff;
+  color: #34445a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.major-select-button:hover {
+  border-color: #c8d5e6;
+}
+
+.major-select-button:focus {
+  outline: none;
+  border-color: #7bb1f5;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+.major-select-button .placeholder {
+  color: #98a5b7;
+}
+
+.major-select-button svg {
+  flex-shrink: 0;
+  color: #7b8da5;
+  transition: transform 0.2s ease;
+}
+
+.major-select-button svg.rotated {
+  transform: rotate(180deg);
+}
+
+.major-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 1400;
+
+  max-height: 230px;
+  overflow-y: auto;
+
+  padding: 6px;
+  border: 1px solid #dce5ef;
+  border-radius: 10px;
+  background: #fff;
+
+  box-shadow: 0 14px 35px rgba(15, 23, 42, 0.15);
+}
+
+.major-option {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #46566d;
+  display: flex;
+  align-items: center;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.major-option:hover {
+  background: #f2f6fb;
+  color: #1769dc;
+}
+
+
+.role-select {
+  position: relative;
+  width: 100%;
+}
+
+.role-select-button {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #dce5ef;
+  border-radius: 9px;
+  background: #fff;
+  color: #34445a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.role-select-button:hover {
+  border-color: #c8d5e6;
+}
+
+.role-select-button:focus {
+  outline: none;
+  border-color: #7bb1f5;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+.role-select-button svg {
+  flex-shrink: 0;
+  color: #7b8da5;
+  transition: transform 0.2s ease;
+}
+
+.role-select-button svg.rotated {
+  transform: rotate(180deg);
+}
+
+.role-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 1400;
+
+  padding: 6px;
+  border: 1px solid #dce5ef;
+  border-radius: 10px;
+  background: #fff;
+
+  box-shadow: 0 14px 35px rgba(15, 23, 42, 0.15);
+}
+
+.role-option {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #46566d;
+  display: flex;
+  align-items: center;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.role-option:hover,
+.role-option.selected {
+  background: #f2f6fb;
+  color: #1769dc;
 }
 
 .form-row {
@@ -1781,6 +2422,14 @@ td {
 }
 
 @media (max-width: 1000px) {
+  .skeleton-filter-card {
+    flex-wrap: wrap;
+  }
+
+  .skeleton-filter-button {
+    margin-left: 0;
+  }
+
   .summary-grid {
     grid-template-columns: 1fr;
   }
@@ -1795,6 +2444,13 @@ td {
 }
 
 @media (max-width: 700px) {
+  .skeleton-filter-group,
+  .skeleton-filter-group.wide,
+  .skeleton-filter-button,
+  .skeleton-quick-search {
+    width: 100%;
+  }
+
   .form-row {
     grid-template-columns: 1fr;
   }

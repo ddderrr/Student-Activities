@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import AdminStudentActivities from '../views/Admin/AdminStudentActivities.vue'
+import AdminParticipantDetails from '../views/Admin/AdminParticipantDetails.vue'
 
 const routes = [
   {
@@ -11,6 +12,10 @@ const routes = [
   {
     path: '/',
     redirect: '/admin/activities'
+  }, 
+  {
+    path: '/admin/activities/:activityId/details',
+    component: AdminParticipantDetails
   }
 ]
 
