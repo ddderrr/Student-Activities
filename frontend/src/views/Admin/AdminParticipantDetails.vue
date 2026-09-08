@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
@@ -9,6 +9,8 @@ import {
   Users,
   ShieldCheck
 } from 'lucide-vue-next'
+
+const API_BASE = 'http://127.0.0.1:8000'
 
 const route = useRoute()
 const router = useRouter()
@@ -36,17 +38,15 @@ const majorOptions = [
   'อัญมณีวิทยา'
 ]
 
-/*
-  Mock data สำหรับทดสอบ UI ก่อน
-  พอเชื่อม Backend จริงให้ fetch ตาม activityId
-*/
 const activity = ref({
   id: activityId.value,
-  uid: 'SC-2026-001',
-  name: 'Annual Chemistry Expo'
+  uid: '',
+  name: ''
 })
 
 const participants = ref([])
+const pageLoading = ref(true)
+const loadError = ref('')
 
 const editingRowId = ref(null)
 const editDraft = ref(null)
@@ -58,12 +58,36 @@ const organizerCount = computed(
   () => participants.value.filter((student) => student.role === 'organizer').length
 )
 
+async function fetchParticipants() {
+  pageLoading.value = true
+  loadError.value = ''
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/activities/${activityId.value}/participants`
+    )
+
+    if (!response.ok) throw new Error('โหลดข้อมูลไม่สำเร็จ')
+
+    const data = await response.json()
+
+    activity.value = data.activity
+    participants.value = data.students
+  } catch (error) {
+    loadError.value = error.message || 'โหลดข้อมูลไม่สำเร็จ'
+  } finally {
+    pageLoading.value = false
+  }
+}
+
+onMounted(fetchParticipants)
+
 function goBack() {
   router.push('/admin/activities')
 }
 
 function startEdit(student) {
-  editingRowId.value = student.id
+  editingRowId.value = student.student_id
   editDraft.value = { ...student }
   saveMessage.value = ''
 }
@@ -98,32 +122,35 @@ async function saveRow() {
   saveMessage.value = ''
 
   try {
-    /*
-      UI TEST:
-      ตอนนี้บันทึกลง state ของ Vue ก่อน
+    const response = await fetch(
+      `${API_BASE}/api/activities/${activityId.value}/participants/${rowId}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          first_name: editDraft.value.first_name,
+          last_name: editDraft.value.last_name,
+          email: editDraft.value.email,
+          faculty: editDraft.value.faculty,
+          major: editDraft.value.major,
+          role: editDraft.value.role
+        })
+      }
+    )
 
-      พอมี Backend/DB จริง เปลี่ยนส่วนนี้เป็นประมาณ:
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null)
+      throw new Error(errorBody?.detail || 'บันทึกข้อมูลไม่สำเร็จ')
+    }
 
-      const response = await fetch(
-        `http://localhost:8000/api/activities/${activityId.value}/participants/${rowId}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(editDraft.value)
-        }
-      )
+    const updated = await response.json()
 
-      if (!response.ok) throw new Error('Update failed')
-      const updated = await response.json()
-    */
-
-    // spinner เล็ก ๆ ให้เห็น state ตอน save
-    await new Promise((resolve) => setTimeout(resolve, 350))
-
-    const index = participants.value.findIndex((student) => student.id === rowId)
+    const index = participants.value.findIndex(
+      (student) => student.student_id === rowId
+    )
 
     if (index !== -1) {
-      participants.value[index] = { ...editDraft.value }
+      participants.value[index] = updated
     }
 
     editingRowId.value = null
@@ -206,7 +233,10 @@ function roleLabel(role) {
         </span>
       </div>
 
-      <div class="table-scroll">
+      <p v-if="pageLoading" class="load-status">กำลังโหลดข้อมูล...</p>
+      <p v-else-if="loadError" class="load-status load-status-error">{{ loadError }}</p>
+
+      <div v-else class="table-scroll">
         <table>
           <thead>
             <tr>
@@ -222,16 +252,17 @@ function roleLabel(role) {
           <tbody>
             <tr
               v-for="student in participants"
-              :key="student.id"
-              :class="{ editing: editingRowId === student.id }"
+              :key="student.student_id"
+              :class="{ editing: editingRowId === student.student_id }"
             >
               <!-- EDIT MODE -->
-              <template v-if="editingRowId === student.id && editDraft">
+              <template v-if="editingRowId === student.student_id && editDraft">
                 <td>
                   <input
                     v-model="editDraft.student_id"
                     class="row-input student-id-input"
                     type="text"
+                    disabled
                   />
                 </td>
 
@@ -295,22 +326,22 @@ function roleLabel(role) {
                   <div class="edit-actions">
                     <button
                       class="save-button"
-                      :disabled="savingRowId === student.id"
+                      :disabled="savingRowId === student.student_id"
                       @click="saveRow"
                     >
                       <span
-                        v-if="savingRowId === student.id"
+                        v-if="savingRowId === student.student_id"
                         class="mini-spinner"
                       ></span>
 
                       <Save v-else :size="14" />
 
-                      {{ savingRowId === student.id ? 'Saving' : 'Save' }}
+                      {{ savingRowId === student.student_id ? 'Saving' : 'Save' }}
                     </button>
 
                     <button
                       class="cancel-button"
-                      :disabled="savingRowId === student.id"
+                      :disabled="savingRowId === student.student_id"
                       @click="cancelEdit"
                     >
                       <X :size="14" />
@@ -684,6 +715,17 @@ tr.editing {
   background: #fff2f2;
   color: #bd3c3c;
   font-size: 11px;
+}
+
+.load-status {
+  padding: 32px 16px;
+  text-align: center;
+  color: #8ea0ba;
+  font-size: 13px;
+}
+
+.load-status-error {
+  color: #bd3c3c;
 }
 
 @keyframes spin {

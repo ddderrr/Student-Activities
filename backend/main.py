@@ -1006,3 +1006,79 @@ def get_activity_participants(
         "total": len(students),
         "students": students,
     }
+
+
+class ParticipantUpdate(BaseModel):
+    first_name: str
+    last_name: str
+    email: str
+    faculty: str
+    major: str
+    role: str
+
+
+@app.patch(
+    "/api/activities/{activity_id}/participants/{student_id}"
+)
+def update_activity_participant(
+    activity_id: int,
+    student_id: str,
+    payload: ParticipantUpdate,
+    db: Session = Depends(get_db),
+):
+    require_activity(
+        db,
+        activity_id,
+    )
+
+    member = db.get(
+        ActivityMember,
+        (activity_id, student_id),
+    )
+
+    if not member:
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบผู้เข้าร่วมนี้ในกิจกรรม",
+        )
+
+    student = db.get(Student, student_id)
+
+    first_name = payload.first_name.strip()
+    last_name = payload.last_name.strip()
+    email = payload.email.strip()
+    faculty = payload.faculty.strip()
+    major = payload.major.strip()
+    role = normalize_role(payload.role)
+
+    if not first_name or not last_name:
+        raise HTTPException(
+            status_code=400,
+            detail="ชื่อ/นามสกุลไม่ครบ",
+        )
+
+    if "@" not in email:
+        raise HTTPException(
+            status_code=400,
+            detail="อีเมลไม่ถูกต้อง",
+        )
+
+    student.first_name = first_name
+    student.last_name = last_name
+    student.email = email
+    student.faculty = faculty
+    student.major = major
+
+    member.role = role
+
+    db.commit()
+
+    return {
+        "student_id": student.student_id,
+        "first_name": student.first_name,
+        "last_name": student.last_name,
+        "email": student.email,
+        "faculty": student.faculty,
+        "major": student.major,
+        "role": member.role,
+    }
