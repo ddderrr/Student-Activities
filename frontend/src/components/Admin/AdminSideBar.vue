@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import {
@@ -10,23 +10,72 @@ import {
   Settings,
   PanelLeftClose,
   PanelLeftOpen,
-  LogOut
+  LogOut,
+  Languages
 } from 'lucide-vue-next'
 
-const collapsed = ref(false)
+import { useLanguage } from '../../composables/useLanguage'
+
+const sidebarOpen = ref(true)
+
 const router = useRouter()
 const route = useRoute()
 
-const menuItems = [
-  { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard, path: '/admin/dashboard' },
-  { id: 'activities', name: 'Activities', icon: CalendarDays, path: '/admin/activities' },
-  { id: 'skills', name: 'Student Skills', icon: GraduationCap, path: '/admin/student-skills' },
-  { id: 'approvals', name: 'Approvals', icon: CircleCheck, path: '/admin/approvals' }
-]
+/* =========================
+   Language
+========================= */
+
+const {
+  currentLanguage,
+  setLanguage,
+  t
+} = useLanguage()
+
+
+/* =========================
+   Menu Items
+========================= */
+
+const menuItems = computed(() => [
+  {
+    id: 'dashboard',
+    name: t.value.adminSidebar.dashboard,
+    icon: LayoutDashboard,
+    path: '/admin/dashboard'
+  },
+  {
+    id: 'activities',
+    name: t.value.adminSidebar.activities,
+    icon: CalendarDays,
+    path: '/admin/activities'
+  },
+  {
+    id: 'skills',
+    name: t.value.adminSidebar.studentSkills,
+    icon: GraduationCap,
+    path: '/admin/student-skills'
+  },
+  {
+    id: 'approvals',
+    name: t.value.adminSidebar.approvals,
+    icon: CircleCheck,
+    path: '/admin/approvals'
+  }
+])
+
+
+/* =========================
+   Sidebar
+========================= */
 
 const toggleSidebar = () => {
-  collapsed.value = !collapsed.value
+  sidebarOpen.value = !sidebarOpen.value
 }
+
+
+/* =========================
+   Navigation
+========================= */
 
 const selectMenu = (item) => {
   router.push(item.path)
@@ -35,264 +84,759 @@ const selectMenu = (item) => {
 const goToSettings = () => {
   router.push('/admin/settings')
 }
+
+
+/* =========================
+   Logout
+========================= */
+
+const logout = () => {
+  router.push('/admin/login')
+}
 </script>
 
+
 <template>
-  <aside class="sidebar" :class="{ collapsed: collapsed }">
+
+  <!-- SIDEBAR -->
+
+  <aside
+    class="sidebar"
+    :class="{ collapsed: !sidebarOpen }"
+  >
+
+    <!-- HEADER -->
+
     <div class="sidebar-header">
-      <div v-if="!collapsed" class="brand">
-        <h2>Faculty of Science</h2>
-        <p>UNIVERSITY PORTAL</p>
+
+      <div class="brand">
+
+        <h2>
+          {{ t.adminSidebar.faculty }}
+        </h2>
+
+        <p>
+          {{ t.adminSidebar.subtitle }}
+        </p>
+
       </div>
 
-      <div v-else class="brand-collapsed">Sci</div>
 
-      <button class="toggle-btn" @click="toggleSidebar">
-        <PanelLeftOpen v-if="collapsed" :size="19" />
-        <PanelLeftClose v-else :size="19" />
+      <button
+        class="close-sidebar-btn"
+        @click="toggleSidebar"
+        :title="sidebarOpen
+          ? t.adminSidebar.closeSidebar
+          : t.adminSidebar.openSidebar"
+      >
+        <PanelLeftClose v-if="sidebarOpen" :size="19" />
+        <PanelLeftOpen v-else :size="19" />
       </button>
+
     </div>
 
+
+    <!-- MENU -->
+
     <nav class="menu">
+
       <button
         v-for="item in menuItems"
         :key="item.id"
         class="menu-item"
-        :class="{ active: route.path === item.path }"
+        :class="{
+          active: route.path === item.path
+        }"
         @click="selectMenu(item)"
-        :title="collapsed ? item.name : ''"
+        :title="!sidebarOpen ? item.name : ''"
       >
-        <component :is="item.icon" class="menu-icon" :size="19" />
-        <span v-if="!collapsed">{{ item.name }}</span>
+
+        <component
+          :is="item.icon"
+          class="menu-icon"
+          :size="19"
+        />
+
+        <span>
+          {{ item.name }}
+        </span>
+
       </button>
+
     </nav>
 
+
+    <!-- FOOTER -->
+
     <div class="sidebar-footer">
-      <button
-        class="menu-item"
-        :class="{ active: route.path === '/admin/settings' }"
-        @click="goToSettings"
-        :title="collapsed ? 'Settings' : ''"
-      >
-        <Settings class="menu-icon" :size="19" />
-        <span v-if="!collapsed">Settings</span>
-      </button>
 
-      <div class="profile-card" :class="{ collapsed: collapsed }">
-        <span class="profile-avatar">SC</span>
+      <!-- LANGUAGE -->
 
-        <div v-if="!collapsed" class="profile-info">
-          <strong>Dr. Sarah Chen</strong>
-          <small>Admin | Science Faculty</small>
+      <div class="language-box">
+
+        <div class="language-title">
+
+          <Languages :size="17" />
+
+          <span>
+            {{ t.common.language }}
+          </span>
+
         </div>
 
-        <LogOut v-if="!collapsed" class="profile-logout" :size="15" />
+
+        <div class="language-switch">
+
+          <button
+            :class="{
+              active: currentLanguage === 'TH'
+            }"
+            @click="setLanguage('TH')"
+          >
+            ไทย
+          </button>
+
+          <button
+            :class="{
+              active: currentLanguage === 'EN'
+            }"
+            @click="setLanguage('EN')"
+          >
+            EN
+          </button>
+
+        </div>
+
+        <button
+          class="collapsed-language-button"
+          type="button"
+          :title="t.common.language"
+          @click="setLanguage(currentLanguage === 'TH' ? 'EN' : 'TH')"
+        >
+          {{ currentLanguage }}
+        </button>
+
       </div>
+
+
+      <!-- SETTINGS -->
+
+      <button
+        class="menu-item"
+        :class="{
+          active: route.path === '/admin/settings'
+        }"
+        @click="goToSettings"
+        :title="!sidebarOpen ? t.common.settings : ''"
+      >
+
+        <Settings
+          class="menu-icon"
+          :size="19"
+        />
+
+        <span>
+          {{ t.common.settings }}
+        </span>
+
+      </button>
+
+
+      <!-- ADMIN PROFILE -->
+
+      <div class="profile-card">
+
+        <span class="profile-avatar">
+          SC
+        </span>
+
+
+        <div class="profile-info">
+
+          <strong>
+            Dr. Sarah Chen
+          </strong>
+
+          <small>
+            {{ t.adminSidebar.adminRole }}
+          </small>
+
+        </div>
+
+
+        <button
+          class="logout-btn"
+          @click="logout"
+          :title="t.common.logout"
+        >
+          <LogOut :size="17" />
+        </button>
+
+      </div>
+
     </div>
+
   </aside>
+
 </template>
 
+
 <style scoped>
+
 .sidebar {
   width: 230px;
   height: 100vh;
 
   position: sticky;
   top: 0;
+
   align-self: flex-start;
 
   background: #ffffff;
+
   border-right: 1px solid #e5eaf2;
 
   display: flex;
   flex-direction: column;
 
-  padding: 18px 12px;
+  box-sizing: border-box;
 
-  transition: width 0.25s ease;
+  padding: 18px 12px;
 
   flex-shrink: 0;
 
+  overflow-x: hidden;
   overflow-y: auto;
 
   z-index: 100;
+
+  transition:
+    width 0.25s ease,
+    padding 0.25s ease;
 }
 
-.sidebar.collapsed { width: 72px; }
+.sidebar.collapsed {
+  width: 72px;
+  padding: 18px 10px;
+}
+
+
+/* =========================
+   HEADER
+========================= */
 
 .sidebar-header {
-  height: 60px;
+  min-height: 60px;
+
   display: flex;
+
   align-items: flex-start;
-  position: relative;
+  justify-content: space-between;
+
+  gap: 8px;
+
   margin-bottom: 20px;
 }
 
+
+/* =========================
+   BRAND
+========================= */
+
 .brand {
   padding-left: 8px;
-  white-space: nowrap;
-  overflow: hidden;
+
+  min-width: 0;
 }
+
 
 .brand h2 {
   margin: 0;
+
   font-size: 15px;
   font-weight: 700;
+
   color: #173f95;
+
+  white-space: nowrap;
 }
+
 
 .brand p {
   margin: 3px 0 0;
+
   font-size: 9px;
   letter-spacing: 0.7px;
+
   color: #94a3b8;
+
+  white-space: nowrap;
 }
 
-.brand-collapsed {
-  width: 100%;
-  text-align: center;
-  color: #173f95;
-  font-size: 15px;
-  font-weight: 800;
-}
 
-.toggle-btn {
-  position: absolute;
-  right: -28px;
-  top: 5px;
-  width: 30px;
-  height: 34px;
-  border: 1px solid #e5eaf2;
-  border-left: none;
-  border-radius: 0 8px 8px 0;
-  background: white;
+/* =========================
+   CLOSE BUTTON
+========================= */
+
+.close-sidebar-btn {
+  width: 32px;
+  height: 32px;
+
+  flex-shrink: 0;
+
+  border: none;
+  border-radius: 8px;
+
+  background: transparent;
+
   color: #64748b;
+
   cursor: pointer;
+
   display: flex;
+
   align-items: center;
   justify-content: center;
+
   transition: 0.2s;
-  z-index: 10;
 }
 
-.toggle-btn:hover {
-  background: #eff6ff;
-  color: #2563eb;
+
+.close-sidebar-btn:hover {
+  background: #f3e8ff;
+  color: #7c3aed;
 }
+
+
+/* =========================
+   MENU
+========================= */
 
 .menu {
   display: flex;
   flex-direction: column;
+
   gap: 6px;
 }
+
 
 .menu-item {
   width: 100%;
   height: 42px;
+
   border: none;
   border-radius: 8px;
+
   background: transparent;
+
   padding: 0 13px;
+
+  box-sizing: border-box;
+
   display: flex;
+
   align-items: center;
+
   gap: 12px;
+
   font-size: 13px;
+
   color: #52617a;
+
   cursor: pointer;
+
   position: relative;
+
   transition: 0.2s;
+
   white-space: nowrap;
+
+  text-align: left;
 }
 
-.menu-item:hover { background: #f4f7fc; }
-.menu-icon { min-width: 19px; color: #8799b3; }
 
-.menu-item.active {
-  background: #edf4ff;
-  color: #1e4d8f;
-}
-
-.menu-item.active .menu-icon { color: #2563eb; }
-
-.menu-item.active::after {
-  content: '';
-  position: absolute;
-  right: -12px;
-  height: 100%;
-  width: 3px;
-  background: #2563eb;
-  border-radius: 3px 0 0 3px;
-}
-
-.sidebar-footer {
-  margin-top: auto;
-  border-top: 1px solid #edf0f4;
-  padding-top: 12px;
-}
-
-.sidebar.collapsed .menu-item {
-  justify-content: center;
-  padding: 0;
-  gap: 0;
-}
-
-.sidebar.collapsed .menu-item.active::after { right: -12px; }
-
-.profile-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-  padding: 10px;
-  border-radius: 10px;
+.menu-item:hover {
   background: #f4f7fc;
 }
 
-.profile-card.collapsed {
-  justify-content: center;
-  padding: 8px 0;
+
+.menu-icon {
+  min-width: 19px;
+
+  color: #8799b3;
 }
+
+
+/* =========================
+   ACTIVE
+========================= */
+
+.menu-item.active {
+  background: #edf4ff;
+
+  color: #1e4d8f;
+}
+
+
+.menu-item.active .menu-icon {
+  color: #2563eb;
+}
+
+
+.menu-item.active::after {
+  content: '';
+
+  position: absolute;
+
+  right: 0;
+  top: 7px;
+  bottom: 7px;
+
+  width: 3px;
+
+  background: #2563eb;
+
+  border-radius: 3px;
+}
+
+
+/* =========================
+   FOOTER
+========================= */
+
+.sidebar-footer {
+  margin-top: auto;
+
+  border-top: 1px solid #edf0f4;
+
+  padding-top: 12px;
+}
+
+
+/* =========================
+   LANGUAGE
+========================= */
+
+.language-box {
+  margin-bottom: 12px;
+
+  padding: 10px;
+
+  border-radius: 9px;
+
+  background: #f8f5ff;
+}
+
+
+.language-title {
+  display: flex;
+
+  align-items: center;
+
+  gap: 8px;
+
+  margin-bottom: 8px;
+
+  font-size: 11px;
+  font-weight: 600;
+
+  color: #6d28d9;
+}
+
+
+.language-switch {
+  display: flex;
+
+  padding: 3px;
+
+  border-radius: 7px;
+
+  background: #ede9fe;
+}
+
+
+.language-switch button {
+  flex: 1;
+
+  border: none;
+  border-radius: 5px;
+
+  padding: 6px 8px;
+
+  background: transparent;
+
+  color: #7c3aed;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition: 0.2s;
+}
+
+
+.language-switch button.active {
+  background: #7c3aed;
+
+  color: white;
+}
+
+
+/* =========================
+   PROFILE
+========================= */
+
+.profile-card {
+  display: flex;
+
+  align-items: center;
+
+  gap: 10px;
+
+  margin-top: 12px;
+
+  padding: 10px;
+
+  border-radius: 10px;
+
+  background: #f4f7fc;
+
+  box-sizing: border-box;
+}
+
 
 .profile-avatar {
   width: 32px;
   height: 32px;
+
   border-radius: 50%;
+
   flex-shrink: 0;
+
   display: flex;
+
   align-items: center;
   justify-content: center;
+
   font-size: 11px;
   font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #a855f7, #6366f1);
+
+  color: #ffffff;
+
+  background:
+    linear-gradient(
+      135deg,
+      #a855f7,
+      #6366f1
+    );
 }
+
+
+/* =========================
+   PROFILE INFO
+========================= */
 
 .profile-info {
   min-width: 0;
+
+  flex: 1;
+
   display: flex;
+
   flex-direction: column;
+
   overflow: hidden;
 }
+
 
 .profile-info strong {
   font-size: 12.5px;
+
   color: #1c293d;
+
   white-space: nowrap;
+
   overflow: hidden;
+
   text-overflow: ellipsis;
 }
+
 
 .profile-info small {
+  margin-top: 2px;
+
   font-size: 10.5px;
+
   color: #8ea0ba;
+
   white-space: nowrap;
+
   overflow: hidden;
+
   text-overflow: ellipsis;
 }
 
-.profile-logout {
-  margin-left: auto;
-  color: #8ea0ba;
+
+/* =========================
+   LOGOUT
+========================= */
+
+.logout-btn {
+  width: 30px;
+  height: 30px;
+
   flex-shrink: 0;
+
+  border: none;
+  border-radius: 7px;
+
+  background: transparent;
+
+  color: #7c3aed;
+
+  cursor: pointer;
+
+  display: flex;
+
+  align-items: center;
+  justify-content: center;
+
+  transition: 0.2s;
 }
+
+
+.logout-btn:hover {
+  background: #ede9fe;
+
+  color: #6d28d9;
+
+  transform: translateX(2px);
+}
+
+
+
+/* =========================
+   COLLAPSED
+========================= */
+
+.collapsed .sidebar-header {
+  justify-content: center;
+}
+
+.collapsed .brand {
+  display: none;
+}
+
+.collapsed .close-sidebar-btn {
+  width: 38px;
+  height: 38px;
+  background: #f8f5ff;
+  color: #7c3aed;
+}
+
+.collapsed .menu {
+  align-items: center;
+}
+
+.collapsed .menu-item {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+.collapsed .menu-item span {
+  display: none;
+}
+
+.collapsed .menu-item.active::after {
+  right: 0;
+  top: 7px;
+  bottom: 7px;
+}
+
+.collapsed .sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 12px;
+}
+
+.collapsed .language-box {
+  width: 46px;
+  margin-bottom: 12px;
+  padding: 6px 4px;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+}
+
+.collapsed .language-title,
+.collapsed .language-switch {
+  display: none;
+}
+
+.collapsed-language-button {
+  display: none;
+}
+
+.collapsed .collapsed-language-button {
+  width: 36px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: #7c3aed;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.collapsed .profile-card {
+  width: 46px;
+  margin-top: 12px;
+  padding: 7px;
+  justify-content: center;
+}
+
+.collapsed .profile-avatar,
+.collapsed .profile-info {
+  display: none;
+}
+
+.collapsed .logout-btn {
+  width: 32px;
+  height: 32px;
+}
+
+/* =========================
+   SCROLLBAR
+========================= */
+
+.sidebar::-webkit-scrollbar {
+  width: 5px;
+}
+
+
+.sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+
+.sidebar::-webkit-scrollbar-thumb {
+  background: #dbe3ef;
+
+  border-radius: 10px;
+}
+
+
+.sidebar::-webkit-scrollbar-thumb:hover {
+  background: #c4cfdd;
+}
+
 </style>

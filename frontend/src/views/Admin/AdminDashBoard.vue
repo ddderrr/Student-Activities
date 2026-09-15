@@ -14,6 +14,10 @@ import {
   TrendingUp
 } from 'lucide-vue-next'
 
+import { useLanguage } from '../../composables/useLanguage'
+
+const { t } = useLanguage()
+
 
 /* =========================================
    Monthly / Quarterly
@@ -41,6 +45,16 @@ const selectPeriod = (period) => {
 
 const loading = ref(false)
 const error = ref(null)
+
+
+/* =========================================
+   Mock / Real Data Mode
+
+   true  = ใช้ข้อมูลจำลองสำหรับทดสอบหน้าจอ
+   false = เรียกข้อมูลจริงจาก Backend API
+========================================= */
+
+const USE_MOCK_DATA = true
 
 
 /* =========================================
@@ -92,6 +106,53 @@ const dashboardData = reactive({
   ]
 
 })
+
+
+/* =========================================
+   Mock Data
+
+   โครงสร้างเหมือนข้อมูลที่ Backend ควรส่งมา
+   เพื่อให้ตอนต่อ Database จริงไม่ต้องแก้หน้า UI
+========================================= */
+
+const loadMockData = () => {
+
+  dashboardData.totalActivities = 48
+  dashboardData.totalStudents = 1260
+  dashboardData.totalParticipants = 842
+  dashboardData.completionRate = 87
+
+  dashboardData.activityGrowth = [
+    { month: 'JAN', count: 4 },
+    { month: 'FEB', count: 7 },
+    { month: 'MAR', count: 12 },
+    { month: 'APR', count: 8 },
+    { month: 'MAY', count: 15 },
+    { month: 'JUN', count: 10 },
+    { month: 'JUL', count: 18 },
+    { month: 'AUG', count: 14 },
+    { month: 'SEP', count: 20 },
+    { month: 'OCT', count: 16 },
+    { month: 'NOV', count: 23 },
+    { month: 'DEC', count: 19 }
+  ]
+
+  dashboardData.skills = [
+    {
+      name: 'CRITICAL THINKING',
+      percentage: 82
+    },
+    {
+      name: 'COMMUNICATION',
+      percentage: 76
+    },
+    {
+      name: 'LEADERSHIP',
+      percentage: 68
+    }
+  ]
+
+}
 
 
 /* =========================================
@@ -170,15 +231,11 @@ const fetchDashboard = async () => {
 
 onMounted(() => {
 
-  /*
-    ตอนนี้ Backend ยังไม่มี
-    เลย comment ไว้ก่อน
-
-    พอ Backend พร้อม
-    ให้เอา // ออกได้เลย
-  */
-
-  // fetchDashboard()
+  if (USE_MOCK_DATA) {
+    loadMockData()
+  } else {
+    fetchDashboard()
+  }
 
 })
 
@@ -187,42 +244,42 @@ onMounted(() => {
    Quarterly
 ========================================= */
 
+const getActivityCount = (index) => {
+  return Number(dashboardData.activityGrowth[index]?.count ?? 0)
+}
+
 const quarterlyData = computed(() => [
 
   {
     month: 'Q1',
-
     count:
-      dashboardData.activityGrowth[0].count +
-      dashboardData.activityGrowth[1].count +
-      dashboardData.activityGrowth[2].count
+      getActivityCount(0) +
+      getActivityCount(1) +
+      getActivityCount(2)
   },
 
   {
     month: 'Q2',
-
     count:
-      dashboardData.activityGrowth[3].count +
-      dashboardData.activityGrowth[4].count +
-      dashboardData.activityGrowth[5].count
+      getActivityCount(3) +
+      getActivityCount(4) +
+      getActivityCount(5)
   },
 
   {
     month: 'Q3',
-
     count:
-      dashboardData.activityGrowth[6].count +
-      dashboardData.activityGrowth[7].count +
-      dashboardData.activityGrowth[8].count
+      getActivityCount(6) +
+      getActivityCount(7) +
+      getActivityCount(8)
   },
 
   {
     month: 'Q4',
-
     count:
-      dashboardData.activityGrowth[9].count +
-      dashboardData.activityGrowth[10].count +
-      dashboardData.activityGrowth[11].count
+      getActivityCount(9) +
+      getActivityCount(10) +
+      getActivityCount(11)
   }
 
 ])
@@ -264,34 +321,75 @@ const maxActivity = computed(() => {
 
 
 /* =========================================
+   Y Axis Scale
+
+   ปรับช่วงตัวเลขอัตโนมัติตามข้อมูลจริง
+========================================= */
+
+const yAxisStep = computed(() => {
+
+  const max = maxActivity.value
+
+  if (max <= 10) return 2
+  if (max <= 25) return 5
+  if (max <= 50) return 10
+  if (max <= 100) return 20
+
+  return Math.ceil(max / 5 / 10) * 10
+
+})
+
+const yAxisMax = computed(() => {
+
+  return Math.max(
+    yAxisStep.value * 5,
+    Math.ceil(maxActivity.value / yAxisStep.value) * yAxisStep.value
+  )
+
+})
+
+const yAxisTicks = computed(() => {
+
+  const ticks = []
+
+  for (let value = yAxisMax.value; value >= 0; value -= yAxisStep.value) {
+    ticks.push(value)
+  }
+
+  return ticks
+
+})
+
+
+/* =========================================
    Summary Cards
 ========================================= */
 
 const summaryCards = computed(() => [
 
   {
-    title: 'Activities',
+    title: t.value.adminDashboard.activities,
     value: dashboardData.totalActivities,
     icon: CalendarDays,
     type: 'blue'
   },
 
   {
-    title: 'Students',
+    title: t.value.adminDashboard.students,
     value: dashboardData.totalStudents,
     icon: Users,
     type: 'blue'
   },
 
   {
-    title: 'Participants',
+    title: t.value.adminDashboard.participants,
     value: dashboardData.totalParticipants,
     icon: TrendingUp,
     type: 'green'
   },
 
   {
-    title: 'Completion Rate',
+    title: t.value.adminDashboard.completionRate,
     value: `${dashboardData.completionRate}%`,
     icon: CheckCircle,
     type: 'orange'
@@ -328,6 +426,23 @@ const averageSkill = computed(() => {
 
 })
 
+
+/* =========================================
+   Skill Translation
+========================================= */
+
+const skillLabel = (name) => {
+
+  const skills = {
+    'CRITICAL THINKING': t.value.adminDashboard.criticalThinking,
+    'COMMUNICATION': t.value.adminDashboard.communication,
+    'LEADERSHIP': t.value.adminDashboard.leadership
+  }
+
+  return skills[name] || name
+
+}
+
 </script>
 
 
@@ -342,10 +457,10 @@ const averageSkill = computed(() => {
     <div class="dashboard-header">
 
       <div>
-        <h1>Dashboard</h1>
+        <h1>{{ t.adminDashboard.title }}</h1>
 
         <p>
-          Overview of faculty activities and student participation
+          {{ t.adminDashboard.subtitle }}
         </p>
       </div>
 
@@ -401,10 +516,10 @@ const averageSkill = computed(() => {
 
         <div>
 
-          <h2>Activity Growth</h2>
+          <h2>{{ t.adminDashboard.activityGrowth }}</h2>
 
           <p>
-            Number of activities created over time
+            {{ t.adminDashboard.activityGrowthDescription }}
           </p>
 
         </div>
@@ -415,14 +530,14 @@ const averageSkill = computed(() => {
               :class="{ active: selectedPeriod === 'MONTHLY' }"
               @click="selectPeriod('MONTHLY')"
             >
-              MONTHLY
+              {{ t.adminDashboard.monthly }}
             </button>
 
             <button
               :class="{ active: selectedPeriod === 'QUARTERLY' }"
               @click="selectPeriod('QUARTERLY')"
             >
-              QUARTERLY
+              {{ t.adminDashboard.quarterly }}
             </button>
 
         </div>
@@ -431,36 +546,74 @@ const averageSkill = computed(() => {
 
       <!-- Chart -->
 
-      <div class="chart">
+      <div class="chart-shell">
 
-          <div class="grid-line line-1"></div>
-          <div class="grid-line line-2"></div>
-          <div class="grid-line line-3"></div>
-          <div class="grid-line line-4"></div>
+        <div class="y-axis">
 
-          <div class="bars">
+          <div class="y-axis-title">
+            {{ t.adminDashboard.activities }}
+          </div>
 
-            <div
-              v-for="item in chartData"
-              :key="item.month"
-              class="bar-wrapper"
+          <div class="y-axis-ticks">
+
+            <span
+              v-for="tick in yAxisTicks"
+              :key="tick"
             >
+              {{ tick }}
+            </span>
 
-              <div class="bar-area">
+          </div>
+
+        </div>
+
+
+        <div class="chart-scroll">
+
+          <div class="chart-content">
+
+            <div class="plot-area">
+
+              <div
+                v-for="tick in yAxisTicks"
+                :key="`grid-${tick}`"
+                class="grid-line"
+                :style="{
+                  top: `${((yAxisMax - tick) / yAxisMax) * 100}%`
+                }"
+              ></div>
+
+              <div class="bars">
 
                 <div
-                  class="bar"
-                  :class="{
-                    selected: item.month === selectedItem
-                  }"
-                  :style="{
-                    height: `${(item.count / maxActivity) * 100}%`
-                  }"
-                ></div>
+                  v-for="item in chartData"
+                  :key="item.month"
+                  class="bar-wrapper"
+                >
+
+                  <div
+                    class="bar"
+                    :class="{
+                      selected: item.month === selectedItem
+                    }"
+                    :style="{
+                      height: `${(item.count / yAxisMax) * 100}%`
+                    }"
+                    :title="`${item.month}: ${item.count}`"
+                  ></div>
+
+                </div>
 
               </div>
 
+            </div>
+
+
+            <div class="x-axis-labels">
+
               <span
+                v-for="item in chartData"
+                :key="`label-${item.month}`"
                 :class="{
                   'selected-month': item.month === selectedItem
                 }"
@@ -472,6 +625,8 @@ const averageSkill = computed(() => {
             </div>
 
           </div>
+
+        </div>
 
       </div>
 
@@ -488,10 +643,10 @@ const averageSkill = computed(() => {
 
         <div>
 
-          <h2>Faculty Skill Distribution</h2>
+          <h2>{{ t.adminDashboard.skillDistribution }}</h2>
 
           <p>
-            Average proficiency levels across core competencies
+            {{ t.adminDashboard.skillDescription }}
           </p>
 
         </div>
@@ -514,7 +669,7 @@ const averageSkill = computed(() => {
             <div class="skill-info">
 
               <span>
-                {{ skill.name }}
+                {{ skillLabel(skill.name) }}
               </span>
 
               <strong>
@@ -563,7 +718,7 @@ const averageSkill = computed(() => {
               </strong>
 
               <span>
-                AVG SCORE
+                {{ t.adminDashboard.averageScore }}
               </span>
 
             </div>
@@ -583,18 +738,18 @@ const averageSkill = computed(() => {
 
     <div class="system-status">
 
-      SYSTEM STATUS:
+      {{ t.adminDashboard.systemStatus }}:
 
       <span v-if="loading">
-        LOADING DATA
+        {{ t.adminDashboard.loadingData }}
       </span>
 
       <span v-else-if="error">
-        WAITING FOR BACKEND
+        {{ t.adminDashboard.waitingBackend }}
       </span>
 
       <span v-else>
-        READY
+        {{ t.adminDashboard.ready }}
       </span>
 
     </div>
@@ -639,7 +794,7 @@ const averageSkill = computed(() => {
 .dashboard-header p {
   margin: 6px 0 0;
 
-  font-size: 12px;
+  font-size: 14px;
 
   color: #8da0bd;
 }
@@ -732,7 +887,7 @@ const averageSkill = computed(() => {
 .summary-title {
   margin-top: 3px;
 
-  font-size: 11px;
+  font-size: 13px;
 
   color: #8da0bd;
 }
@@ -770,7 +925,7 @@ const averageSkill = computed(() => {
 .card-header h2 {
   margin: 0;
 
-  font-size: 19px;
+  font-size: 20px;
 
   font-weight: 800;
 
@@ -781,7 +936,7 @@ const averageSkill = computed(() => {
 .card-header p {
   margin: 6px 0 0;
 
-  font-size: 11px;
+  font-size: 13px;
 
   color: #8da0bd;
 }
@@ -811,7 +966,7 @@ const averageSkill = computed(() => {
 
   border-radius: 5px;
 
-  font-size: 9px;
+  font-size: 11px;
 
   font-weight: 700;
 
@@ -832,15 +987,88 @@ const averageSkill = computed(() => {
    Chart
 ========================= */
 
-.chart {
-  position: relative;
-
-  height: 240px;
+.chart-shell {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
 
   margin-top: 25px;
+}
+
+
+.y-axis {
+  position: relative;
+
+  flex: 0 0 62px;
+
+  height: 200px;
+}
+
+
+.y-axis-title {
+  position: absolute;
+
+  left: -6px;
+  top: 50%;
+
+  transform: translateY(-50%) rotate(-90deg);
+  transform-origin: center;
+
+  white-space: nowrap;
+
+  font-size: 10px;
+  font-weight: 700;
+
+  color: #8da0bd;
+}
+
+
+.y-axis-ticks {
+  position: absolute;
+
+  top: 0;
+  right: 0;
+
+  width: 24px;
+  height: 200px;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+
+  transform: translateY(-5px);
+
+  font-size: 10px;
+  font-weight: 700;
+
+  text-align: right;
+
+  color: #9cacbf;
+}
+
+
+.chart-scroll {
+  flex: 1;
+  min-width: 0;
 
   overflow-x: auto;
   overflow-y: hidden;
+
+  padding-bottom: 4px;
+}
+
+
+.chart-content {
+  width: max(100%, 900px);
+}
+
+
+.plot-area {
+  position: relative;
+
+  height: 200px;
+
+  border-bottom: 1px solid #e7edf5;
 }
 
 
@@ -853,72 +1081,37 @@ const averageSkill = computed(() => {
   height: 1px;
 
   background: #eef2f6;
-}
 
-
-.line-1 {
-  top: 15%;
-}
-
-.line-2 {
-  top: 35%;
-}
-
-.line-3 {
-  top: 55%;
-}
-
-.line-4 {
-  top: 75%;
+  pointer-events: none;
 }
 
 
 .bars {
   position: absolute;
 
-  left: 0;
-  top: 0;
-  bottom: 0;
-
-  height: 190px;
+  inset: 0;
 
   display: flex;
   align-items: flex-end;
-
-  /* เปลี่ยนตรงนี้ */
   justify-content: space-between;
+
   gap: 25px;
 
-  width: max(100%, 900px);
-
-  padding: 0 20px;
+  padding: 0 22px;
   box-sizing: border-box;
 }
 
 
 .bar-wrapper {
-  flex: 0 0 45px;
+  flex: 1 1 0;
 
   height: 100%;
 
   display: flex;
-  flex-direction: column;
-
-  align-items: center;
-  justify-content: flex-end;
-}
-
-
-.bar-area {
-  height: 160px;
-
-  width: 100%;
-
-  display: flex;
-
+  align-items: flex-end;
   justify-content: center;
 
-  align-items: flex-end;
+  min-width: 45px;
 }
 
 
@@ -931,7 +1124,9 @@ const averageSkill = computed(() => {
 
   background: #e9eef5;
 
-  transition: height 0.3s ease;
+  transition:
+    height 0.3s ease,
+    background 0.2s ease;
 }
 
 
@@ -940,21 +1135,41 @@ const averageSkill = computed(() => {
 }
 
 
-.bar-wrapper span {
-  margin-top: 18px;
-  font-size: 9px;
+.x-axis-labels {
+  display: flex;
+  justify-content: space-between;
+
+  gap: 25px;
+
+  padding: 14px 22px 0;
+
+  box-sizing: border-box;
+}
+
+
+.x-axis-labels span {
+  flex: 1 1 0;
+
+  min-width: 45px;
+
+  text-align: center;
+
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.5px;
+
   color: #9cacbf;
+
   cursor: pointer;
 }
 
-.bar-wrapper span:hover {
+
+.x-axis-labels span:hover {
   color: #3264ed;
 }
 
 
-.bar-wrapper span.selected-month {
+.x-axis-labels span.selected-month {
   color: #3264ed;
 }
 
@@ -998,7 +1213,7 @@ const averageSkill = computed(() => {
 
 
 .skill-info span {
-  font-size: 9px;
+  font-size: 12px;
 
   font-weight: 800;
 
@@ -1009,7 +1224,7 @@ const averageSkill = computed(() => {
 
 
 .skill-info strong {
-  font-size: 10px;
+  font-size: 12px;
 
   color: #31508f;
 }
@@ -1092,7 +1307,7 @@ const averageSkill = computed(() => {
 .score-inner span {
   margin-top: 3px;
 
-  font-size: 7px;
+  font-size: 10px;
 
   font-weight: 700;
 
@@ -1109,7 +1324,7 @@ const averageSkill = computed(() => {
 
   text-align: center;
 
-  font-size: 8px;
+  font-size: 10px;
 
   font-weight: 700;
 

@@ -22,7 +22,7 @@ const showPassword = ref(false)
   ตอนนี้ยังไม่ตรวจ Username / Password
 */
 const loginStudent = () => {
-  router.push('/student/dashboard')
+  router.push('/student/activities')
 }
 
 const goAdminLogin = () => {
@@ -290,21 +290,45 @@ const goAdminLogin = () => {
 
   padding: 0 45px;
 
-  border: 1px solid #cbd0dc;
+  /* ทำช่องกรอกเป็นขาวอมเทา */
+  background: #f8fafc !important;
+
+  border: 1px solid #d8dee9;
   border-radius: 7px;
 
   outline: none;
 
+  /* ตัวหนังสือที่พิมพ์ */
+  color: #1f2937 !important;
+
   font-size: 15px;
+  font-family: inherit;
 
   transition: 0.2s;
 }
 
+/* ถ้ามี placeholder */
+.input-wrapper input::placeholder {
+  color: #9aa5b5;
+  opacity: 1;
+}
+
+/* ตอนกดช่องกรอก */
 .input-wrapper input:focus {
+  background: #ffffff !important;
   border-color: #a100d4;
 
   box-shadow:
     0 0 0 3px rgba(161, 0, 212, 0.08);
+}
+
+/* ป้องกัน browser autofill ทำสีช่องเพี้ยน */
+.input-wrapper input:-webkit-autofill,
+.input-wrapper input:-webkit-autofill:hover,
+.input-wrapper input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #1f2937;
+  -webkit-box-shadow: 0 0 0 1000px #f8fafc inset;
+  transition: background-color 9999s ease-in-out 0s;
 }
 
 .input-icon {

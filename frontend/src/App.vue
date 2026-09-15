@@ -3,9 +3,13 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 import AdminSidebar from './components/Admin/AdminSideBar.vue'
-// import StudentSidebar from './components/Student/StudentSideBar.vue'
 
 const route = useRoute()
+
+
+/* =========================
+   Login
+========================= */
 
 const isLoginPage = computed(() => {
   return (
@@ -14,27 +18,34 @@ const isLoginPage = computed(() => {
   )
 })
 
-const isAdminPage = computed(() => {
-  return route.path.startsWith('/admin/')
-})
 
-const isStudentPage = computed(() => {
-  return route.path.startsWith('/student/')
+/* =========================
+   Admin
+========================= */
+
+const isAdminPage = computed(() => {
+  return (
+    route.path.startsWith('/admin/') &&
+    route.path !== '/admin/login'
+  )
 })
 </script>
 
+
 <template>
 
-  <!-- =====================
+  <!-- =========================
        Login
-  ====================== -->
+  ========================== -->
 
-  <RouterView v-if="isLoginPage" />
+  <RouterView
+    v-if="isLoginPage"
+  />
 
 
-  <!-- =====================
+  <!-- =========================
        Admin
-  ====================== -->
+  ========================== -->
 
   <div
     v-else-if="isAdminPage"
@@ -44,43 +55,29 @@ const isStudentPage = computed(() => {
     <AdminSidebar />
 
     <main class="main-content">
+
       <RouterView />
+
     </main>
 
   </div>
 
 
-  <!-- =====================
-       Student
-  ====================== -->
-
-  <div
-    v-else-if="isStudentPage"
-    class="app-layout"
-  >
-
-    <!-- ตอนทำ Student ค่อยเปิด -->
-    <!-- <StudentSidebar /> -->
-
-    <main class="main-content">
-      <RouterView />
-    </main>
-
-  </div>
-
-
-  <!-- =====================
-       Other
-  ====================== -->
+  <!-- =========================
+       Student / Other
+  ========================== -->
 
   <RouterView v-else />
 
 </template>
 
+
 <style>
+
 * {
   box-sizing: border-box;
 }
+
 
 html,
 body,
@@ -92,6 +89,7 @@ body,
   min-height: 100%;
 }
 
+
 body {
   font-family:
     Inter,
@@ -101,17 +99,26 @@ body {
   background: #f7f8fc;
 }
 
+
+/* =========================
+   Admin Layout
+========================= */
+
 .app-layout {
   display: flex;
 
   width: 100%;
+
   min-height: 100vh;
 }
+
 
 .main-content {
   flex: 1;
 
   min-width: 0;
+
   min-height: 100vh;
 }
+
 </style>
