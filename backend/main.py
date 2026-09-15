@@ -103,6 +103,323 @@ def home():
     }
 
 
+
+# ============================================================
+# ADMIN DASHBOARD
+# ============================================================
+
+DASHBOARD_MONTH_LABELS = [
+    "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+    "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+]
+
+
+@app.get("/api/admin/dashboard")
+def get_admin_dashboard(
+    db: Session = Depends(get_db),
+):
+    """
+    Dashboard summary calculated from the same PostgreSQL data
+    used by the Activities page.
+    """
+
+    total_activities = (
+        db.query(func.count(Activity.id))
+        .scalar()
+        or 0
+    )
+
+    total_students = (
+        db.query(func.count(Student.student_id))
+        .scalar()
+        or 0
+    )
+
+    # Count unique students that are participants in at least one activity.
+    total_participants = (
+        db.query(
+            func.count(
+                func.distinct(ActivityMember.student_id)
+            )
+        )
+        .filter(ActivityMember.role == "participant")
+        .scalar()
+        or 0
+    )
+
+    completed_activities = (
+        db.query(func.count(Activity.id))
+        .filter(Activity.status == "completed")
+        .scalar()
+        or 0
+    )
+
+    completion_rate = (
+        round(
+            (completed_activities / total_activities) * 100
+        )
+        if total_activities
+        else 0
+    )
+
+    # Activity Growth = activities created in the current year,
+    # grouped by created_at month.
+    current_year = datetime.now().year
+    monthly_counts = [0] * 12
+
+    created_rows = (
+        db.query(Activity.created_at)
+        .filter(
+            func.extract(
+                "year",
+                Activity.created_at,
+            ) == current_year
+        )
+        .all()
+    )
+
+    for (created_at,) in created_rows:
+        if created_at is not None:
+            monthly_counts[created_at.month - 1] += 1
+
+    activity_growth = [
+        {
+            "month": month,
+            "count": monthly_counts[index],
+        }
+        for index, month in enumerate(
+            DASHBOARD_MONTH_LABELS
+        )
+    ]
+
+    # "Faculty Skill Distribution" uses Staff skill levels.
+    # Level 1-5 is converted to a percentage (20%-100%).
+    average_rows = (
+        db.query(
+            ActivitySkill.skill_key,
+            func.avg(ActivitySkill.level),
+        )
+        .filter(ActivitySkill.target_role == "staff")
+        .group_by(ActivitySkill.skill_key)
+        .all()
+    )
+
+    average_levels = {
+        skill_key: float(average_level)
+        for skill_key, average_level in average_rows
+        if average_level is not None
+    }
+
+    skills = []
+
+    for skill_key, label in STAFF_SKILL_DEFINITIONS.items():
+        average_level = average_levels.get(skill_key, 0)
+
+        skills.append(
+            {
+                "name": label,
+                "percentage": round(
+                    (average_level / 5) * 100
+                ),
+            }
+        )
+
+    return {
+        "totalActivities": total_activities,
+        "totalStudents": total_students,
+        "totalParticipants": total_participants,
+        "completionRate": completion_rate,
+        "activityGrowth": activity_growth,
+        "skills": skills,
+        "year": current_year,
+    }
+
+
+
+# ============================================================
+# ADMIN STUDENT SKILLS
+# ============================================================
+
+
+def student_skill_semester_label(value: datetime) -> str:
+    """
+    Temporary semester derivation because the current database
+    does not have an explicit semester/academic-term column.
+
+    Semester 1 = Jan-Jun
+    Semester 2 = Jul-Dec
+    """
+    semester_number = 1 if value.month <= 6 else 2
+    return f"Semester {semester_number}/{value.year}"
+
+
+def student_skill_semester_sort_key(label: str) -> tuple[int, int]:
+    try:
+        semester_part, year_part = label.replace("Semester ", "").split("/")
+        return int(year_part), int(semester_part)
+    except (ValueError, AttributeError):
+        return (0, 0)
+
+
+@app.get("/api/admin/student-skills")
+def get_admin_student_skills(
+    db: Session = Depends(get_db),
+):
+    """
+    Build student proficiency from the real activity data.
+
+    A student's score for each skill is the average participant-skill
+    level of activities that the student joined as a participant.
+    This avoids inventing a separate student-evaluation table before
+    the project has a real evaluation workflow.
+    """
+
+    total_students = (
+        db.query(func.count(Student.student_id))
+        .scalar()
+        or 0
+    )
+
+    rows = (
+        db.query(
+            Student.student_id,
+            Student.first_name,
+            Student.last_name,
+            Student.major,
+            Activity.start_at,
+            ActivitySkill.skill_key,
+            ActivitySkill.level,
+        )
+        .join(
+            ActivityMember,
+            ActivityMember.student_id == Student.student_id,
+        )
+        .join(
+            Activity,
+            Activity.id == ActivityMember.activity_id,
+        )
+        .join(
+            ActivitySkill,
+            ActivitySkill.activity_id == Activity.id,
+        )
+        .filter(
+            ActivityMember.role == "participant",
+            ActivitySkill.target_role == "participant",
+        )
+        .all()
+    )
+
+    # (semester, student_id) -> student data + accumulated skill levels
+    grouped: dict[tuple[str, str], dict] = {}
+
+    for (
+        student_id,
+        first_name,
+        last_name,
+        major,
+        start_at,
+        skill_key,
+        level,
+    ) in rows:
+        if start_at is None:
+            continue
+
+        if skill_key not in PARTICIPANT_SKILL_DEFINITIONS:
+            continue
+
+        semester = student_skill_semester_label(start_at)
+        group_key = (semester, student_id)
+
+        if group_key not in grouped:
+            grouped[group_key] = {
+                "id": student_id,
+                "name": f"{first_name} {last_name}".strip(),
+                "major": major or "",
+                "semester": semester,
+                "skill_values": {
+                    key: []
+                    for key in PARTICIPANT_SKILL_DEFINITIONS
+                },
+            }
+
+        grouped[group_key]["skill_values"][skill_key].append(
+            float(level)
+        )
+
+    students = []
+
+    for entry in grouped.values():
+        skills = {}
+
+        for skill_key in PARTICIPANT_SKILL_DEFINITIONS:
+            values = entry["skill_values"][skill_key]
+            skills[skill_key] = (
+                round(sum(values) / len(values), 2)
+                if values
+                else 0
+            )
+
+        students.append(
+            {
+                "id": entry["id"],
+                "name": entry["name"],
+                "major": entry["major"],
+                "semester": entry["semester"],
+                "skills": skills,
+            }
+        )
+
+    students.sort(
+        key=lambda item: (
+            student_skill_semester_sort_key(item["semester"]),
+            item["id"],
+        ),
+        reverse=True,
+    )
+
+    semester_set = {
+        item["semester"]
+        for item in students
+    }
+
+    semesters = sorted(
+        semester_set,
+        key=student_skill_semester_sort_key,
+        reverse=True,
+    )
+
+    # Always provide a sensible current semester even before data exists.
+    current_semester = student_skill_semester_label(datetime.now())
+    if not semesters:
+        semesters = [current_semester]
+
+    default_semester = (
+        current_semester
+        if current_semester in semesters
+        else semesters[0]
+    )
+
+    total_faculty_by_semester = {
+        semester: total_students
+        for semester in semesters
+    }
+
+    return {
+        "semesters": semesters,
+        "defaultSemester": default_semester,
+        "totalFacultyBySemester": total_faculty_by_semester,
+        "benchmarkScores": [4, 4, 4, 4, 4, 4],
+        "skillDefinitions": [
+            {
+                "key": key,
+                "label": label,
+            }
+            for key, label in PARTICIPANT_SKILL_DEFINITIONS.items()
+        ],
+        "students": students,
+    }
+
+
 # ============================================================
 # ACTIVITY
 # ============================================================
@@ -511,10 +828,15 @@ COLUMN_ALIASES = {
     "รหัสนักศึกษษา": "student_id",
     "Student ID": "student_id",
     "student_id": "student_id",
+    "student id": "student_id",
 
     "ชื่อ": "first_name",
     "First Name": "first_name",
     "first_name": "first_name",
+    "ชื่อจริง": "first_name", 
+    "ชื่อจริง (ไม่ต้องมีคำนำหน้า)": "first_name",
+    "first name": "first_name",
+    "ชื่อ (ไม่ต้องมีคำนำหน้า)":"first_name",
 
     "นามสกุล": "last_name",
     "Last Name": "last_name",
@@ -524,10 +846,6 @@ COLUMN_ALIASES = {
     "อีเมล": "email",
     "Email": "email",
     "email": "email",
-
-    "คณะ": "faculty",
-    "Faculty": "faculty",
-    "faculty": "faculty",
 
     "สาขาวิชา": "major",
     "Major": "major",
@@ -625,9 +943,11 @@ def normalize_student_columns(
         df["major"] = ""
 
     if "role" not in df.columns:
+        # ถ้าไฟล์ไม่มี column Role ให้เป็น participant อัตโนมัติ
         df["role"] = "participant"
     else:
-        # ถ้ามี column Role แต่บางแถวว่าง
+        # ถ้ามี column Role ให้จัดรูปแบบค่า และถ้าบางแถวว่างให้เป็น participant
+        df["role"] = df["role"].str.lower()
         df.loc[
             df["role"].eq(""),
             "role",

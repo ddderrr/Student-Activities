@@ -6,6 +6,8 @@ import {
   ArrowRight,
   Building2,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   Check,
   CheckCircle2,
   ClipboardList,
@@ -164,6 +166,133 @@ const activeSkills = computed(() =>
     : participantSkills.value
 )
 
+const openCalendar = ref(null)
+const calendarCursor = ref(new Date())
+
+const weekDays = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา']
+
+const calendarTitle = computed(() =>
+  new Intl.DateTimeFormat('th-TH-u-ca-gregory', {
+    month: 'long',
+    year: 'numeric'
+  }).format(calendarCursor.value)
+)
+
+const calendarDays = computed(() => {
+  const year = calendarCursor.value.getFullYear()
+  const month = calendarCursor.value.getMonth()
+  const firstDay = new Date(year, month, 1)
+  const mondayOffset = (firstDay.getDay() + 6) % 7
+  const gridStart = new Date(year, month, 1 - mondayOffset)
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(
+      gridStart.getFullYear(),
+      gridStart.getMonth(),
+      gridStart.getDate() + index
+    )
+
+    return {
+      date,
+      key: toDateKey(date),
+      day: date.getDate(),
+      outside: date.getMonth() !== month
+    }
+  })
+})
+
+function toDateKey(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function parseDateKey(value) {
+  if (!value) return null
+
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return null
+
+  return new Date(year, month - 1, day)
+}
+
+function formatDisplayDate(value) {
+  const date = parseDateKey(value)
+  if (!date) return 'เลือกวันที่'
+
+  return new Intl.DateTimeFormat('th-TH-u-ca-gregory', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric'
+  }).format(date)
+}
+
+function openCalendarPicker(type) {
+  openCalendar.value = type
+
+  const selectedValue =
+    type === 'start'
+      ? form.value.start_at
+      : form.value.end_at || form.value.start_at
+
+  calendarCursor.value = parseDateKey(selectedValue) || new Date()
+}
+
+function closeCalendar() {
+  openCalendar.value = null
+}
+
+function changeMonth(offset) {
+  const current = calendarCursor.value
+  calendarCursor.value = new Date(
+    current.getFullYear(),
+    current.getMonth() + offset,
+    1
+  )
+}
+
+function isCalendarDateDisabled(day) {
+  if (openCalendar.value !== 'end' || !form.value.start_at) return false
+  return day.key < form.value.start_at
+}
+
+function isSelectedCalendarDate(day) {
+  const selected =
+    openCalendar.value === 'start'
+      ? form.value.start_at
+      : form.value.end_at
+
+  return day.key === selected
+}
+
+function isToday(day) {
+  return day.key === toDateKey(new Date())
+}
+
+function selectCalendarDate(day) {
+  if (isCalendarDateDisabled(day)) return
+
+  if (openCalendar.value === 'start') {
+    form.value.start_at = day.key
+
+    // ถ้าวันสิ้นสุดเดิมอยู่ก่อนวันเริ่มต้นใหม่ ให้ขยับมาวันเดียวกันอัตโนมัติ
+    if (form.value.end_at && form.value.end_at < day.key) {
+      form.value.end_at = day.key
+    }
+  } else if (openCalendar.value === 'end') {
+    form.value.end_at = day.key
+  }
+
+  closeCalendar()
+}
+
+function selectToday() {
+  const today = { key: toDateKey(new Date()) }
+  if (isCalendarDateDisabled(today)) return
+  selectCalendarDate(today)
+}
+
 function goBack() {
   if (currentStep.value === 2) {
     currentStep.value = 1
@@ -195,12 +324,12 @@ function validateStepOne() {
   const end = new Date(form.value.end_at)
 
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    errorMessage.value = 'กรุณาระบุวันและเวลาให้ถูกต้อง'
+    errorMessage.value = 'กรุณาระบุวันที่ให้ถูกต้อง'
     return false
   }
 
-  if (end <= start) {
-    errorMessage.value = 'วัน/เวลาสิ้นสุดต้องอยู่หลังวัน/เวลาเริ่มต้น'
+  if (end < start) {
+    errorMessage.value = 'วันที่สิ้นสุดต้องไม่อยู่ก่อนวันที่เริ่มต้น'
     return false
   }
 
@@ -231,6 +360,9 @@ async function createActivity() {
         },
         body: JSON.stringify({
           ...form.value,
+          // UI เลือกเฉพาะวันที่ แต่ยังส่งค่า datetime ให้ Backend เหมือนเดิม
+          start_at: `${form.value.start_at}T00:00:00`,
+          end_at: `${form.value.end_at}T23:59:59`,
           staff_skills: staffSkills.value,
           participant_skills: participantSkills.value
         })
@@ -276,7 +408,7 @@ async function createActivity() {
 </script>
 
 <template>
-  <section class="create-page">
+  <section class="create-page" @click="closeCalendar">
     <div class="page-shell">
       <header class="hero-card">
         <div>
@@ -349,25 +481,141 @@ async function createActivity() {
               </div>
             </section>
 
-            <section class="form-card">
+            <section class="form-card schedule-card">
               <div class="section-heading">
                 <div class="section-icon"><CalendarDays :size="20" /></div>
                 <div>
                   <h2>กำหนดการ</h2>
-                  <p>กำหนดช่วงวันและเวลาของกิจกรรม</p>
+                  <p>เลือกวันที่เริ่มต้นและวันที่สิ้นสุดของกิจกรรม</p>
                 </div>
               </div>
 
-              <div class="form-grid">
-                <label class="field">
-                  <span>วัน/เวลาเริ่มต้น <b>*</b></span>
-                  <input v-model="form.start_at" type="datetime-local" />
-                </label>
+              <div class="form-grid date-grid">
+                <div class="field date-field">
+                  <span>วันที่เริ่มต้น <b>*</b></span>
+                  <div class="date-picker" @click.stop>
+                    <button
+                      type="button"
+                      class="date-trigger"
+                      :class="{ selected: form.start_at }"
+                      @click="openCalendarPicker('start')"
+                    >
+                      <span class="date-trigger-icon"><CalendarDays :size="18" /></span>
+                      <span class="date-trigger-text">
+                        <small>START DATE</small>
+                        <strong>{{ formatDisplayDate(form.start_at) }}</strong>
+                      </span>
+                    </button>
 
-                <label class="field">
-                  <span>วัน/เวลาสิ้นสุด <b>*</b></span>
-                  <input v-model="form.end_at" type="datetime-local" />
-                </label>
+                    <div v-if="openCalendar === 'start'" class="calendar-popover">
+                      <div class="calendar-header">
+                        <button type="button" class="calendar-nav" @click="changeMonth(-1)">
+                          <ChevronLeft :size="18" />
+                        </button>
+                        <div>
+                          <small>เลือกวันที่เริ่มต้น</small>
+                          <strong>{{ calendarTitle }}</strong>
+                        </div>
+                        <button type="button" class="calendar-nav" @click="changeMonth(1)">
+                          <ChevronRight :size="18" />
+                        </button>
+                      </div>
+
+                      <div class="calendar-weekdays">
+                        <span v-for="dayName in weekDays" :key="dayName">{{ dayName }}</span>
+                      </div>
+
+                      <div class="calendar-days">
+                        <button
+                          v-for="day in calendarDays"
+                          :key="day.key"
+                          type="button"
+                          class="calendar-day"
+                          :class="{
+                            outside: day.outside,
+                            today: isToday(day),
+                            selected: isSelectedCalendarDate(day)
+                          }"
+                          @click="selectCalendarDate(day)"
+                        >
+                          {{ day.day }}
+                        </button>
+                      </div>
+
+                      <div class="calendar-footer">
+                        <span>เลือกได้ทุกวันที่ต้องการ</span>
+                        <button type="button" @click="selectToday">วันนี้</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="field date-field">
+                  <span>วันที่สิ้นสุด <b>*</b></span>
+                  <div class="date-picker end-picker" @click.stop>
+                    <button
+                      type="button"
+                      class="date-trigger"
+                      :class="{ selected: form.end_at }"
+                      @click="openCalendarPicker('end')"
+                    >
+                      <span class="date-trigger-icon"><CalendarDays :size="18" /></span>
+                      <span class="date-trigger-text">
+                        <small>END DATE</small>
+                        <strong>{{ formatDisplayDate(form.end_at) }}</strong>
+                      </span>
+                    </button>
+
+                    <div v-if="openCalendar === 'end'" class="calendar-popover">
+                      <div class="calendar-header">
+                        <button type="button" class="calendar-nav" @click="changeMonth(-1)">
+                          <ChevronLeft :size="18" />
+                        </button>
+                        <div>
+                          <small>เลือกวันที่สิ้นสุด</small>
+                          <strong>{{ calendarTitle }}</strong>
+                        </div>
+                        <button type="button" class="calendar-nav" @click="changeMonth(1)">
+                          <ChevronRight :size="18" />
+                        </button>
+                      </div>
+
+                      <div class="calendar-weekdays">
+                        <span v-for="dayName in weekDays" :key="dayName">{{ dayName }}</span>
+                      </div>
+
+                      <div class="calendar-days">
+                        <button
+                          v-for="day in calendarDays"
+                          :key="day.key"
+                          type="button"
+                          class="calendar-day"
+                          :disabled="isCalendarDateDisabled(day)"
+                          :class="{
+                            outside: day.outside,
+                            today: isToday(day),
+                            selected: isSelectedCalendarDate(day),
+                            disabled: isCalendarDateDisabled(day)
+                          }"
+                          @click="selectCalendarDate(day)"
+                        >
+                          {{ day.day }}
+                        </button>
+                      </div>
+
+                      <div class="calendar-footer">
+                        <span>วันสิ้นสุดต้องไม่ก่อนวันเริ่มต้น</span>
+                        <button
+                          type="button"
+                          :disabled="Boolean(form.start_at && toDateKey(new Date()) < form.start_at)"
+                          @click="selectToday"
+                        >
+                          วันนี้
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -456,7 +704,7 @@ async function createActivity() {
 
               <ul>
                 <li><Check :size="14" /> ชื่อและประเภทกิจกรรม</li>
-                <li><Check :size="14" /> วันและเวลาเริ่ม / สิ้นสุด</li>
+                <li><Check :size="14" /> วันที่เริ่ม / สิ้นสุด</li>
                 <li><Check :size="14" /> ผู้รับผิดชอบหลัก</li>
                 <li><Check :size="14" /> สถานที่จัดกิจกรรม</li>
               </ul>
@@ -603,6 +851,7 @@ async function createActivity() {
 .hero-card h1 {
   margin: 0;
   font-size: 30px;
+  color: #1e2a3e;
 }
 
 .hero-card p,
@@ -714,7 +963,7 @@ async function createActivity() {
 .skill-icon {
   display: grid;
   place-items: center;
-  background: #eef4ff;
+  background: #f5f4f4;
   color: #1769dc;
 }
 
@@ -728,11 +977,12 @@ async function createActivity() {
 .skills-heading h2 {
   margin: 0;
   font-size: 16px;
+  color: #1e2a3e;
 }
 
 .section-heading p {
   margin: 3px 0 0;
-  color: #93a0b1;
+  color: #657bbc;
   font-size: 10px;
 }
 
@@ -776,6 +1026,257 @@ async function createActivity() {
 .field select {
   height: 43px;
   padding: 0 12px;
+}
+
+
+.schedule-card {
+  overflow: visible;
+}
+
+.date-grid {
+  align-items: start;
+}
+
+.date-field {
+  min-width: 0;
+}
+
+.date-picker {
+  position: relative;
+}
+
+.date-trigger {
+  width: 100%;
+  min-height: 58px;
+  padding: 9px 12px;
+  border: 1px solid #dbe3ed;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #34445a;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+
+.date-trigger:hover:not(:disabled) {
+  border-color: #b8c6db;
+}
+
+.date-trigger:disabled {
+  background: #f7f8fa;
+  color: #aab3bf;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.date-trigger:focus-visible {
+  outline: none;
+  border-color: #8f7cf1;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.date-trigger.selected {
+  border-color: #c9b9f5;
+  background: linear-gradient(180deg, #ffffff 0%, #faf7ff 100%);
+}
+
+.date-trigger-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: #f1ebff;
+  color: #7137b8;
+}
+
+.date-trigger-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.date-trigger-text small {
+  color: #9a86b8;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.date-trigger-text strong {
+  overflow: hidden;
+  color: #34445a;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 80;
+  width: min(340px, calc(100vw - 56px));
+  padding: 14px;
+  border: 1px solid #e1e6ef;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 18px 50px rgba(30, 42, 62, 0.16);
+}
+
+.end-picker .calendar-popover {
+  right: 0;
+  left: auto;
+}
+
+.calendar-header {
+  margin-bottom: 12px;
+  padding: 2px 2px 10px;
+  border-bottom: 1px solid #eef1f5;
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
+  align-items: center;
+  gap: 8px;
+}
+
+.calendar-header > div {
+  min-width: 0;
+  text-align: center;
+}
+
+.calendar-header small {
+  display: block;
+  margin-bottom: 2px;
+  color: #98a4b4;
+  font-size: 9px;
+}
+
+.calendar-header strong {
+  display: block;
+  color: #26364b;
+  font-size: 14px;
+}
+
+.calendar-nav {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 9px;
+  background: #f5f6f9;
+  display: grid;
+  place-items: center;
+  color: #56677d;
+  cursor: pointer;
+}
+
+.calendar-nav:hover {
+  background: #eee9fb;
+  color: #7137b8;
+}
+
+.calendar-weekdays,
+.calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.calendar-weekdays {
+  margin-bottom: 5px;
+}
+
+.calendar-weekdays span {
+  min-height: 24px;
+  display: grid;
+  place-items: center;
+  color: #9aa5b4;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.calendar-day {
+  aspect-ratio: 1;
+  min-width: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  color: #415168;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.calendar-day:hover:not(:disabled):not(.selected) {
+  background: #f3effb;
+  color: #6b2fa8;
+}
+
+.calendar-day.outside {
+  color: #c3cad3;
+}
+
+.calendar-day.today:not(.selected) {
+  box-shadow: inset 0 0 0 1px #b9a3e6;
+  color: #6b2fa8;
+}
+
+.calendar-day.selected {
+  background: linear-gradient(135deg, #2563eb, #8613bd);
+  color: #fff;
+  box-shadow: 0 5px 12px rgba(109, 40, 217, 0.22);
+}
+
+.calendar-day.disabled,
+.calendar-day:disabled {
+  background: transparent;
+  color: #d6dbe2;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+.calendar-footer {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eef1f5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.calendar-footer span {
+  color: #8a97a8;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.calendar-footer button {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: #f1ebff;
+  color: #6d35aa;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.calendar-footer button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .field textarea {
@@ -832,6 +1333,7 @@ async function createActivity() {
 .tips-card h3 {
   margin: 0;
   font-size: 15px;
+  color: #1e2a3e;
 }
 
 .tips-card p {
@@ -1056,6 +1558,13 @@ async function createActivity() {
 
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .calendar-popover,
+  .end-picker .calendar-popover {
+    right: auto;
+    left: 0;
+    width: min(340px, calc(100vw - 52px));
   }
 
   .steps {

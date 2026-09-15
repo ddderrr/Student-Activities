@@ -14,14 +14,29 @@ import {
 import { useLanguage } from '../../composables/useLanguage'
 
 const { t } = useLanguage()
+const API_BASE = 'http://localhost:8000'
+
+/* =========================
+   Skill definitions
+   ดึงคะแนนจริงจาก participant skill ของกิจกรรม
+========================= */
+const skillKeys = [
+  { key: 'arts_culture_traditions', label: 'Arts, Culture, and Traditions' },
+  { key: 'volunteerism', label: 'Volunteerism' },
+  { key: 'academics', label: 'Academics' },
+  { key: 'internationalization', label: 'Internationalization' },
+  { key: 'health_promotion', label: 'Health Promotion' },
+  { key: 'nature_environmental_conservation', label: 'Nature & Environmental Conservation' }
+]
 
 const skillDisplay = (label) => {
+  // ใช้คำแปลเดิมได้ถ้ามี key ตรงกัน ไม่งั้นแสดง label จาก backend/domain ตรง ๆ
   const keyMap = {
-    'Leadership': 'leadership',
+    Leadership: 'leadership',
     'Critical Thinking': 'criticalThinking',
-    'Communication': 'communication',
-    'Teamwork': 'teamwork',
-    'Creativity': 'creativity',
+    Communication: 'communication',
+    Teamwork: 'teamwork',
+    Creativity: 'creativity',
     'Digital Literacy': 'digitalLiteracy'
   }
 
@@ -29,19 +44,20 @@ const skillDisplay = (label) => {
   return key ? t.value.adminStudentSkills[key] : label
 }
 
+/* =========================
+   Loading / API data
+========================= */
+const loading = ref(false)
+const error = ref('')
+const students = ref([])
+const totalFacultyBySemester = ref({})
 
 /* =========================
    Semester
 ========================= */
-const selectedSemester = ref('Semester 2/2028')
+const selectedSemester = ref('')
 const semesterOpen = ref(false)
-
-const semesters = [
-  'Semester 1/2028',
-  'Semester 2/2028',
-  'Semester 1/2029',
-  'Semester 2/2029'
-]
+const semesters = ref([])
 
 const selectSemester = (semester) => {
   selectedSemester.value = semester
@@ -64,12 +80,7 @@ const selectedScore = ref('All Scores')
 
 const skillOptions = [
   'All Skills',
-  'Leadership',
-  'Critical Thinking',
-  'Communication',
-  'Teamwork',
-  'Creativity',
-  'Digital Literacy'
+  ...skillKeys.map((skill) => skill.label)
 ]
 
 const scoreOptions = [
@@ -80,110 +91,47 @@ const scoreOptions = [
 ]
 
 /* =========================
-   Skill definitions
+   Fetch real data
 ========================= */
-const skillKeys = [
-  { key: 'leadership', label: 'Leadership' },
-  { key: 'criticalThinking', label: 'Critical Thinking' },
-  { key: 'communication', label: 'Communication' },
-  { key: 'teamwork', label: 'Teamwork' },
-  { key: 'creativity', label: 'Creativity' },
-  { key: 'digitalLiteracy', label: 'Digital Literacy' }
-]
+const loadStudentSkills = async () => {
+  loading.value = true
+  error.value = ''
 
+  try {
+    const response = await fetch(`${API_BASE}/api/admin/student-skills`)
+    const data = await response.json()
 
+    if (!response.ok) {
+      throw new Error(data.detail || 'Cannot load student skill data')
+    }
 
+    students.value = Array.isArray(data.students) ? data.students : []
+    semesters.value = Array.isArray(data.semesters) ? data.semesters : []
+    totalFacultyBySemester.value = data.totalFacultyBySemester || {}
 
+    if (
+      !selectedSemester.value ||
+      !semesters.value.includes(selectedSemester.value)
+    ) {
+      selectedSemester.value =
+        data.defaultSemester ||
+        semesters.value[0] ||
+        ''
+    }
 
-/* =========================
-   Mock data
-   ภายหลังเปลี่ยนส่วนนี้เป็นข้อมูลจาก API / Database ได้เลย
-========================= */
-
-/*=========================================================DATA BASE==================================================================*/
-// const students = ref([])
-// const totalFacultyBySemester = ref({})
-
-// const loadStudentSkills = async () => {
-//   const response = await fetch('/api/student-skills')
-//   const data = await response.json()
-
-//   students.value = data.students
-//   totalFacultyBySemester.value = data.totalFacultyBySemester
-// }
-
-// onMounted(() => {
-//   loadStudentSkills()
-// })
-
-
-
-
-const totalFacultyBySemester = {
-  'Semester 1/2028': 120,
-  'Semester 2/2028': 120,
-  'Semester 1/2029': 125,
-  'Semester 2/2029': 125
-}
-
-const students = ref([
-  {
-    id: '660510001',
-    name: 'Anan Chaiyaporn',
-    major: 'Computer Science',
-    semester: 'Semester 2/2028',
-    skills: { leadership: 4.2, criticalThinking: 3.8, communication: 4.1, teamwork: 4.7, creativity: 3.6, digitalLiteracy: 4.3 }
-  },
-  {
-    id: '660510002',
-    name: 'Benjamas K.',
-    major: 'Computer Science',
-    semester: 'Semester 2/2028',
-    skills: { leadership: 3.5, criticalThinking: 4.2, communication: 3.9, teamwork: 4.0, creativity: 4.5, digitalLiteracy: 3.8 }
-  },
-  {
-    id: '660510003',
-    name: 'Chanon S.',
-    major: 'Computer Science',
-    semester: 'Semester 2/2028',
-    skills: { leadership: 4.0, criticalThinking: 4.4, communication: 4.2, teamwork: 4.1, creativity: 3.9, digitalLiteracy: 4.6 }
-  },
-  {
-    id: '660510004',
-    name: 'Daranee P.',
-    major: 'Computer Science',
-    semester: 'Semester 2/2028',
-    skills: { leadership: 3.1, criticalThinking: 3.6, communication: 3.4, teamwork: 3.8, creativity: 4.0, digitalLiteracy: 3.5 }
-  },
-  {
-    id: '660510005',
-    name: 'Ekkarat N.',
-    major: 'Computer Science',
-    semester: 'Semester 2/2028',
-    skills: { leadership: 4.6, criticalThinking: 4.1, communication: 4.4, teamwork: 4.8, creativity: 4.2, digitalLiteracy: 4.5 }
-  },
-  {
-    id: '660510006',
-    name: 'Fahsai R.',
-    major: 'Computer Science',
-    semester: 'Semester 2/2028',
-    skills: { leadership: 2.8, criticalThinking: 3.2, communication: 3.6, teamwork: 3.4, creativity: 3.8, digitalLiteracy: 3.1 }
-  },
-  {
-    id: '650510011',
-    name: 'Garin T.',
-    major: 'Computer Science',
-    semester: 'Semester 1/2028',
-    skills: { leadership: 3.7, criticalThinking: 4.0, communication: 3.8, teamwork: 4.2, creativity: 3.5, digitalLiteracy: 4.1 }
-  },
-  {
-    id: '670510021',
-    name: 'Hathai W.',
-    major: 'Computer Science',
-    semester: 'Semester 1/2029',
-    skills: { leadership: 4.1, criticalThinking: 4.3, communication: 4.0, teamwork: 4.4, creativity: 4.2, digitalLiteracy: 4.5 }
+    if (Array.isArray(data.benchmarkScores) && data.benchmarkScores.length === 6) {
+      benchmarkScores.value = data.benchmarkScores.map((score) => Number(score) || 0)
+    }
+  } catch (err) {
+    console.error('Student Skills API Error:', err)
+    error.value = err.message || 'Cannot load student skill data'
+    students.value = []
+    semesters.value = []
+    totalFacultyBySemester.value = {}
+  } finally {
+    loading.value = false
   }
-])
+}
 
 /* =========================
    Helpers
@@ -193,7 +141,6 @@ const averageOfSkills = (student) => {
   const validValues = values.filter(value => Number.isFinite(value))
 
   if (validValues.length === 0) return 0
-
   return validValues.reduce((sum, value) => sum + value, 0) / validValues.length
 }
 
@@ -223,14 +170,17 @@ const scoreMatchesFilter = (score) => {
 /* =========================
    Semester data
 ========================= */
-const semesterStudents = computed(() =>
-  students.value.filter(student => student.semester === selectedSemester.value)
-)
+const semesterStudents = computed(() => {
+  if (!selectedSemester.value) return []
+  return students.value.filter(
+    student => student.semester === selectedSemester.value
+  )
+})
 
 const studentsEvaluated = computed(() => semesterStudents.value.length)
 
 const facultyPercentage = computed(() => {
-  const total = totalFacultyBySemester[selectedSemester.value] ?? 0
+  const total = totalFacultyBySemester.value[selectedSemester.value] ?? 0
   if (total === 0) return '0.0'
   return ((studentsEvaluated.value / total) * 100).toFixed(1)
 })
@@ -255,12 +205,13 @@ const facultySkillAverages = computed(() => {
       return
     }
 
-    const total = semesterStudents.value.reduce(
-      (sum, student) => sum + Number(student.skills?.[skill.key] ?? 0),
-      0
-    )
+    const values = semesterStudents.value
+      .map(student => Number(student.skills?.[skill.key] ?? 0))
+      .filter(value => Number.isFinite(value) && value > 0)
 
-    result[skill.key] = total / semesterStudents.value.length
+    result[skill.key] = values.length
+      ? values.reduce((sum, value) => sum + value, 0) / values.length
+      : 0
   })
 
   return result
@@ -294,8 +245,7 @@ const actualRadarPoints = computed(() =>
   buildRadarPoints(skillKeys.map(skill => facultySkillAverages.value[skill.key]))
 )
 
-// Benchmark ตอนนี้ตั้งไว้ที่ 4.0/5 ทุกทักษะ
-// ภายหลังรับค่าจาก Database ได้
+// Benchmark เริ่มต้น 4.0 / 5 ทุก skill
 const benchmarkScores = ref([4, 4, 4, 4, 4, 4])
 const benchmarkRadarPoints = computed(() => buildRadarPoints(benchmarkScores.value))
 
@@ -315,15 +265,15 @@ const topArea = computed(() => rankedFacultySkills.value[0] ?? null)
 const growthArea = computed(() => rankedFacultySkills.value.at(-1) ?? null)
 
 const growthActionPlan = computed(() => {
-  const area = growthArea.value?.label
+  const area = growthArea.value?.key
 
   const plans = {
-    'Leadership': 'เพิ่มกิจกรรมที่ให้นักศึกษารับบทบาทผู้นำและตัดสินใจเป็นทีม',
-    'Critical Thinking': 'เพิ่มกรณีศึกษาและโจทย์วิเคราะห์เพื่อฝึกการให้เหตุผล',
-    'Communication': 'เพิ่มการนำเสนอ การอภิปราย และ peer feedback',
-    'Teamwork': 'เพิ่มงานกลุ่มที่มีการแบ่งบทบาทและประเมินการทำงานร่วมกัน',
-    'Creativity': 'เพิ่มกิจกรรมออกแบบแนวทางแก้ปัญหาแบบเปิดและ project-based learning',
-    'Digital Literacy': 'เพิ่ม workshop เครื่องมือดิจิทัลและการประเมินแหล่งข้อมูลออนไลน์'
+    arts_culture_traditions: 'เพิ่มกิจกรรมด้านศิลปะ วัฒนธรรม และประเพณีที่ให้นักศึกษามีส่วนร่วมจริง',
+    volunteerism: 'เพิ่มกิจกรรมอาสาสมัครและกิจกรรมบริการชุมชนที่มีบทบาทชัดเจน',
+    academics: 'เพิ่มกิจกรรมวิชาการ เวิร์กช็อป และโจทย์ประยุกต์ที่เชื่อมกับการเรียน',
+    internationalization: 'เพิ่มกิจกรรมที่ส่งเสริมการทำงานข้ามวัฒนธรรมและการใช้ภาษาต่างประเทศ',
+    health_promotion: 'เพิ่มกิจกรรมส่งเสริมสุขภาพและการดูแลสุขภาวะของนักศึกษา',
+    nature_environmental_conservation: 'เพิ่มกิจกรรมด้านธรรมชาติ สิ่งแวดล้อม และการอนุรักษ์อย่างต่อเนื่อง'
   }
 
   return plans[area] ?? '—'
@@ -369,7 +319,6 @@ const selectedStudentRadarPoints = computed(() => {
   )
 })
 
-// เส้นเปรียบเทียบค่าเฉลี่ยของคณะใน semester เดียวกัน
 const selectedFacultyRadarPoints = computed(() =>
   buildRadarPoints(
     skillKeys.map(skill => facultySkillAverages.value[skill.key] ?? 0)
@@ -393,12 +342,12 @@ const selectedStrongestSkill = computed(() => {
 })
 
 const recommendationBySkill = {
-  leadership: 'Take a team-lead role in a project and practice structured decision making.',
-  criticalThinking: 'Practice case analysis and explain the evidence behind each conclusion.',
-  communication: 'Practice presentations, peer feedback, and concise professional communication.',
-  teamwork: 'Join collaborative projects with clear roles and regular peer evaluation.',
-  creativity: 'Work on open-ended projects that require multiple solution ideas and prototypes.',
-  digitalLiteracy: 'Practice digital tools, information verification, and responsible data usage.'
+  arts_culture_traditions: 'Join activities involving arts, culture, traditions, and community identity.',
+  volunteerism: 'Join volunteer projects with clear responsibilities and community impact.',
+  academics: 'Join academic workshops, competitions, or project-based learning activities.',
+  internationalization: 'Join cross-cultural or international activities and practice global collaboration.',
+  health_promotion: 'Join health-promotion activities and build sustainable wellness habits.',
+  nature_environmental_conservation: 'Join environmental conservation and sustainability activities.'
 }
 
 const selectedSkillGaps = computed(() => {
@@ -475,6 +424,7 @@ const handleEscape = (event) => {
 
 onMounted(() => {
   window.addEventListener('keydown', handleEscape)
+  loadStudentSkills()
 })
 
 onBeforeUnmount(() => {
@@ -501,6 +451,10 @@ onBeforeUnmount(() => {
         </p>
       </div>
 
+    </div>
+
+    <div v-if="error" class="skills-api-error">
+      {{ error }}
     </div>
 
 
@@ -764,7 +718,7 @@ onBeforeUnmount(() => {
                text-anchor="middle"
                class="radar-label"
                >
-               {{ skillDisplay('Leadership') }}
+               {{ skillDisplay(skillKeys[0].label) }}
                </text>
 
                <text
@@ -773,7 +727,7 @@ onBeforeUnmount(() => {
                text-anchor="start"
                class="radar-label"
                >
-               {{ skillDisplay('Critical Thinking') }}
+               {{ skillDisplay(skillKeys[1].label) }}
                </text>
 
                <text
@@ -782,7 +736,7 @@ onBeforeUnmount(() => {
                text-anchor="start"
                class="radar-label"
                >
-               {{ skillDisplay('Communication') }}
+               {{ skillDisplay(skillKeys[2].label) }}
                </text>
 
                <text
@@ -791,7 +745,7 @@ onBeforeUnmount(() => {
                text-anchor="middle"
                class="radar-label"
                >
-               {{ skillDisplay('Teamwork') }}
+               {{ skillDisplay(skillKeys[3].label) }}
                </text>
 
                <text
@@ -800,7 +754,7 @@ onBeforeUnmount(() => {
                text-anchor="end"
                class="radar-label"
                >
-               {{ skillDisplay('Creativity') }}
+               {{ skillDisplay(skillKeys[4].label) }}
                </text>
 
                <text
@@ -809,7 +763,7 @@ onBeforeUnmount(() => {
                text-anchor="end"
                class="radar-label"
                >
-               {{ skillDisplay('Digital Literacy') }}
+               {{ skillDisplay(skillKeys[5].label) }}
                </text>
 
           </svg>
@@ -1194,12 +1148,12 @@ onBeforeUnmount(() => {
                 <polygon :points="selectedFacultyRadarPoints" class="student-faculty-area" />
                 <polygon :points="selectedStudentRadarPoints" class="student-profile-area" />
 
-                <text x="250" y="25" text-anchor="middle" class="radar-label">{{ skillDisplay('Leadership') }}</text>
-                <text x="395" y="115" text-anchor="start" class="radar-label">{{ skillDisplay('Critical Thinking') }}</text>
-                <text x="395" y="278" text-anchor="start" class="radar-label">{{ skillDisplay('Communication') }}</text>
-                <text x="250" y="375" text-anchor="middle" class="radar-label">{{ skillDisplay('Teamwork') }}</text>
-                <text x="105" y="278" text-anchor="end" class="radar-label">{{ skillDisplay('Creativity') }}</text>
-                <text x="105" y="115" text-anchor="end" class="radar-label">{{ skillDisplay('Digital Literacy') }}</text>
+                <text x="250" y="25" text-anchor="middle" class="radar-label">{{ skillDisplay(skillKeys[0].label) }}</text>
+                <text x="395" y="115" text-anchor="start" class="radar-label">{{ skillDisplay(skillKeys[1].label) }}</text>
+                <text x="395" y="278" text-anchor="start" class="radar-label">{{ skillDisplay(skillKeys[2].label) }}</text>
+                <text x="250" y="375" text-anchor="middle" class="radar-label">{{ skillDisplay(skillKeys[3].label) }}</text>
+                <text x="105" y="278" text-anchor="end" class="radar-label">{{ skillDisplay(skillKeys[4].label) }}</text>
+                <text x="105" y="115" text-anchor="end" class="radar-label">{{ skillDisplay(skillKeys[5].label) }}</text>
               </svg>
             </div>
 
@@ -2600,4 +2554,15 @@ td {
   }
 }
 
+
+
+.skills-api-error {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 9px;
+  background: #fff7f7;
+  color: #b42318;
+  font-size: 12px;
+}
 </style>

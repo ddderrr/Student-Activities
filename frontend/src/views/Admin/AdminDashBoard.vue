@@ -18,20 +18,30 @@ import { useLanguage } from '../../composables/useLanguage'
 
 const { t } = useLanguage()
 
+const API_BASE = 'http://127.0.0.1:8000'
+
+const MONTH_LABELS = [
+  'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+  'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'
+]
+
+const currentMonthLabel =
+  MONTH_LABELS[new Date().getMonth()]
+
 
 /* =========================================
    Monthly / Quarterly
 ========================================= */
 
 const selectedPeriod = ref('MONTHLY')
-const selectedItem = ref('MAR')
+const selectedItem = ref(currentMonthLabel)
 
 const selectPeriod = (period) => {
 
   selectedPeriod.value = period
 
   if (period === 'MONTHLY') {
-    selectedItem.value = 'MAR'
+    selectedItem.value = currentMonthLabel
   } else {
     selectedItem.value = 'Q1'
   }
@@ -54,7 +64,7 @@ const error = ref(null)
    false = เรียกข้อมูลจริงจาก Backend API
 ========================================= */
 
-const USE_MOCK_DATA = true
+const USE_MOCK_DATA = false
 
 
 /* =========================================
@@ -90,20 +100,7 @@ const dashboardData = reactive({
     { month: 'DEC', count: 0 }
   ],
 
-  skills: [
-    {
-      name: 'CRITICAL THINKING',
-      percentage: 0
-    },
-    {
-      name: 'COMMUNICATION',
-      percentage: 0
-    },
-    {
-      name: 'LEADERSHIP',
-      percentage: 0
-    }
-  ]
+  skills: []
 
 })
 
@@ -167,7 +164,7 @@ const fetchDashboard = async () => {
   try {
 
     const response = await fetch(
-      'http://localhost:3000/api/admin/dashboard'
+      `${API_BASE}/api/admin/dashboard`
     )
 
     if (!response.ok) {

@@ -32,6 +32,107 @@ const searchText = ref('')
 const quickSearch = ref('')
 const selectedCategory = ref('all')
 const selectedDate = ref('')
+const showFilterCalendar = ref(false)
+const filterCalendarCursor = ref(new Date())
+const filterWeekDays = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา']
+
+const filterCalendarTitle = computed(() =>
+  new Intl.DateTimeFormat('th-TH-u-ca-gregory', {
+    month: 'long',
+    year: 'numeric'
+  }).format(filterCalendarCursor.value)
+)
+
+const filterCalendarDays = computed(() => {
+  const year = filterCalendarCursor.value.getFullYear()
+  const month = filterCalendarCursor.value.getMonth()
+  const firstDay = new Date(year, month, 1)
+  const mondayOffset = (firstDay.getDay() + 6) % 7
+  const gridStart = new Date(year, month, 1 - mondayOffset)
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(
+      gridStart.getFullYear(),
+      gridStart.getMonth(),
+      gridStart.getDate() + index
+    )
+
+    return {
+      date,
+      key: filterDateKey(date),
+      day: date.getDate(),
+      outside: date.getMonth() !== month
+    }
+  })
+})
+
+function filterDateKey(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function parseFilterDate(value) {
+  if (!value) return null
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return null
+  return new Date(year, month - 1, day)
+}
+
+function formatFilterDate(value) {
+  const date = parseFilterDate(value)
+  if (!date) return 'เลือกวันที่'
+
+  return new Intl.DateTimeFormat('th-TH-u-ca-gregory', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  }).format(date)
+}
+
+function openFilterCalendar() {
+  showFilterCalendar.value = !showFilterCalendar.value
+  if (showFilterCalendar.value) {
+    filterCalendarCursor.value = parseFilterDate(selectedDate.value) || new Date()
+  }
+}
+
+function changeFilterMonth(offset) {
+  const current = filterCalendarCursor.value
+  filterCalendarCursor.value = new Date(
+    current.getFullYear(),
+    current.getMonth() + offset,
+    1
+  )
+}
+
+function isFilterDateSelected(day) {
+  return day.key === selectedDate.value
+}
+
+function isFilterToday(day) {
+  return day.key === filterDateKey(new Date())
+}
+
+function selectFilterDate(day) {
+  selectedDate.value = day.key
+  showFilterCalendar.value = false
+  applyFilters()
+}
+
+function selectFilterToday() {
+  selectedDate.value = filterDateKey(new Date())
+  showFilterCalendar.value = false
+  applyFilters()
+}
+
+function clearFilterDate() {
+  selectedDate.value = ''
+  showFilterCalendar.value = false
+  applyFilters()
+}
+
 const currentPage = ref(1)
 const rowsPerPage = 10
 const router = useRouter()
@@ -68,12 +169,15 @@ const API_BASE = 'http://localhost:8000'
 // Import participants modal state
 const showImportModal = ref(false)
 const selectedActivity = ref(null)
-const selectedFile = ref(null)
+const selectedFiles = ref([])
+const importFileInput = ref(null)
+const isDraggingFile = ref(false)
 const importPreview = ref(null)
 const importError = ref('')
 const importLoading = ref(false)
 const confirmLoading = ref(false)
 const importSuccess = ref('')
+const showImportIssues = ref(false)
 
 // Manage participants / activities
 const openManageMenuId = ref(null)
@@ -132,8 +236,7 @@ const filteredActivities = computed(() => {
     const matchQuick =
       !quickKeyword ||
       String(activity.name || '').toLowerCase().includes(quickKeyword) ||
-      String(activity.organizer || '').toLowerCase().includes(quickKeyword) ||
-      String(activity.uid || '').toLowerCase().includes(quickKeyword)
+      String(activity.organizer || '').toLowerCase().includes(quickKeyword)
 
     const matchCategory =
       selectedCategory.value === 'all' ||
@@ -602,10 +705,12 @@ function openImportParticipants(activity) {
 
 function importParticipants(activity) {
   selectedActivity.value = activity
-  selectedFile.value = null
+  selectedFiles.value = []
+  isDraggingFile.value = false
   importPreview.value = null
   importError.value = ''
   importSuccess.value = ''
+  showImportIssues.value = false
   showImportModal.value = true
 }
 
@@ -614,23 +719,107 @@ function closeImportModal() {
 
   showImportModal.value = false
   selectedActivity.value = null
-  selectedFile.value = null
+  selectedFiles.value = []
+  isDraggingFile.value = false
   importPreview.value = null
   importError.value = ''
   importSuccess.value = ''
+  showImportIssues.value = false
+}
+
+function resetImportPreviewState() {
+  importPreview.value = null
+  importError.value = ''
+  importSuccess.value = ''
+  showImportIssues.value = false
+}
+
+function backToImportFiles() {
+  if (importLoading.value || confirmLoading.value) return
+  resetImportPreviewState()
+}
+
+function isSupportedImportFile(file) {
+  const name = file?.name?.toLowerCase() || ''
+  return name.endsWith('.csv') || name.endsWith('.xlsx')
+}
+
+function addImportFiles(fileList) {
+  const incomingFiles = Array.from(fileList || [])
+  if (!incomingFiles.length) return
+
+  const supportedFiles = incomingFiles.filter(isSupportedImportFile)
+  const rejectedFiles = incomingFiles.filter((file) => !isSupportedImportFile(file))
+
+  const existingKeys = new Set(
+    selectedFiles.value.map(
+      (file) => `${file.name}-${file.size}-${file.lastModified}`
+    )
+  )
+
+  const uniqueFiles = supportedFiles.filter((file) => {
+    const key = `${file.name}-${file.size}-${file.lastModified}`
+    if (existingKeys.has(key)) return false
+    existingKeys.add(key)
+    return true
+  })
+
+  selectedFiles.value = [...selectedFiles.value, ...uniqueFiles]
+  resetImportPreviewState()
+
+  if (rejectedFiles.length) {
+    importError.value = 'รองรับเฉพาะไฟล์ .csv และ .xlsx เท่านั้น'
+  }
+}
+
+function openImportFilePicker() {
+  if (importLoading.value || confirmLoading.value) return
+  importFileInput.value?.click()
 }
 
 function handleImportFile(event) {
-  selectedFile.value = event.target.files?.[0] ?? null
-  importPreview.value = null
-  importError.value = ''
-  importSuccess.value = ''
+  addImportFiles(event.target.files)
+  event.target.value = ''
+}
+
+function handleImportDrop(event) {
+  isDraggingFile.value = false
+  addImportFiles(event.dataTransfer?.files)
+}
+
+function removeImportFile(index) {
+  selectedFiles.value.splice(index, 1)
+  resetImportPreviewState()
+}
+
+function toggleImportIssues() {
+  if (!importPreview.value?.invalid_count) return
+  showImportIssues.value = !showImportIssues.value
+}
+
+function validPreviewStudents() {
+  if (!importPreview.value) return []
+
+  return importPreview.value.students.filter(
+    (student) => !(student._issueErrors || []).length
+  )
+}
+
+function cleanStudentForConfirm(student) {
+  const {
+    _issueErrors,
+    _sourceFile,
+    _sourceRow,
+    ...cleanStudent
+  } = student
+
+  return cleanStudent
 }
 
 async function previewParticipantsImport() {
   if (!selectedActivity.value) return
 
-  if (!selectedFile.value) {
+  if (!selectedFiles.value.length) {
     importError.value = 'กรุณาเลือกไฟล์ CSV หรือ Excel ก่อน'
     return
   }
@@ -638,29 +827,74 @@ async function previewParticipantsImport() {
   importLoading.value = true
   importError.value = ''
   importSuccess.value = ''
-
-  const formData = new FormData()
-  formData.append('file', selectedFile.value)
+  showImportIssues.value = false
 
   try {
-    const response = await fetch(
-      `${API_BASE}/api/activities/${selectedActivity.value.id}/participants/import/preview`,
-      {
-        method: 'POST',
-        body: formData
-      }
-    )
-
-    const data = await response.json()
-
-    if (!response.ok) {
-      throw new Error(data.detail || 'ไม่สามารถอ่านไฟล์ได้')
+    const combinedPreview = {
+      total: 0,
+      invalid_count: 0,
+      students: [],
+      invalid_rows: []
     }
 
-    importPreview.value = data
+    for (const file of selectedFiles.value) {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await fetch(
+        `${API_BASE}/api/activities/${selectedActivity.value.id}/participants/import/preview`,
+        {
+          method: 'POST',
+          body: formData
+        }
+      )
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(`${file.name}: ${data.detail || 'ไม่สามารถอ่านไฟล์ได้'}`)
+      }
+
+      const fileStudents = data.students || []
+      const fileIssues = data.invalid_rows || []
+      const issuesByStudentIndex = new Map()
+
+      for (const issue of fileIssues) {
+        const localIndex = Math.max(0, Number(issue.row || 2) - 2)
+        const errors = Array.isArray(issue.errors)
+          ? issue.errors
+          : [String(issue.errors || 'ข้อมูลไม่ถูกต้อง')]
+
+        issuesByStudentIndex.set(localIndex, errors)
+
+        combinedPreview.invalid_rows.push({
+          file_name: file.name,
+          row: Number(issue.row || localIndex + 2),
+          student_index: combinedPreview.students.length + localIndex,
+          errors
+        })
+      }
+
+      const normalizedStudents = fileStudents.map((student, index) => {
+        const role = String(student.role || 'participant').trim().toLowerCase()
+
+        return {
+          ...student,
+          role: role === 'organizer' ? 'organizer' : 'participant',
+          _sourceFile: file.name,
+          _sourceRow: index + 2,
+          _issueErrors: issuesByStudentIndex.get(index) || []
+        }
+      })
+
+      combinedPreview.total += Number(data.total || normalizedStudents.length)
+      combinedPreview.invalid_count += Number(data.invalid_count || fileIssues.length)
+      combinedPreview.students.push(...normalizedStudents)
+    }
+
+    importPreview.value = combinedPreview
   } catch (error) {
-    importError.value =
-      error.message || 'ไม่สามารถเชื่อมต่อ Backend ได้'
+    importError.value = error.message || 'ไม่สามารถเชื่อมต่อ Backend ได้'
   } finally {
     importLoading.value = false
   }
@@ -669,9 +903,11 @@ async function previewParticipantsImport() {
 async function confirmParticipantsImport() {
   if (!selectedActivity.value || !importPreview.value) return
 
-  if (importPreview.value.invalid_count > 0) {
+  const studentsToImport = validPreviewStudents()
+
+  if (!studentsToImport.length) {
     importError.value =
-      'กรุณาแก้ข้อมูลที่ไม่ถูกต้องก่อน Confirm Import'
+      'ไม่มีข้อมูลที่พร้อม Import กรุณาตรวจสอบ Issues ก่อน'
     return
   }
 
@@ -688,7 +924,7 @@ async function confirmParticipantsImport() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          students: importPreview.value.students
+          students: studentsToImport.map(cleanStudentForConfirm)
         })
       }
     )
@@ -699,16 +935,16 @@ async function confirmParticipantsImport() {
       throw new Error(data.detail || 'Import ไม่สำเร็จ')
     }
 
-    // TEST MODE: sync จำนวน participant จาก backend memory
     selectedActivity.value.participants = data.total_participants
 
     importSuccess.value =
       `Import สำเร็จ ${data.imported_count} คน` +
       (data.duplicate_count
         ? ` (ข้ามข้อมูลซ้ำ ${data.duplicate_count} คน)`
+        : '') +
+      (importPreview.value.invalid_count
+        ? ` • ข้ามข้อมูลที่มีปัญหา ${importPreview.value.invalid_count} รายการ`
         : '')
-
-    // ให้ modal ยังอยู่เพื่อเห็นผลลัพธ์ก่อน
   } catch (error) {
     importError.value =
       error.message || 'ไม่สามารถเชื่อมต่อ Backend ได้'
@@ -933,16 +1169,64 @@ async function confirmParticipantsImport() {
         </select>
       </div>
 
-      <div class="filter-field">
+      <div class="filter-field filter-date-field">
         <label>DATE FROM</label>
 
-        <div class="input-box">
-          <CalendarDays :size="16" />
-          <input
-            v-model="selectedDate"
-            type="date"
-            @change="applyFilters"
-          />
+        <div class="filter-date-picker" @click.stop>
+          <button
+            type="button"
+            class="filter-date-trigger"
+            :class="{ selected: selectedDate }"
+            @click="openFilterCalendar"
+          >
+            <CalendarDays :size="16" />
+            <span :class="{ placeholder: !selectedDate }">
+              {{ formatFilterDate(selectedDate) }}
+            </span>
+          </button>
+
+          <div v-if="showFilterCalendar" class="filter-calendar-popover">
+            <div class="filter-calendar-header">
+              <button type="button" @click="changeFilterMonth(-1)">
+                <ChevronLeft :size="17" />
+              </button>
+
+              <strong>{{ filterCalendarTitle }}</strong>
+
+              <button type="button" @click="changeFilterMonth(1)">
+                <ChevronRight :size="17" />
+              </button>
+            </div>
+
+            <div class="filter-calendar-weekdays">
+              <span v-for="dayName in filterWeekDays" :key="dayName">
+                {{ dayName }}
+              </span>
+            </div>
+
+            <div class="filter-calendar-days">
+              <button
+                v-for="day in filterCalendarDays"
+                :key="day.key"
+                type="button"
+                :class="{
+                  outside: day.outside,
+                  today: isFilterToday(day),
+                  selected: isFilterDateSelected(day)
+                }"
+                @click="selectFilterDate(day)"
+              >
+                {{ day.day }}
+              </button>
+            </div>
+
+            <div class="filter-calendar-footer">
+              <button type="button" class="clear" @click="clearFilterDate">
+                ล้างวันที่
+              </button>
+              <button type="button" @click="selectFilterToday">วันนี้</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1046,7 +1330,6 @@ async function confirmParticipantsImport() {
                 <div class="activity-name">
                   <strong>{{ activity.name }}</strong>
                   <div class="activity-meta">
-                    <small>UID: {{ activity.uid }}</small>
                     <span
                       class="activity-status"
                       :class="statusClass(activity.status)"
@@ -1260,7 +1543,6 @@ async function confirmParticipantsImport() {
             <h2>Add Student Manually</h2>
             <p v-if="selectedActivity" class="selected-activity">
               {{ selectedActivity.name }}
-              <span>• {{ selectedActivity.uid }}</span>
             </p>
           </div>
 
@@ -1441,14 +1723,20 @@ async function confirmParticipantsImport() {
       class="modal-backdrop"
       @click.self="closeImportModal"
     >
-      <div class="import-modal">
+      <div
+          class="import-modal import-participants-modal"
+          :class="{ 'review-mode': importPreview }"
+        >
         <div class="modal-header">
           <div>
-            <p class="modal-eyebrow">IMPORT FROM FILE</p>
-            <h2>Import Student List</h2>
+            <p class="modal-eyebrow">
+              {{ importPreview ? 'IMPORT PREVIEW' : 'IMPORT FROM FILE' }}
+            </p>
+            <h2>
+              {{ importPreview ? 'Review Participants' : 'Import Student List' }}
+            </h2>
             <p v-if="selectedActivity" class="selected-activity">
               {{ selectedActivity.name }}
-              <span>• {{ selectedActivity.uid }}</span>
             </p>
           </div>
 
@@ -1460,28 +1748,71 @@ async function confirmParticipantsImport() {
           </button>
         </div>
 
-        <label class="file-dropzone">
-          <FileSpreadsheet :size="34" />
+        <!-- STEP 1: FILES -->
+        <template v-if="!importPreview">
+          <div
+            class="file-dropzone"
+            :class="{ dragging: isDraggingFile, 'has-files': selectedFiles.length }"
+            @dragenter.prevent="isDraggingFile = true"
+            @dragover.prevent="isDraggingFile = true"
+            @dragleave.prevent="isDraggingFile = false"
+            @drop.prevent="handleImportDrop"
+          >
+            <button
+              type="button"
+              class="dropzone-heading dropzone-select-button"
+              :disabled="importLoading || confirmLoading"
+              @click="openImportFilePicker"
+            >
+              <FileSpreadsheet :size="34" />
 
-          <strong>
-            {{
-              selectedFile
-                ? selectedFile.name
-                : 'Select CSV or Excel file'
-            }}
-          </strong>
+              <div>
+                <strong>ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์</strong>
+                <span>รองรับไฟล์ .csv และ .xlsx</span>
+              </div>
+            </button>
 
-          <span>
-            รองรับไฟล์ .csv และ .xlsx
-          </span>
+            <div
+              v-if="selectedFiles.length"
+              class="selected-file-list"
+            >
+              <div
+                v-for="(file, index) in selectedFiles"
+                :key="`${file.name}-${file.size}-${file.lastModified}`"
+                class="selected-file-item"
+              >
+                <div class="selected-file-info">
+                  <div class="selected-file-icon">
+                    <FileSpreadsheet :size="18" />
+                  </div>
 
-          <input
-            type="file"
-            accept=".csv,.xlsx"
-            hidden
-            @change="handleImportFile"
-          />
-        </label>
+                  <div class="selected-file-text">
+                    <strong>{{ file.name }}</strong>
+                    <span>{{ Math.max(1, Math.ceil(file.size / 1024)) }} KB</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  class="remove-file-button"
+                  title="ลบไฟล์"
+                  @click="removeImportFile(index)"
+                >
+                  <X :size="16" />
+                </button>
+              </div>
+            </div>
+
+            <input
+              ref="importFileInput"
+              type="file"
+              accept=".csv,.xlsx"
+              multiple
+              hidden
+              @change="handleImportFile"
+            />
+          </div>
+        </template>
 
         <div
           v-if="importError"
@@ -1499,18 +1830,19 @@ async function confirmParticipantsImport() {
           {{ importSuccess }}
         </div>
 
+        <!-- STEP 2: PREVIEW ONLY -->
         <div
           v-if="importPreview"
-          class="preview-panel"
+          class="preview-panel import-review-panel"
         >
           <div class="preview-summary">
-            <div>
+            <div class="preview-summary-item">
               <span>FOUND</span>
               <strong>{{ importPreview.total }}</strong>
             </div>
 
-            <div>
-              <span>VALID</span>
+            <div class="preview-summary-item">
+              <span>READY</span>
               <strong>
                 {{
                   importPreview.total -
@@ -1519,43 +1851,129 @@ async function confirmParticipantsImport() {
               </strong>
             </div>
 
-            <div>
+            <button
+              type="button"
+              class="preview-summary-item issue-summary-button"
+              :class="{ active: showImportIssues }"
+              :disabled="!importPreview.invalid_count"
+              @click="toggleImportIssues"
+            >
               <span>ISSUES</span>
               <strong>{{ importPreview.invalid_count }}</strong>
+              <small v-if="importPreview.invalid_count">
+                {{ showImportIssues ? 'ซ่อนรายละเอียด' : 'กดดูรายละเอียด' }}
+              </small>
+            </button>
+          </div>
+
+          <div
+            v-if="showImportIssues && importPreview.invalid_count"
+            class="import-issues-panel"
+          >
+            <div class="issues-panel-heading">
+              <TriangleAlert :size="17" />
+              <div>
+                <strong>Import Issues</strong>
+                <span>รายการเหล่านี้จะถูกข้ามตอน Confirm Import</span>
+              </div>
+            </div>
+
+            <div class="issue-list">
+              <div
+                v-for="(issue, issueIndex) in importPreview.invalid_rows"
+                :key="`${issue.file_name}-${issue.row}-${issueIndex}`"
+                class="issue-item"
+              >
+                <div class="issue-item-top">
+                  <strong>
+                    {{
+                      importPreview.students[issue.student_index]?.student_id ||
+                      'Unknown student'
+                    }}
+                  </strong>
+                  <span>{{ issue.file_name }} • row {{ issue.row }}</span>
+                </div>
+
+                <ul>
+                  <li
+                    v-for="(error, errorIndex) in issue.errors"
+                    :key="`${issueIndex}-${errorIndex}`"
+                  >
+                    {{ error }}
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
 
-          <div class="preview-table-wrapper">
-            <table class="preview-table">
+          <div class="preview-table-wrapper preview-participants-scroll">
+            <table class="preview-table participants-preview-table">
               <thead>
                 <tr>
                   <th>STUDENT ID</th>
                   <th>NAME</th>
                   <th>EMAIL</th>
+                  <th>ROLE</th>
+                  <th>STATUS</th>
                 </tr>
               </thead>
 
               <tbody>
                 <tr
-                  v-for="(student, index) in importPreview.students.slice(0, 5)"
-                  :key="student.student_id || index"
+                  v-for="(student, index) in importPreview.students"
+                  :key="`${student.student_id || 'student'}-${index}`"
+                  :class="{ 'preview-row-issue': student._issueErrors?.length }"
                 >
                   <td>{{ student.student_id }}</td>
+
                   <td>
                     {{ student.first_name }}
                     {{ student.last_name }}
                   </td>
+
                   <td>{{ student.email }}</td>
+
+                  <td>
+                    <select
+                      v-model="student.role"
+                      class="preview-role-select"
+                      :disabled="confirmLoading"
+                    >
+                      <option value="participant">Participant</option>
+                      <option value="organizer">Organizer</option>
+                    </select>
+                  </td>
+
+                  <td>
+                    <button
+                      v-if="student._issueErrors?.length"
+                      type="button"
+                      class="preview-status issue"
+                      @click="
+                        showImportIssues = true
+                      "
+                    >
+                      Issue
+                    </button>
+
+                    <span
+                      v-else
+                      class="preview-status ready"
+                    >
+                      Ready
+                    </span>
+                  </td>
                 </tr>
               </tbody>
             </table>
           </div>
 
           <p
-            v-if="importPreview.total > 5"
-            class="preview-note"
+            v-if="importPreview.invalid_count"
+            class="preview-note preview-issue-note"
           >
-            แสดงตัวอย่าง 5 จาก {{ importPreview.total }} คน
+            {{ importPreview.invalid_count }} รายการมีปัญหาและจะไม่ถูกนำเข้า
+            ส่วนรายการที่เป็น Ready ยังสามารถ Confirm Import ได้ตามปกติ
           </p>
         </div>
 
@@ -1569,8 +1987,23 @@ async function confirmParticipantsImport() {
           </button>
 
           <button
-            class="modal-preview-button"
+            v-if="importPreview"
+            class="modal-secondary-button"
             :disabled="importLoading || confirmLoading"
+            @click="backToImportFiles"
+          >
+            <ChevronLeft :size="17" />
+            Back
+          </button>
+
+          <button
+            v-else
+            class="modal-preview-button"
+            :disabled="
+              importLoading ||
+              confirmLoading ||
+              !selectedFiles.length
+            "
             @click="previewParticipantsImport"
           >
             <LoaderCircle
@@ -1592,7 +2025,7 @@ async function confirmParticipantsImport() {
             class="modal-confirm-button"
             :disabled="
               confirmLoading ||
-              importPreview.invalid_count > 0
+              validPreviewStudents().length === 0
             "
             @click="confirmParticipantsImport"
           >
@@ -1606,7 +2039,7 @@ async function confirmParticipantsImport() {
             {{
               confirmLoading
                 ? 'Importing...'
-                : 'Confirm Import'
+                : `Confirm Import (${validPreviewStudents().length})`
             }}
           </button>
         </div>
@@ -1625,7 +2058,7 @@ async function confirmParticipantsImport() {
             <p class="modal-eyebrow">MANAGE ACTIVITY</p>
             <h2>Edit Activity</h2>
             <p v-if="selectedActivity" class="selected-activity">
-              {{ selectedActivity.uid }}
+              {{ selectedActivity.name }}
             </p>
           </div>
 
@@ -1885,6 +2318,185 @@ async function confirmParticipantsImport() {
   letter-spacing: 0.06em;
 }
 
+.filter-date-field {
+  position: relative;
+  z-index: 40;
+}
+
+.filter-date-picker {
+  position: relative;
+}
+
+.filter-date-trigger {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid #dfe7f2;
+  border-radius: 9px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #3c4b60;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.filter-date-trigger:hover,
+.filter-date-trigger.selected {
+  border-color: #b9c9dd;
+}
+
+.filter-date-trigger:focus-visible {
+  outline: none;
+  border-color: #8f7cf1;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.filter-date-trigger svg {
+  flex: 0 0 auto;
+  color: #91a2b9;
+}
+
+.filter-date-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-date-trigger .placeholder {
+  color: #98a5b6;
+}
+
+.filter-calendar-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 120;
+  width: 320px;
+  padding: 13px;
+  border: 1px solid #e0e6ef;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(30, 42, 62, 0.16);
+}
+
+.filter-calendar-header {
+  margin-bottom: 10px;
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-calendar-header strong {
+  color: #29394f;
+  font-size: 13px;
+  text-align: center;
+}
+
+.filter-calendar-header button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 9px;
+  background: #f5f7fa;
+  display: grid;
+  place-items: center;
+  color: #5b6b80;
+  cursor: pointer;
+}
+
+.filter-calendar-header button:hover {
+  background: #f0ebfb;
+  color: #7137b8;
+}
+
+.filter-calendar-weekdays,
+.filter-calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.filter-calendar-weekdays {
+  margin-bottom: 5px;
+}
+
+.filter-calendar-weekdays span {
+  min-height: 23px;
+  display: grid;
+  place-items: center;
+  color: #98a5b6;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.filter-calendar-days button {
+  aspect-ratio: 1;
+  min-width: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  color: #415168;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.filter-calendar-days button:hover:not(.selected) {
+  background: #f3effb;
+  color: #6b2fa8;
+}
+
+.filter-calendar-days button.outside {
+  color: #c5ccd6;
+}
+
+.filter-calendar-days button.today:not(.selected) {
+  box-shadow: inset 0 0 0 1px #b9a3e6;
+  color: #6b2fa8;
+}
+
+.filter-calendar-days button.selected {
+  background: linear-gradient(135deg, #2563eb, #8613bd);
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(109, 40, 217, 0.2);
+}
+
+.filter-calendar-footer {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid #eef1f5;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.filter-calendar-footer button {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: #f1ebff;
+  color: #6d35aa;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.filter-calendar-footer button.clear {
+  background: #f5f7fa;
+  color: #66758a;
+}
+
 .input-box {
   height: 42px;
   padding: 0 12px;
@@ -1974,6 +2586,28 @@ async function confirmParticipantsImport() {
 .table-scroll {
   overflow-x: auto;
   transition: padding-bottom 0.18s ease;
+  scrollbar-width: thin;
+  scrollbar-color: #cfd8e5 #ffffff;
+}
+
+.table-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.table-scroll::-webkit-scrollbar-track {
+  background: #ffffff;
+  border-radius: 999px;
+}
+
+.table-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #cfd8e5;
+}
+
+.table-scroll::-webkit-scrollbar-thumb:hover {
+  background: #b9c5d4;
 }
 
 .table-scroll.menu-open {
@@ -2454,6 +3088,12 @@ td {
   box-shadow: 0 24px 65px rgba(15, 23, 42, 0.2);
 }
 
+.import-modal.review-mode {
+  width: min(1000px, calc(100vw - 48px));
+  max-height: 92vh;
+  padding: 26px;
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;
@@ -2522,6 +3162,126 @@ td {
 .file-dropzone span {
   color: #92a2b8;
   font-size: 12px;
+}
+
+.file-dropzone.dragging {
+  border-color: #7d8df5;
+  background: #f4f6ff;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.08);
+}
+
+.file-dropzone.has-files {
+  align-items: stretch;
+  justify-content: flex-start;
+  cursor: pointer;
+}
+
+.dropzone-heading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.dropzone-select-button {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.dropzone-select-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.dropzone-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.selected-file-list {
+  width: 100%;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.selected-file-item {
+  width: 100%;
+  min-height: 58px;
+  padding: 9px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 11px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+.selected-file-info {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.selected-file-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: #edf4ff;
+  color: #1769dc;
+}
+
+.selected-file-text {
+  min-width: 0;
+  text-align: left;
+}
+
+.selected-file-text strong {
+  display: block;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #34445c;
+  font-size: 13px;
+}
+
+.selected-file-text span {
+  display: block;
+  margin-top: 2px;
+  color: #92a2b8;
+  font-size: 11px;
+}
+
+.remove-file-button {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: #f5f7fa;
+  color: #7a8798;
+  cursor: pointer;
+}
+
+.remove-file-button:hover {
+  background: #fff0f0;
+  color: #dc4c4c;
 }
 
 .import-message {
@@ -2597,6 +3357,223 @@ td {
   padding: 9px 13px 12px;
   color: #8b9bb0;
   font-size: 10px;
+}
+
+/* Import review */
+.import-participants-modal {
+  scrollbar-width: thin;
+  scrollbar-color: #d7dee8 #ffffff;
+}
+
+.import-participants-modal::-webkit-scrollbar {
+  width: 10px;
+}
+
+.import-participants-modal::-webkit-scrollbar-track {
+  background: #ffffff;
+  border-radius: 999px;
+}
+
+.import-participants-modal::-webkit-scrollbar-thumb {
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #d7dee8;
+}
+
+.import-participants-modal::-webkit-scrollbar-thumb:hover {
+  background: #c5cfdb;
+}
+
+.import-review-panel {
+  margin-top: 0;
+}
+
+.preview-summary > .preview-summary-item {
+  min-width: 0;
+  padding: 13px 15px;
+  text-align: left;
+}
+
+.issue-summary-button {
+  border: 0;
+  border-left: 1px solid #e8edf4;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.issue-summary-button:not(:disabled):hover,
+.issue-summary-button.active {
+  background: #fff8f8;
+}
+
+.issue-summary-button:disabled {
+  cursor: default;
+}
+
+.issue-summary-button small {
+  display: block;
+  margin-top: 2px;
+  color: #bd6262;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.import-issues-panel {
+  padding: 14px;
+  border-bottom: 1px solid #e8edf4;
+  background: #fffafb;
+}
+
+.issues-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: #b94d4d;
+}
+
+.issues-panel-heading > div {
+  min-width: 0;
+}
+
+.issues-panel-heading strong {
+  display: block;
+  color: #8f3434;
+  font-size: 12px;
+}
+
+.issues-panel-heading span {
+  display: block;
+  margin-top: 2px;
+  color: #b16a6a;
+  font-size: 10px;
+}
+
+.issue-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.issue-item {
+  padding: 9px 10px;
+  border: 1px solid #f0d5d5;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.issue-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.issue-item-top strong {
+  color: #3f4c60;
+  font-size: 11px;
+}
+
+.issue-item-top span {
+  color: #9c7880;
+  font-size: 9px;
+}
+
+.issue-item ul {
+  margin: 6px 0 0 16px;
+  padding: 0;
+  color: #b24f4f;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.preview-participants-scroll {
+  max-height: 500px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #d7dee8 #ffffff;
+}
+
+.preview-participants-scroll::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.preview-participants-scroll::-webkit-scrollbar-track {
+  background: #ffffff;
+}
+
+.preview-participants-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #d7dee8;
+}
+
+.participants-preview-table {
+  min-width: 900px;
+}
+
+.participants-preview-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8fafc;
+}
+
+.preview-row-issue {
+  background: #fffafa;
+}
+
+.preview-role-select {
+  min-width: 118px;
+  height: 32px;
+  padding: 0 28px 0 9px;
+  border: 1px solid #dce5ef;
+  border-radius: 8px;
+  outline: none;
+  background: #fff;
+  color: #40516a;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.preview-role-select:focus {
+  border-color: #8b7ee8;
+  box-shadow: 0 0 0 3px rgba(139, 126, 232, 0.08);
+}
+
+.preview-status {
+  min-width: 54px;
+  min-height: 25px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.preview-status.ready {
+  background: #eaf8f0;
+  color: #218154;
+}
+
+.preview-status.issue {
+  background: #fff0f0;
+  color: #bd4b4b;
+  cursor: pointer;
+}
+
+.preview-issue-note {
+  border-top: 1px solid #edf1f5;
+  background: #fffdfd;
+  color: #9c6570;
 }
 
 .modal-actions {
@@ -2924,6 +3901,11 @@ td {
     width: 100%;
   }
 
+
+  .filter-calendar-popover {
+    width: min(320px, calc(100vw - 48px));
+  }
+
   .filter-button {
     width: 100%;
     justify-content: center;
@@ -3010,6 +3992,18 @@ td {
 
   .edit-field.full {
     grid-column: auto;
+  }
+}
+
+
+@media (max-width: 760px) {
+  .import-modal.review-mode {
+    width: 100%;
+    padding: 18px;
+  }
+
+  .preview-participants-scroll {
+    max-height: 420px;
   }
 }
 
