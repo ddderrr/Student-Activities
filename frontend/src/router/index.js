@@ -8,7 +8,7 @@ import AdminLogin from '../views/Login/AdminLogin.vue'
 import AdminStudentActivities from '../views/Admin/AdminStudentActivities.vue'
 import AdminParticipantDetails from '../views/Admin/AdminParticipantDetails.vue'
 import AdminCreateActivity from '../views/Admin/AdminCreateActivity.vue'
-import AdminDashboard from '../views/Admin/AdminDashboard.vue'
+import AdminDashBoard from '../views/Admin/AdminDashBoard.vue'
 import AdminStudentSkills from '../views/Admin/AdminStudentSkills.vue'
 import AdminApproval from '../views/Admin/AdminApproval.vue'
 
@@ -38,8 +38,8 @@ const routes = [
 
   {
     path: '/admin/dashboard',
-    name: 'AdminDashboard',
-    component: AdminDashboard
+    name: 'AdminDashBoard',
+    component: AdminDashBoard
   },
 
   {
