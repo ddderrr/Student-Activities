@@ -373,21 +373,51 @@ const goBack = () => {
 
   padding: 0 45px;
 
-  border: 1px solid #cbd0dc;
+  /* พื้นหลังขาวอมเทา */
+  background: #f8fafc !important;
+
+  border: 1px solid #d8dee9;
   border-radius: 7px;
 
   outline: none;
 
+  /* สีตัวหนังสือตอนพิมพ์ */
+  color: #1f2937 !important;
+
   font-size: 15px;
+  font-family: inherit;
+
+  color-scheme: light;
 
   transition: 0.2s;
 }
 
+/* Placeholder */
+.input-wrapper input::placeholder {
+  color: #9aa5b5;
+  opacity: 1;
+}
+
+/* ตอนคลิกช่องกรอก */
 .input-wrapper input:focus {
+  background: #ffffff !important;
+
   border-color: #a60bd5;
 
   box-shadow:
     0 0 0 3px rgba(166, 11, 213, 0.08);
+}
+
+/* ป้องกัน Chrome Autofill เปลี่ยนสีช่อง */
+.input-wrapper input:-webkit-autofill,
+.input-wrapper input:-webkit-autofill:hover,
+.input-wrapper input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #1f2937 !important;
+  -webkit-box-shadow:
+    0 0 0 1000px #f8fafc inset !important;
+
+  transition:
+    background-color 9999s ease-in-out 0s;
 }
 
 .input-icon {

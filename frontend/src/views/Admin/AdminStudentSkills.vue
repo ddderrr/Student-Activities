@@ -11,6 +11,25 @@ import {
   X
 } from 'lucide-vue-next'
 
+import { useLanguage } from '../../composables/useLanguage'
+
+const { t } = useLanguage()
+
+const skillDisplay = (label) => {
+  const keyMap = {
+    'Leadership': 'leadership',
+    'Critical Thinking': 'criticalThinking',
+    'Communication': 'communication',
+    'Teamwork': 'teamwork',
+    'Creativity': 'creativity',
+    'Digital Literacy': 'digitalLiteracy'
+  }
+
+  const key = keyMap[label]
+  return key ? t.value.adminStudentSkills[key] : label
+}
+
+
 /* =========================
    Semester
 ========================= */
@@ -475,10 +494,10 @@ onBeforeUnmount(() => {
     <div class="page-header">
 
       <div>
-        <h1>Student Skills</h1>
+        <h1>{{ t.adminStudentSkills.title }}</h1>
 
         <p>
-          Overview of student skill proficiency across the faculty
+          {{ t.adminStudentSkills.subtitle }}
         </p>
       </div>
 
@@ -502,7 +521,7 @@ onBeforeUnmount(() => {
         <div class="summary-info">
 
           <span class="summary-label">
-            AVERAGE SKILL SCORE
+            {{ t.adminStudentSkills.averageSkillScore }}
           </span>
 
           <strong class="summary-value">
@@ -511,7 +530,7 @@ onBeforeUnmount(() => {
           </strong>
 
           <span class="summary-sub">
-            — this semester
+            {{ t.adminStudentSkills.thisSemester }}
           </span>
 
         </div>
@@ -530,7 +549,7 @@ onBeforeUnmount(() => {
         <div class="summary-info">
 
           <span class="summary-label">
-            STUDENTS EVALUATED
+            {{ t.adminStudentSkills.studentsEvaluated }}
           </span>
 
           <strong class="summary-value">
@@ -538,7 +557,7 @@ onBeforeUnmount(() => {
           </strong>
 
           <span class="summary-sub">
-            {{ facultyPercentage ?? '—' }}% of total faculty
+            {{ facultyPercentage ?? '—' }}% {{ t.adminStudentSkills.ofTotalFaculty }}
           </span>
 
         </div>
@@ -564,7 +583,7 @@ onBeforeUnmount(() => {
         <div class="card-header">
 
           <div>
-            <h2>Faculty Proficiency Radar</h2>
+            <h2>{{ t.adminStudentSkills.facultyRadar }}</h2>
           </div>
 
           <div class="semester-dropdown">
@@ -703,7 +722,7 @@ onBeforeUnmount(() => {
 
 
                <!-- =========================
-                    Actual Proficiency
+                    {{ t.adminStudentSkills.actualProficiency }}
                     ยังไม่มีข้อมูล
                ========================== -->
 
@@ -715,7 +734,7 @@ onBeforeUnmount(() => {
 
 
                <!-- =========================
-                    Benchmark Level
+                    {{ t.adminStudentSkills.benchmarkLevel }}
                     ยังไม่มีข้อมูล
                ========================== -->
 
@@ -745,7 +764,7 @@ onBeforeUnmount(() => {
                text-anchor="middle"
                class="radar-label"
                >
-               Leadership
+               {{ skillDisplay('Leadership') }}
                </text>
 
                <text
@@ -754,7 +773,7 @@ onBeforeUnmount(() => {
                text-anchor="start"
                class="radar-label"
                >
-               Critical Thinking
+               {{ skillDisplay('Critical Thinking') }}
                </text>
 
                <text
@@ -763,7 +782,7 @@ onBeforeUnmount(() => {
                text-anchor="start"
                class="radar-label"
                >
-               Communication
+               {{ skillDisplay('Communication') }}
                </text>
 
                <text
@@ -772,7 +791,7 @@ onBeforeUnmount(() => {
                text-anchor="middle"
                class="radar-label"
                >
-               Teamwork
+               {{ skillDisplay('Teamwork') }}
                </text>
 
                <text
@@ -781,7 +800,7 @@ onBeforeUnmount(() => {
                text-anchor="end"
                class="radar-label"
                >
-               Creativity
+               {{ skillDisplay('Creativity') }}
                </text>
 
                <text
@@ -790,7 +809,7 @@ onBeforeUnmount(() => {
                text-anchor="end"
                class="radar-label"
                >
-               Digital Literacy
+               {{ skillDisplay('Digital Literacy') }}
                </text>
 
           </svg>
@@ -807,8 +826,8 @@ onBeforeUnmount(() => {
                :class="{ inactive: !showActual }"
                @click="showActual = !showActual"
                >
-               <span class="legend-dot actual"></span>
-               Actual Proficiency
+               <span class="legend-dot actual" :class="{ inactive: !showActual }"></span>
+               {{ t.adminStudentSkills.actualProficiency }}
                </button>
 
                <button
@@ -816,8 +835,8 @@ onBeforeUnmount(() => {
                :class="{ inactive: !showBenchmark }"
                @click="showBenchmark = !showBenchmark"
                >
-               <span class="legend-dot benchmark"></span>
-               Benchmark Level
+               <span class="legend-dot benchmark" :class="{ inactive: !showBenchmark }"></span>
+               {{ t.adminStudentSkills.benchmarkLevel }}
                </button>
 
           </div>
@@ -841,13 +860,13 @@ onBeforeUnmount(() => {
             <CheckCircle :size="18" />
 
             <span>
-              TOP AREA: {{ topArea?.label?.toUpperCase() ?? '—' }}
+              {{ t.adminStudentSkills.topArea }}: {{ topArea ? skillDisplay(topArea.label).toUpperCase() : '—' }}
             </span>
 
           </div>
 
           <p>
-            Faculty average: {{ topArea ? topArea.score.toFixed(2) : '—' }} / 5.0
+            {{ t.adminStudentSkills.facultyAverage }}: {{ topArea ? topArea.score.toFixed(2) : '—' }} / 5.0
           </p>
 
 
@@ -856,7 +875,7 @@ onBeforeUnmount(() => {
             <CheckCircle :size="13" />
 
             <span>
-              Highest proficiency score: {{ topArea ? topArea.score.toFixed(2) : '—' }}
+              {{ t.adminStudentSkills.highestScore }}: {{ topArea ? topArea.score.toFixed(2) : '—' }}
             </span>
 
           </div>
@@ -867,7 +886,7 @@ onBeforeUnmount(() => {
             <CheckCircle :size="13" />
 
             <span>
-              Students evaluated: {{ studentsEvaluated }}
+              {{ t.adminStudentSkills.studentsEvaluated }}: {{ studentsEvaluated }}
             </span>
 
           </div>
@@ -884,13 +903,13 @@ onBeforeUnmount(() => {
             <AlertTriangle :size="18" />
 
             <span>
-              GROWTH AREA
+              {{ t.adminStudentSkills.growthArea }}
             </span>
 
           </div>
 
           <p>
-            {{ growthArea?.label ?? '—' }}
+            {{ growthArea ? skillDisplay(growthArea.label) : '—' }}
             <span v-if="growthArea"> — {{ growthArea.score.toFixed(2) }} / 5.0</span>
           </p>
 
@@ -898,7 +917,7 @@ onBeforeUnmount(() => {
           <div class="action-plan">
 
             <strong>
-              Action Plan
+              {{ t.adminStudentSkills.actionPlan }}
             </strong>
 
             <span>
@@ -922,9 +941,7 @@ onBeforeUnmount(() => {
 
       <div class="students-header">
 
-        <h2>
-          ทักษะรายบุคคล
-        </h2>
+        <h2>{{ t.adminStudentSkills.individualSkills }}</h2>
 
 
         <div class="table-tools">
@@ -938,7 +955,7 @@ onBeforeUnmount(() => {
             <input
               v-model="searchText"
               type="text"
-              placeholder="ID or Student Name..."
+              :placeholder="t.adminStudentSkills.searchPlaceholder"
             />
 
           </div>
@@ -964,12 +981,12 @@ onBeforeUnmount(() => {
                >
 
                <div class="filter-title">
-                    Filter Students
+                    {{ t.adminStudentSkills.filterStudents }}
                </div>
 
 
                <label>
-                    Primary Skill
+                    {{ t.adminStudentSkills.primarySkill }}
                </label>
 
                <select v-model="selectedSkill">
@@ -985,7 +1002,7 @@ onBeforeUnmount(() => {
 
 
                <label>
-                    Score Average
+                    {{ t.adminStudentSkills.scoreAverage }}
                </label>
 
                <select v-model="selectedScore">
@@ -1019,23 +1036,23 @@ onBeforeUnmount(() => {
             <tr>
 
               <th>
-                Student Name
+                {{ t.adminStudentSkills.studentName }}
               </th>
 
               <th>
-                Student ID
+                {{ t.adminStudentSkills.studentId }}
               </th>
 
               <th>
-                Primary Skill
+                {{ t.adminStudentSkills.primarySkill }}
               </th>
 
               <th>
-                Score Avg.
+                {{ t.adminStudentSkills.scoreAvg }}
               </th>
 
               <th>
-                Action
+                {{ t.adminStudentSkills.action }}
               </th>
 
             </tr>
@@ -1051,7 +1068,7 @@ onBeforeUnmount(() => {
                 colspan="5"
                 class="empty-row"
               >
-                No student skill data available
+                {{ t.adminStudentSkills.noStudentData }}
               </td>
 
             </tr>
@@ -1071,7 +1088,7 @@ onBeforeUnmount(() => {
               </td>
 
               <td>
-                {{ student.primarySkill }}
+                {{ skillDisplay(student.primarySkill) }}
               </td>
 
               <td>
@@ -1084,7 +1101,7 @@ onBeforeUnmount(() => {
                   class="radar-button"
                   @click="openStudentRadar(student)"
                 >
-                  View Radar
+                  {{ t.adminStudentSkills.viewRadar }}
                 </button>
 
               </td>
@@ -1129,7 +1146,7 @@ onBeforeUnmount(() => {
               <h3>{{ selectedStudent.name }}</h3>
               <div class="student-meta-row">
                 <span class="student-meta-chip">ID: {{ selectedStudent.id }}</span>
-                <span class="student-meta-chip">Major: {{ selectedStudent.major ?? '—' }}</span>
+                <span class="student-meta-chip">{{ t.adminStudentSkills.major }}: {{ selectedStudent.major ?? '—' }}</span>
                 <span class="student-meta-chip">{{ selectedStudent.semester }}</span>
               </div>
             </div>
@@ -1151,13 +1168,13 @@ onBeforeUnmount(() => {
           <section class="detail-panel radar-detail-panel">
             <div class="detail-section-heading">
               <div>
-                <h4>Skill Proficiency Analysis</h4>
-                <p>Student skill profile compared with the faculty average.</p>
+                <h4>{{ t.adminStudentSkills.skillAnalysis }}</h4>
+                <p>{{ t.adminStudentSkills.skillAnalysisSub }}</p>
               </div>
 
               <div class="detail-legend">
-                <span><i class="legend-swatch student"></i> Student</span>
-                <span><i class="legend-swatch faculty"></i> Faculty Avg</span>
+                <span><i class="legend-swatch student"></i> {{ t.adminStudentSkills.student }}</span>
+                <span><i class="legend-swatch faculty"></i> {{ t.adminStudentSkills.facultyAvgShort }}</span>
               </div>
             </div>
 
@@ -1177,12 +1194,12 @@ onBeforeUnmount(() => {
                 <polygon :points="selectedFacultyRadarPoints" class="student-faculty-area" />
                 <polygon :points="selectedStudentRadarPoints" class="student-profile-area" />
 
-                <text x="250" y="25" text-anchor="middle" class="radar-label">Leadership</text>
-                <text x="395" y="115" text-anchor="start" class="radar-label">Critical Thinking</text>
-                <text x="395" y="278" text-anchor="start" class="radar-label">Communication</text>
-                <text x="250" y="375" text-anchor="middle" class="radar-label">Teamwork</text>
-                <text x="105" y="278" text-anchor="end" class="radar-label">Creativity</text>
-                <text x="105" y="115" text-anchor="end" class="radar-label">Digital Literacy</text>
+                <text x="250" y="25" text-anchor="middle" class="radar-label">{{ skillDisplay('Leadership') }}</text>
+                <text x="395" y="115" text-anchor="start" class="radar-label">{{ skillDisplay('Critical Thinking') }}</text>
+                <text x="395" y="278" text-anchor="start" class="radar-label">{{ skillDisplay('Communication') }}</text>
+                <text x="250" y="375" text-anchor="middle" class="radar-label">{{ skillDisplay('Teamwork') }}</text>
+                <text x="105" y="278" text-anchor="end" class="radar-label">{{ skillDisplay('Creativity') }}</text>
+                <text x="105" y="115" text-anchor="end" class="radar-label">{{ skillDisplay('Digital Literacy') }}</text>
               </svg>
             </div>
 
@@ -1192,7 +1209,7 @@ onBeforeUnmount(() => {
                 :key="skill.key"
                 class="student-score-item"
               >
-                <span>{{ skill.label }}</span>
+                <span>{{ skillDisplay(skill.label) }}</span>
                 <strong>{{ Number(selectedStudent.skills?.[skill.key] ?? 0).toFixed(1) }}</strong>
               </div>
             </div>
@@ -1201,22 +1218,22 @@ onBeforeUnmount(() => {
           <!-- Right -->
           <aside class="detail-side-column">
             <section class="strongest-skill-card">
-              <div class="strongest-label">STRONGEST SKILL</div>
-              <h4>{{ selectedStrongestSkill?.label ?? '—' }}</h4>
+              <div class="strongest-label">{{ t.adminStudentSkills.strongestSkill }}</div>
+              <h4>{{ selectedStrongestSkill ? skillDisplay(selectedStrongestSkill.label) : '—' }}</h4>
               <p>
-                Student score:
+                {{ t.adminStudentSkills.studentScore }}:
                 <strong>{{ selectedStrongestSkill ? selectedStrongestSkill.score.toFixed(1) : '—' }}</strong>
                 / 5.0
               </p>
               <p class="average-caption">
-                Overall average: {{ selectedStudentAverage.toFixed(2) }} / 5.0
+                {{ t.adminStudentSkills.overallAverage }}: {{ selectedStudentAverage.toFixed(2) }} / 5.0
               </p>
             </section>
 
             <section class="detail-panel skill-gap-panel">
               <div class="gap-heading">
-                <h4>Skill Gap Analysis</h4>
-                <p>Skills below the faculty average for this semester.</p>
+                <h4>{{ t.adminStudentSkills.skillGapAnalysis }}</h4>
+                <p>{{ t.adminStudentSkills.skillGapSub }}</p>
               </div>
 
               <div v-if="selectedTopGaps.length" class="gap-list">
@@ -1228,9 +1245,9 @@ onBeforeUnmount(() => {
                 >
                   <div class="gap-card-header">
                     <div>
-                      <strong>{{ gap.label }}</strong>
+                      <strong>{{ skillDisplay(gap.label) }}</strong>
                       <span>
-                        {{ Math.abs(gap.percentDifference).toFixed(0) }}% below faculty average
+                        {{ Math.abs(gap.percentDifference).toFixed(0) }}% {{ t.adminStudentSkills.belowFacultyAverage }}
                       </span>
                     </div>
                     <AlertTriangle v-if="gap.difference <= -0.5" :size="16" />
@@ -1238,12 +1255,12 @@ onBeforeUnmount(() => {
                   </div>
 
                   <div class="gap-comparison">
-                    <span>Student {{ gap.studentScore.toFixed(1) }}</span>
-                    <span>Faculty {{ gap.facultyScore.toFixed(1) }}</span>
+                    <span>{{ t.adminStudentSkills.student }} {{ gap.studentScore.toFixed(1) }}</span>
+                    <span>{{ t.adminStudentSkills.faculty }} {{ gap.facultyScore.toFixed(1) }}</span>
                   </div>
 
                   <div class="gap-recommendation">
-                    <strong>Recommendation:</strong>
+                    <strong>{{ t.adminStudentSkills.recommendation }}</strong>
                     <span>{{ gap.recommendation }}</span>
                   </div>
                 </article>
@@ -1251,8 +1268,8 @@ onBeforeUnmount(() => {
 
               <div v-else class="no-gap-state">
                 <CheckCircle :size="22" />
-                <strong>No significant skill gaps</strong>
-                <span>This student is at or above the faculty average across all six skills.</span>
+                <strong>{{ t.adminStudentSkills.noSignificantGaps }}</strong>
+                <span>{{ t.adminStudentSkills.noGapSub }}</span>
               </div>
             </section>
           </aside>
@@ -1300,7 +1317,7 @@ onBeforeUnmount(() => {
 .page-header p {
   margin: 6px 0 0;
 
-  font-size: 12px;
+  font-size: 16px;
 
   color: #8da0bd;
 }
@@ -1379,7 +1396,7 @@ onBeforeUnmount(() => {
 
 
 .summary-label {
-  font-size: 9px;
+  font-size: 11px;
 
   font-weight: 700;
 
@@ -1408,7 +1425,7 @@ onBeforeUnmount(() => {
 .summary-sub {
   margin-top: 3px;
 
-  font-size: 9px;
+  font-size: 11px;
 
   color: #8998ad;
 }
@@ -1465,7 +1482,7 @@ onBeforeUnmount(() => {
 .card-header h2 {
   margin: 0;
 
-  font-size: 14px;
+  font-size: 16px;
 
   font-weight: 800;
 
@@ -1490,7 +1507,7 @@ onBeforeUnmount(() => {
 
   color: #4f5f76;
 
-  font-size: 8px;
+  font-size: 11px;
 
   cursor: pointer;
 }
@@ -1543,7 +1560,7 @@ onBeforeUnmount(() => {
 
   color: #52627a;
 
-  font-size: 8px;
+  font-size: 11px;
 
   text-align: left;
 
@@ -1624,7 +1641,7 @@ onBeforeUnmount(() => {
 
 
 .radar-label {
-  font-size: 9px;
+  font-size: 11px;
 
   font-weight: 700;
 
@@ -1645,7 +1662,7 @@ onBeforeUnmount(() => {
 
   gap: 18px;
 
-  font-size: 8px;
+  font-size: 11px;
 
   color: #7f8ca2;
 }
@@ -1664,7 +1681,7 @@ onBeforeUnmount(() => {
 
   padding: 0;
 
-  font-size: 8px;
+  font-size: 11px;
 
   color: #7f8ca2;
 
@@ -1676,7 +1693,7 @@ onBeforeUnmount(() => {
 }
 
 .legend-button.inactive {
-  opacity: 0.35;
+  color: #a6afbd;
 }
 
 
@@ -1689,12 +1706,18 @@ onBeforeUnmount(() => {
 
 
 .legend-dot.actual {
-  background: #1656b9;
+  background: #3264ed;
 }
 
 
 .legend-dot.benchmark {
-  background: #b9bfd0;
+  background: #22a06b;
+}
+
+
+.legend-dot.actual.inactive,
+.legend-dot.benchmark.inactive {
+  background: #c5ccd8;
 }
 
 
@@ -1746,7 +1769,7 @@ onBeforeUnmount(() => {
 .info-card p {
   margin: 14px 0;
 
-  font-size: 9px;
+  font-size: 11px;
 
   line-height: 1.6;
 
@@ -1769,7 +1792,7 @@ onBeforeUnmount(() => {
 
   border-radius: 4px;
 
-  font-size: 8px;
+  font-size: 11px;
 
   color: #53627a;
 }
@@ -1797,7 +1820,7 @@ onBeforeUnmount(() => {
 
   border-radius: 5px;
 
-  font-size: 8px;
+  font-size: 11px;
 
   color: #a86400;
 }
@@ -1827,7 +1850,7 @@ onBeforeUnmount(() => {
 .students-header h2 {
   margin: 0;
 
-  font-size: 14px;
+  font-size: 16px;
 
   color: #17356e;
 }
@@ -1841,23 +1864,19 @@ onBeforeUnmount(() => {
 
 
 .search-box {
-  width: 170px;
+  width: 200px;
+  height: 32px;
 
-  height: 27px;
-
-  padding: 0 8px;
+  padding: 0 10px;
 
   display: flex;
-
   align-items: center;
-
-  gap: 6px;
+  gap: 7px;
 
   border: 1px solid #d7deea;
+  border-radius: 6px;
 
-  border-radius: 4px;
-
-  background: white;
+  background: #ffffff;
 
   color: #8190a7;
 }
@@ -1865,14 +1884,21 @@ onBeforeUnmount(() => {
 
 .search-box input {
   width: 100%;
+  height: 100%;
 
   border: none;
-
   outline: none;
 
-  font-size: 8px;
-
+  background: #ffffff !important;
   color: #4e5e75;
+
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.search-box input::placeholder {
+  color: #9aa8bb;
+  opacity: 1;
 }
 
 
@@ -1932,7 +1958,7 @@ th {
 
   text-align: left;
 
-  font-size: 8px;
+  font-size: 11px;
 
   font-weight: 800;
 
@@ -1945,7 +1971,7 @@ td {
 
   border-top: 1px solid #e4e8ef;
 
-  font-size: 8px;
+  font-size: 11px;
 
   color: #47566e;
 }
@@ -1971,7 +1997,7 @@ td {
 
   color: #3264ed;
 
-  font-size: 8px;
+  font-size: 11px;
 
   cursor: pointer;
 }
@@ -2030,7 +2056,7 @@ td {
 
   background: transparent;
 
-  font-size: 8px;
+  font-size: 11px;
 
   color: #7f8ca2;
 
@@ -2090,7 +2116,7 @@ td {
 
   margin: 8px 0 4px;
 
-  font-size: 8px;
+  font-size: 11px;
 
   color: #65738a;
 }
@@ -2111,7 +2137,7 @@ td {
 
   color: #53627a;
 
-  font-size: 8px;
+  font-size: 11px;
 
   outline: none;
 }
@@ -2122,8 +2148,8 @@ td {
    Dynamic Radar / Student Detail Modal
 ========================= */
 .benchmark-area {
-  fill: rgba(185, 191, 208, 0.18);
-  stroke: #b9bfd0;
+  fill: rgba(34, 160, 107, 0.10);
+  stroke: #22a06b;
   stroke-width: 2;
   stroke-dasharray: 5 4;
 }
@@ -2183,7 +2209,7 @@ td {
   border-radius: 10px;
   background: #edf3ff;
   color: #2f5fd0;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 800;
 }
 
@@ -2215,7 +2241,7 @@ td {
   border-radius: 4px;
   background: #eef4ff;
   color: #315db9;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -2273,7 +2299,7 @@ td {
 .detail-section-heading p,
 .gap-heading p {
   margin: 5px 0 0;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
   color: #8794a8;
 }
@@ -2283,7 +2309,7 @@ td {
   flex-direction: column;
   gap: 6px;
   flex-shrink: 0;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   color: #455a78;
 }
@@ -2349,7 +2375,7 @@ td {
   border: 1px solid #e4e8ef;
   border-radius: 6px;
   background: #fbfcff;
-  font-size: 9px;
+  font-size: 11px;
   color: #53627a;
 }
 
@@ -2373,7 +2399,7 @@ td {
 
 .strongest-label {
   margin-bottom: 5px;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: .45px;
   color: #278451;
@@ -2387,7 +2413,7 @@ td {
 
 .strongest-skill-card p {
   margin: 8px 0 0;
-  font-size: 9px;
+  font-size: 11px;
   color: #587066;
 }
 
@@ -2442,7 +2468,7 @@ td {
 }
 
 .gap-card-header span {
-  font-size: 8px;
+  font-size: 11px;
   color: #c04b4b;
 }
 
@@ -2450,7 +2476,7 @@ td {
   margin-top: 7px;
   display: flex;
   gap: 8px;
-  font-size: 8px;
+  font-size: 11px;
   color: #607089;
 }
 
@@ -2469,7 +2495,7 @@ td {
   border: 1px solid rgba(214, 222, 236, .9);
   border-radius: 5px;
   background: rgba(255,255,255,.82);
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.45;
   color: #647086;
 }
@@ -2497,7 +2523,7 @@ td {
 
 .no-gap-state span {
   max-width: 260px;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
   color: #78879b;
 }
