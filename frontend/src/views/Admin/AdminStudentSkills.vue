@@ -45,6 +45,57 @@ const skillDisplay = (label) => {
 }
 
 /* =========================
+   Radar labels
+   label ยาวต้องตัดขึ้นบรรทัดใหม่ ไม่งั้น label ฝั่งซ้าย (text-anchor end)
+   จะล้นออกนอก viewBox และโดนตัด
+========================= */
+const RADAR_LABEL_LINE_HEIGHT = 13
+const RADAR_LABEL_MAX_CHARS = 14
+
+const radarLabelPositions = [
+  { x: 250, y: 25, anchor: 'middle', align: 'bottom' },
+  { x: 395, y: 115, anchor: 'start', align: 'center' },
+  { x: 395, y: 278, anchor: 'start', align: 'center' },
+  { x: 250, y: 375, anchor: 'middle', align: 'top' },
+  { x: 105, y: 278, anchor: 'end', align: 'center' },
+  { x: 105, y: 115, anchor: 'end', align: 'center' }
+]
+
+const wrapRadarLabel = (label) => {
+  const lines = []
+
+  for (const word of String(label).split(/\s+/)) {
+    const last = lines[lines.length - 1]
+
+    if (last && `${last} ${word}`.length <= RADAR_LABEL_MAX_CHARS) {
+      lines[lines.length - 1] = `${last} ${word}`
+    } else {
+      lines.push(word)
+    }
+  }
+
+  return lines
+}
+
+const radarLabels = computed(() =>
+  radarLabelPositions.map((position, index) => {
+    const lines = wrapRadarLabel(skillDisplay(skillKeys[index].label))
+    const extraHeight = (lines.length - 1) * RADAR_LABEL_LINE_HEIGHT
+
+    let firstDy = 0
+    if (position.align === 'bottom') firstDy = -extraHeight
+    if (position.align === 'center') firstDy = -extraHeight / 2
+
+    return {
+      ...position,
+      key: skillKeys[index].key,
+      lines,
+      firstDy
+    }
+  })
+)
+
+/* =========================
    Loading / API data
 ========================= */
 const loading = ref(false)
@@ -728,57 +779,19 @@ onBeforeUnmount(() => {
                ========================== -->
 
                <text
-               x="250"
-               y="25"
-               text-anchor="middle"
+               v-for="label in radarLabels"
+               :key="label.key"
+               :x="label.x"
+               :y="label.y"
+               :text-anchor="label.anchor"
                class="radar-label"
                >
-               {{ skillDisplay(skillKeys[0].label) }}
-               </text>
-
-               <text
-               x="395"
-               y="115"
-               text-anchor="start"
-               class="radar-label"
-               >
-               {{ skillDisplay(skillKeys[1].label) }}
-               </text>
-
-               <text
-               x="395"
-               y="278"
-               text-anchor="start"
-               class="radar-label"
-               >
-               {{ skillDisplay(skillKeys[2].label) }}
-               </text>
-
-               <text
-               x="250"
-               y="375"
-               text-anchor="middle"
-               class="radar-label"
-               >
-               {{ skillDisplay(skillKeys[3].label) }}
-               </text>
-
-               <text
-               x="105"
-               y="278"
-               text-anchor="end"
-               class="radar-label"
-               >
-               {{ skillDisplay(skillKeys[4].label) }}
-               </text>
-
-               <text
-               x="105"
-               y="115"
-               text-anchor="end"
-               class="radar-label"
-               >
-               {{ skillDisplay(skillKeys[5].label) }}
+               <tspan
+                    v-for="(line, lineIndex) in label.lines"
+                    :key="lineIndex"
+                    :x="label.x"
+                    :dy="lineIndex === 0 ? label.firstDy : RADAR_LABEL_LINE_HEIGHT"
+               >{{ line }}</tspan>
                </text>
 
           </svg>
@@ -1163,12 +1176,21 @@ onBeforeUnmount(() => {
                 <polygon :points="selectedFacultyRadarPoints" class="student-faculty-area" />
                 <polygon :points="selectedStudentRadarPoints" class="student-profile-area" />
 
-                <text x="250" y="25" text-anchor="middle" class="radar-label">{{ skillDisplay(skillKeys[0].label) }}</text>
-                <text x="395" y="115" text-anchor="start" class="radar-label">{{ skillDisplay(skillKeys[1].label) }}</text>
-                <text x="395" y="278" text-anchor="start" class="radar-label">{{ skillDisplay(skillKeys[2].label) }}</text>
-                <text x="250" y="375" text-anchor="middle" class="radar-label">{{ skillDisplay(skillKeys[3].label) }}</text>
-                <text x="105" y="278" text-anchor="end" class="radar-label">{{ skillDisplay(skillKeys[4].label) }}</text>
-                <text x="105" y="115" text-anchor="end" class="radar-label">{{ skillDisplay(skillKeys[5].label) }}</text>
+                <text
+                  v-for="label in radarLabels"
+                  :key="label.key"
+                  :x="label.x"
+                  :y="label.y"
+                  :text-anchor="label.anchor"
+                  class="radar-label"
+                >
+                  <tspan
+                    v-for="(line, lineIndex) in label.lines"
+                    :key="lineIndex"
+                    :x="label.x"
+                    :dy="lineIndex === 0 ? label.firstDy : RADAR_LABEL_LINE_HEIGHT"
+                  >{{ line }}</tspan>
+                </text>
               </svg>
             </div>
 
