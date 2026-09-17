@@ -441,8 +441,9 @@ class ActivityCreate(BaseModel):
     description: str = ""
 
     # รูปแบบเดียวกับ AdminCreateActivity.vue ปัจจุบัน
-    staff_skills: dict[str, int] = Field(default_factory=dict)
-    participant_skills: dict[str, int] = Field(default_factory=dict)
+    # level = None หมายถึง "ไม่เกี่ยวข้อง" จะไม่ถูกบันทึกลง activity_skills
+    staff_skills: dict[str, int | None] = Field(default_factory=dict)
+    participant_skills: dict[str, int | None] = Field(default_factory=dict)
 
 
 class ActivityUpdate(BaseModel):
@@ -459,6 +460,10 @@ class ActivityUpdate(BaseModel):
     description: str | None = None
 
     status: str | None = None
+
+    # ถ้าส่งมา = แทนที่ชุด Skill ของ role นั้นทั้งหมด (level None = ไม่เกี่ยวข้อง)
+    staff_skills: dict[str, int | None] | None = None
+    participant_skills: dict[str, int | None] | None = None
 
 
 ACTIVITY_STATUSES = {
@@ -497,7 +502,7 @@ def validate_required_text(values: dict):
 
 
 def validate_skill_levels(
-    skills: dict[str, int],
+    skills: dict[str, int | None],
     allowed_skills: dict[str, str],
     target_label: str,
 ):
@@ -510,6 +515,9 @@ def validate_skill_levels(
                 ),
             )
 
+        if level is None:
+            continue
+
         if level < 1 or level > 5:
             raise HTTPException(
                 status_code=400,
@@ -517,6 +525,33 @@ def validate_skill_levels(
                     f"Skill {skill_key} ต้องอยู่ระหว่าง 1-5"
                 ),
             )
+
+
+def replace_activity_skills(
+    db: Session,
+    activity_id: int,
+    target_role: str,
+    skills: dict[str, int | None],
+):
+    # ลบชุดเดิมของ role นี้แล้วบันทึกใหม่ทั้งชุด
+    # skill ที่ level เป็น None (ไม่เกี่ยวข้อง) จะไม่มี row
+    db.query(ActivitySkill).filter(
+        ActivitySkill.activity_id == activity_id,
+        ActivitySkill.target_role == target_role,
+    ).delete()
+
+    for skill_key, level in skills.items():
+        if level is None:
+            continue
+
+        db.add(
+            ActivitySkill(
+                activity_id=activity_id,
+                skill_key=skill_key,
+                target_role=target_role,
+                level=level,
+            )
+        )
 
 
 def get_member_counts(
@@ -628,7 +663,11 @@ def list_activities(
     return {
         "total": len(activities),
         "activities": [
-            serialize_activity(db, activity)
+            serialize_activity(
+                db,
+                activity,
+                include_skills=True,
+            )
             for activity in activities
         ],
     }
@@ -686,25 +725,19 @@ def create_activity(
         f"SC-{payload.start_at.year}-{activity.id:03d}"
     )
 
-    for skill_key, level in payload.staff_skills.items():
-        db.add(
-            ActivitySkill(
-                activity_id=activity.id,
-                skill_key=skill_key,
-                target_role="staff",
-                level=level,
-            )
-        )
+    replace_activity_skills(
+        db,
+        activity.id,
+        "staff",
+        payload.staff_skills,
+    )
 
-    for skill_key, level in payload.participant_skills.items():
-        db.add(
-            ActivitySkill(
-                activity_id=activity.id,
-                skill_key=skill_key,
-                target_role="participant",
-                level=level,
-            )
-        )
+    replace_activity_skills(
+        db,
+        activity.id,
+        "participant",
+        payload.participant_skills,
+    )
 
     db.commit()
     db.refresh(activity)
@@ -770,6 +803,25 @@ def update_activity(
         }
     )
 
+    skill_updates = {
+        "staff": updates.pop("staff_skills", None),
+        "participant": updates.pop("participant_skills", None),
+    }
+
+    if skill_updates["staff"] is not None:
+        validate_skill_levels(
+            skill_updates["staff"],
+            STAFF_SKILL_DEFINITIONS,
+            "Staff",
+        )
+
+    if skill_updates["participant"] is not None:
+        validate_skill_levels(
+            skill_updates["participant"],
+            PARTICIPANT_SKILL_DEFINITIONS,
+            "Participant",
+        )
+
     text_fields = {
         "name",
         "activity_type",
@@ -779,6 +831,15 @@ def update_activity(
         "location",
         "description",
     }
+
+    for target_role, skills in skill_updates.items():
+        if skills is not None:
+            replace_activity_skills(
+                db,
+                activity.id,
+                target_role,
+                skills,
+            )
 
     for field_name, value in updates.items():
         if field_name in text_fields:
