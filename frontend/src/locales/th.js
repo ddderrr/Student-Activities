@@ -4,7 +4,8 @@ export default {
     thai: 'ไทย',
     english: 'อังกฤษ',
     helpCenter: 'ศูนย์ช่วยเหลือ',
-    logout: 'ออกจากระบบ'
+    logout: 'ออกจากระบบ',
+    settings: 'ตั้งค่า'
   },
 
   adminSidebar: {
@@ -112,6 +113,7 @@ export default {
 
   student: 'นักศึกษา',
   facultyAvg: 'เฉลี่ยคณะ',
+  facultyAvgShort: 'เฉลี่ยคณะ',
 
   strongestSkill: 'ทักษะที่แข็งแกร่งที่สุด',
   studentScore: 'คะแนนนักศึกษา',

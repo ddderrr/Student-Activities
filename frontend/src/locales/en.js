@@ -4,7 +4,8 @@ export default {
     thai: 'Thai',
     english: 'English',
     helpCenter: 'Help Center',
-    logout: 'Logout'
+    logout: 'Logout',
+    settings: 'Settings'
   },
 
   adminSidebar: {
@@ -102,11 +103,14 @@ export default {
   viewRadar: 'View Radar',
   noStudentData: 'No student skill data available',
 
+  major: 'Major',
+
   skillAnalysis: 'Skill Proficiency Analysis',
   skillAnalysisSub: 'Student skill profile compared with the faculty average.',
 
   student: 'Student',
   facultyAvg: 'Faculty Avg',
+  facultyAvgShort: 'Faculty Avg',
   strongestSkill: 'STRONGEST SKILL',
   studentScore: 'Student score',
   overallAverage: 'Overall average',
@@ -114,6 +118,7 @@ export default {
   skillGapAnalysis: 'Skill Gap Analysis',
   skillGapSub: 'Skills below the faculty average for this semester.',
   belowFacultyAverage: 'below faculty average',
+  faculty: 'Faculty',
 
   recommendation: 'Recommendation:',
   noSignificantGaps: 'No significant skill gaps',
