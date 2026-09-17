@@ -136,31 +136,41 @@ const loadStudentSkills = async () => {
 /* =========================
    Helpers
 ========================= */
-const averageOfSkills = (student) => {
-  const values = skillKeys.map(skill => Number(student.skills?.[skill.key] ?? 0))
-  const validValues = values.filter(value => Number.isFinite(value))
+const skillValueOf = (student, skillKey) => {
+  const raw = student.skills?.[skillKey]
 
-  if (validValues.length === 0) return 0
-  return validValues.reduce((sum, value) => sum + value, 0) / validValues.length
+  // null / undefined = ยังไม่มีหลักฐานจากกิจกรรมที่นักศึกษาคนนี้เข้าร่วม
+  if (raw === null || raw === undefined || raw === '') return null
+
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : null
+}
+
+const averageOfSkills = (student) => {
+  // เฉลี่ยเฉพาะ skill ที่นักศึกษาคนนี้มีข้อมูลจริงเท่านั้น
+  const values = skillKeys
+    .map(skill => skillValueOf(student, skill.key))
+    .filter(value => value !== null)
+
+  if (values.length === 0) return null
+  return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
 const primarySkillOf = (student) => {
-  let best = skillKeys[0]
-  let bestScore = Number(student.skills?.[best.key] ?? 0)
+  const availableSkills = skillKeys
+    .map(skill => ({
+      ...skill,
+      score: skillValueOf(student, skill.key)
+    }))
+    .filter(skill => skill.score !== null)
+    .sort((a, b) => b.score - a.score)
 
-  skillKeys.forEach(skill => {
-    const score = Number(student.skills?.[skill.key] ?? 0)
-    if (score > bestScore) {
-      best = skill
-      bestScore = score
-    }
-  })
-
-  return best.label
+  return availableSkills[0]?.label ?? null
 }
 
 const scoreMatchesFilter = (score) => {
   if (selectedScore.value === 'All Scores') return true
+  if (score === null) return false
   if (selectedScore.value === '4.0 - 5.0') return score >= 4 && score <= 5
   if (selectedScore.value === '3.0 - 3.9') return score >= 3 && score < 4
   if (selectedScore.value === 'Below 3.0') return score < 3
@@ -188,12 +198,14 @@ const facultyPercentage = computed(() => {
 const averageSkillScore = computed(() => {
   if (semesterStudents.value.length === 0) return null
 
-  const total = semesterStudents.value.reduce(
-    (sum, student) => sum + averageOfSkills(student),
-    0
-  )
+  const studentAverages = semesterStudents.value
+    .map(student => averageOfSkills(student))
+    .filter(value => value !== null)
 
-  return (total / semesterStudents.value.length).toFixed(2)
+  if (studentAverages.length === 0) return null
+
+  const total = studentAverages.reduce((sum, value) => sum + value, 0)
+  return (total / studentAverages.length).toFixed(2)
 })
 
 const facultySkillAverages = computed(() => {
@@ -206,8 +218,8 @@ const facultySkillAverages = computed(() => {
     }
 
     const values = semesterStudents.value
-      .map(student => Number(student.skills?.[skill.key] ?? 0))
-      .filter(value => Number.isFinite(value) && value > 0)
+      .map(student => skillValueOf(student, skill.key))
+      .filter(value => value !== null)
 
     result[skill.key] = values.length
       ? values.reduce((sum, value) => sum + value, 0) / values.length
@@ -315,7 +327,9 @@ const selectedStudentRadarPoints = computed(() => {
   if (!selectedStudent.value) return buildRadarPoints([0, 0, 0, 0, 0, 0])
 
   return buildRadarPoints(
-    skillKeys.map(skill => selectedStudent.value.skills?.[skill.key] ?? 0)
+    // SVG polygon needs six coordinates; missing values use center only for drawing.
+    // The score cards below display these values as N/A, never as 0.
+    skillKeys.map(skill => skillValueOf(selectedStudent.value, skill.key) ?? 0)
   )
 })
 
@@ -326,7 +340,7 @@ const selectedFacultyRadarPoints = computed(() =>
 )
 
 const selectedStudentAverage = computed(() => {
-  if (!selectedStudent.value) return 0
+  if (!selectedStudent.value) return null
   return averageOfSkills(selectedStudent.value)
 })
 
@@ -336,8 +350,9 @@ const selectedStrongestSkill = computed(() => {
   return skillKeys
     .map(skill => ({
       ...skill,
-      score: Number(selectedStudent.value.skills?.[skill.key] ?? 0)
+      score: skillValueOf(selectedStudent.value, skill.key)
     }))
+    .filter(skill => skill.score !== null)
     .sort((a, b) => b.score - a.score)[0] ?? null
 })
 
@@ -355,12 +370,14 @@ const selectedSkillGaps = computed(() => {
 
   return skillKeys
     .map(skill => {
-      const studentScore = Number(selectedStudent.value.skills?.[skill.key] ?? 0)
+      const studentScore = skillValueOf(selectedStudent.value, skill.key)
       const facultyScore = Number(facultySkillAverages.value[skill.key] ?? 0)
+
+      // ไม่มีข้อมูลของนักศึกษาคนนี้ = ไม่เอาไปสรุปว่าเป็น skill gap
+      if (studentScore === null || facultyScore <= 0) return null
+
       const difference = studentScore - facultyScore
-      const percentDifference = facultyScore > 0
-        ? (difference / facultyScore) * 100
-        : 0
+      const percentDifference = (difference / facultyScore) * 100
 
       return {
         ...skill,
@@ -371,7 +388,7 @@ const selectedSkillGaps = computed(() => {
         recommendation: recommendationBySkill[skill.key]
       }
     })
-    .filter(skill => skill.difference < -0.05)
+    .filter(skill => skill && skill.difference < -0.05)
     .sort((a, b) => a.difference - b.difference)
 })
 
@@ -1042,11 +1059,11 @@ onBeforeUnmount(() => {
               </td>
 
               <td>
-                {{ skillDisplay(student.primarySkill) }}
+                {{ student.primarySkill ? skillDisplay(student.primarySkill) : 'N/A' }}
               </td>
 
               <td>
-                {{ student.score.toFixed(2) }}
+                {{ student.score !== null ? student.score.toFixed(2) : 'N/A' }}
               </td>
 
               <td>
@@ -1164,7 +1181,7 @@ onBeforeUnmount(() => {
                 class="student-score-item"
               >
                 <span>{{ skillDisplay(skill.label) }}</span>
-                <strong>{{ Number(selectedStudent.skills?.[skill.key] ?? 0).toFixed(1) }}</strong>
+                <strong>{{ skillValueOf(selectedStudent, skill.key) !== null ? skillValueOf(selectedStudent, skill.key).toFixed(1) : 'N/A' }}</strong>
               </div>
             </div>
           </section>
@@ -1180,7 +1197,7 @@ onBeforeUnmount(() => {
                 / 5.0
               </p>
               <p class="average-caption">
-                {{ t.adminStudentSkills.overallAverage }}: {{ selectedStudentAverage.toFixed(2) }} / 5.0
+                {{ t.adminStudentSkills.overallAverage }}: {{ selectedStudentAverage !== null ? selectedStudentAverage.toFixed(2) : 'N/A' }}<template v-if="selectedStudentAverage !== null"> / 5.0</template>
               </p>
             </section>
 
