@@ -1,445 +1,297 @@
 <script setup>
-
-import {
-  ref,
-  computed,
-  reactive,
-  onMounted
-} from 'vue'
-
-import {
-  CalendarDays,
-  Users,
-  CheckCircle,
-  TrendingUp
-} from 'lucide-vue-next'
-
+import { ref, computed, reactive, onMounted } from 'vue'
+import { CalendarDays, Users, CheckCircle, TrendingUp } from 'lucide-vue-next'
 import { useLanguage } from '../../composables/useLanguage'
 
 const { t } = useLanguage()
-
 const API_BASE = 'http://127.0.0.1:8000'
 
-const MONTH_LABELS = [
-  'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
-  'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'
+const MONTH_LABELS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
+const now = new Date()
+const currentMonthLabel = MONTH_LABELS[now.getMonth()]
+const currentQuarterLabel = `Q${Math.floor(now.getMonth() / 3) + 1}`
+
+const STAFF_SKILLS = [
+  ['creative_leadership', 'Creative Leadership'],
+  ['innovation', 'Innovation'],
+  ['entrepreneurship', 'Entrepreneurship'],
+  ['promote_equality', 'Promote Equality'],
+  ['academic', 'Academic'],
+  ['nature_environmental', 'Nature and Environmental']
 ]
 
-const currentMonthLabel =
-  MONTH_LABELS[new Date().getMonth()]
-
-
-/* =========================================
-   Monthly / Quarterly
-========================================= */
+const PARTICIPANT_SKILLS = [
+  ['arts_culture_traditions', 'Arts, Culture, and Traditions'],
+  ['volunteerism', 'Volunteerism'],
+  ['academics', 'Academics'],
+  ['internationalization', 'Internationalization'],
+  ['health_promotion', 'Health Promotion'],
+  ['nature_environmental_conservation', 'Nature and Environmental Conservation']
+]
 
 const selectedPeriod = ref('MONTHLY')
 const selectedItem = ref(currentMonthLabel)
 
-const selectPeriod = (period) => {
-
-  selectedPeriod.value = period
-
-  if (period === 'MONTHLY') {
-    selectedItem.value = currentMonthLabel
-  } else {
-    selectedItem.value = 'Q1'
-  }
-
-}
-
-
-/* =========================================
-   Loading / Error
-========================================= */
-
+// Dashboard history filters
+// ใช้ logic เดียวกับ backend ปัจจุบัน:
+// Semester 1 = JAN-JUN, Semester 2 = JUL-DEC
+const selectedYear = ref(now.getFullYear())
+const selectedSemester = ref('ALL')
+const selectedSkillRole = ref('participant')
 const loading = ref(false)
 const error = ref(null)
-
-
-/* =========================================
-   Mock / Real Data Mode
-
-   true  = ใช้ข้อมูลจำลองสำหรับทดสอบหน้าจอ
-   false = เรียกข้อมูลจริงจาก Backend API
-========================================= */
-
-const USE_MOCK_DATA = false
-
-
-/* =========================================
-   Dashboard Data
-========================================= */
-
-/*
-  ข้อมูลตรงนี้เป็นค่าเริ่มต้น
-
-  ในอนาคต Backend จะส่งข้อมูลมา
-  แล้วนำมาใส่ dashboardData
-*/
+const activityDetails = ref([])
 
 const dashboardData = reactive({
-
   totalActivities: 0,
   totalStudents: 0,
   totalParticipants: 0,
-  completionRate: 0,
-
-  activityGrowth: [
-    { month: 'JAN', count: 0 },
-    { month: 'FEB', count: 0 },
-    { month: 'MAR', count: 0 },
-    { month: 'APR', count: 0 },
-    { month: 'MAY', count: 0 },
-    { month: 'JUN', count: 0 },
-    { month: 'JUL', count: 0 },
-    { month: 'AUG', count: 0 },
-    { month: 'SEP', count: 0 },
-    { month: 'OCT', count: 0 },
-    { month: 'NOV', count: 0 },
-    { month: 'DEC', count: 0 }
-  ],
-
-  skills: []
-
+  completionRate: 0
 })
 
+const semesterMonthIndexes = computed(() => {
+  if (selectedSemester.value === 'SEMESTER_1') return [0, 1, 2, 3, 4, 5]
+  if (selectedSemester.value === 'SEMESTER_2') return [6, 7, 8, 9, 10, 11]
+  return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+})
 
-/* =========================================
-   Mock Data
+const availableYears = computed(() => {
+  const years = new Set()
 
-   โครงสร้างเหมือนข้อมูลที่ Backend ควรส่งมา
-   เพื่อให้ตอนต่อ Database จริงไม่ต้องแก้หน้า UI
-========================================= */
+  for (const activity of activityDetails.value) {
+    if (!activity.start_at) continue
+    const date = new Date(activity.start_at)
+    if (!Number.isNaN(date.getTime())) years.add(date.getFullYear())
+  }
 
-const loadMockData = () => {
+  // ให้ปีปัจจุบันเลือกได้เสมอ แม้ยังไม่มีกิจกรรม
+  years.add(now.getFullYear())
+  return [...years].sort((a, b) => b - a)
+})
 
-  dashboardData.totalActivities = 48
-  dashboardData.totalStudents = 1260
-  dashboardData.totalParticipants = 842
-  dashboardData.completionRate = 87
+const semesterLabel = computed(() => {
+  if (selectedSemester.value === 'SEMESTER_1') return 'Semester 1'
+  if (selectedSemester.value === 'SEMESTER_2') return 'Semester 2'
+  return 'All Semesters'
+})
 
-  dashboardData.activityGrowth = [
-    { month: 'JAN', count: 4 },
-    { month: 'FEB', count: 7 },
-    { month: 'MAR', count: 12 },
-    { month: 'APR', count: 8 },
-    { month: 'MAY', count: 15 },
-    { month: 'JUN', count: 10 },
-    { month: 'JUL', count: 18 },
-    { month: 'AUG', count: 14 },
-    { month: 'SEP', count: 20 },
-    { month: 'OCT', count: 16 },
-    { month: 'NOV', count: 23 },
-    { month: 'DEC', count: 19 }
-  ]
+const resetSelectedItem = () => {
+  const indexes = semesterMonthIndexes.value
 
-  dashboardData.skills = [
-    {
-      name: 'CRITICAL THINKING',
-      percentage: 82
-    },
-    {
-      name: 'COMMUNICATION',
-      percentage: 76
-    },
-    {
-      name: 'LEADERSHIP',
-      percentage: 68
-    }
-  ]
+  if (selectedPeriod.value === 'MONTHLY') {
+    const currentIndex = now.getMonth()
+    const preferredIndex = selectedYear.value === now.getFullYear() && indexes.includes(currentIndex)
+      ? currentIndex
+      : indexes[0]
+    selectedItem.value = MONTH_LABELS[preferredIndex]
+    return
+  }
 
+  const allowedQuarters = [...new Set(indexes.map(index => `Q${Math.floor(index / 3) + 1}`))]
+  const preferredQuarter = selectedYear.value === now.getFullYear() && allowedQuarters.includes(currentQuarterLabel)
+    ? currentQuarterLabel
+    : allowedQuarters[0]
+  selectedItem.value = preferredQuarter
 }
 
+const selectPeriod = (period) => {
+  selectedPeriod.value = period
+  resetSelectedItem()
+}
 
-/* =========================================
-   Fetch Dashboard API
-========================================= */
+const changeYear = () => {
+  resetSelectedItem()
+}
+
+const changeSemester = () => {
+  resetSelectedItem()
+}
 
 const fetchDashboard = async () => {
-
   loading.value = true
   error.value = null
 
   try {
+    // 1) Summary cards จาก Dashboard API
+    const dashboardResponse = await fetch(`${API_BASE}/api/admin/dashboard`)
+    if (!dashboardResponse.ok) throw new Error('Cannot load dashboard data')
+    const data = await dashboardResponse.json()
 
-    const response = await fetch(
-      `${API_BASE}/api/admin/dashboard`
+    dashboardData.totalActivities = data.totalActivities ?? 0
+    dashboardData.totalStudents = data.totalStudents ?? 0
+    dashboardData.totalParticipants = data.totalParticipants ?? 0
+    dashboardData.completionRate = data.completionRate ?? 0
+
+    // 2) ดึง Activity จริงทั้งหมด
+    // ใช้ start_at เพื่อดูว่า "กิจกรรมจัดในเดือนไหน"
+    const activitiesResponse = await fetch(`${API_BASE}/api/activities`)
+    if (!activitiesResponse.ok) throw new Error('Cannot load activities')
+    const activitiesPayload = await activitiesResponse.json()
+    const activities = Array.isArray(activitiesPayload.activities)
+      ? activitiesPayload.activities
+      : []
+
+    // 3) Detail endpoint มี staff_skills / participant_skills
+    // จึงดึงรายละเอียดเพื่อคำนวณ Skill Distribution ตามเดือน/ไตรมาส
+    const details = await Promise.all(
+      activities.map(async (activity) => {
+        const response = await fetch(`${API_BASE}/api/activities/${activity.id}`)
+        if (!response.ok) return activity
+        return response.json()
+      })
     )
 
-    if (!response.ok) {
-      throw new Error('Cannot load dashboard data')
-    }
-
-    const data = await response.json()
-
-
-    /*
-      เอาข้อมูลจาก Backend
-      มาใส่ Dashboard
-    */
-
-    dashboardData.totalActivities =
-      data.totalActivities ?? 0
-
-    dashboardData.totalStudents =
-      data.totalStudents ?? 0
-
-    dashboardData.totalParticipants =
-      data.totalParticipants ?? 0
-
-    dashboardData.completionRate =
-      data.completionRate ?? 0
-
-
-    if (Array.isArray(data.activityGrowth)) {
-      dashboardData.activityGrowth =
-        data.activityGrowth
-    }
-
-
-    if (Array.isArray(data.skills)) {
-      dashboardData.skills =
-        data.skills
-    }
-
-
+    activityDetails.value = details
   } catch (err) {
-
-    console.error(
-      'Dashboard API Error:',
-      err
-    )
-
+    console.error('Dashboard API Error:', err)
     error.value = err.message
-
   } finally {
-
     loading.value = false
-
   }
-
 }
 
+onMounted(fetchDashboard)
 
-/* =========================================
-   โหลดข้อมูลเมื่อเข้าหน้า Dashboard
-========================================= */
+// ============================================================
+// Activity Growth: นับตาม start_at ของปี/ภาคเรียนที่เลือก
+// ============================================================
+const monthlyActivityData = computed(() => {
+  const counts = Array(12).fill(0)
+  const year = Number(selectedYear.value)
 
-onMounted(() => {
-
-  if (USE_MOCK_DATA) {
-    loadMockData()
-  } else {
-    fetchDashboard()
+  for (const activity of activityDetails.value) {
+    if (!activity.start_at) continue
+    const date = new Date(activity.start_at)
+    if (Number.isNaN(date.getTime()) || date.getFullYear() !== year) continue
+    counts[date.getMonth()] += 1
   }
 
+  return semesterMonthIndexes.value.map(index => ({
+    month: MONTH_LABELS[index],
+    monthIndex: index,
+    count: counts[index]
+  }))
 })
 
+const quarterlyData = computed(() => {
+  const quarterMap = new Map()
 
-/* =========================================
-   Quarterly
-========================================= */
-
-const getActivityCount = (index) => {
-  return Number(dashboardData.activityGrowth[index]?.count ?? 0)
-}
-
-const quarterlyData = computed(() => [
-
-  {
-    month: 'Q1',
-    count:
-      getActivityCount(0) +
-      getActivityCount(1) +
-      getActivityCount(2)
-  },
-
-  {
-    month: 'Q2',
-    count:
-      getActivityCount(3) +
-      getActivityCount(4) +
-      getActivityCount(5)
-  },
-
-  {
-    month: 'Q3',
-    count:
-      getActivityCount(6) +
-      getActivityCount(7) +
-      getActivityCount(8)
-  },
-
-  {
-    month: 'Q4',
-    count:
-      getActivityCount(9) +
-      getActivityCount(10) +
-      getActivityCount(11)
+  for (const item of monthlyActivityData.value) {
+    const quarter = `Q${Math.floor(item.monthIndex / 3) + 1}`
+    quarterMap.set(quarter, (quarterMap.get(quarter) ?? 0) + item.count)
   }
 
-])
-
-
-/* =========================================
-   Chart Data
-========================================= */
-
-const chartData = computed(() => {
-
-  if (
-    selectedPeriod.value === 'QUARTERLY'
-  ) {
-
-    return quarterlyData.value
-
-  }
-
-  return dashboardData.activityGrowth
-
+  return [...quarterMap.entries()].map(([month, count]) => ({ month, count }))
 })
 
+const chartData = computed(() =>
+  selectedPeriod.value === 'QUARTERLY' ? quarterlyData.value : monthlyActivityData.value
+)
 
-/* =========================================
-   หาค่าสูงสุดของกราฟ
-========================================= */
-
-const maxActivity = computed(() => {
-
-  return Math.max(
-    ...chartData.value.map(
-      item => item.count
-    ),
-    1
-  )
-
-})
-
-
-/* =========================================
-   Y Axis Scale
-
-   ปรับช่วงตัวเลขอัตโนมัติตามข้อมูลจริง
-========================================= */
+// Dynamic Y-axis: ไม่ล็อกไว้ที่ 10
+const maxActivity = computed(() => Math.max(...chartData.value.map(item => item.count), 0))
 
 const yAxisStep = computed(() => {
-
   const max = maxActivity.value
-
   if (max <= 10) return 2
-  if (max <= 25) return 5
+  if (max <= 20) return 5
   if (max <= 50) return 10
   if (max <= 100) return 20
-
-  return Math.ceil(max / 5 / 10) * 10
-
+  if (max <= 250) return 50
+  return Math.ceil(max / 5 / 100) * 100
 })
 
 const yAxisMax = computed(() => {
-
-  return Math.max(
-    yAxisStep.value * 5,
-    Math.ceil(maxActivity.value / yAxisStep.value) * yAxisStep.value
-  )
-
+  if (maxActivity.value <= 10) return 10
+  return Math.ceil(maxActivity.value / yAxisStep.value) * yAxisStep.value
 })
 
 const yAxisTicks = computed(() => {
-
   const ticks = []
-
-  for (let value = yAxisMax.value; value >= 0; value -= yAxisStep.value) {
-    ticks.push(value)
-  }
-
+  for (let value = yAxisMax.value; value >= 0; value -= yAxisStep.value) ticks.push(value)
   return ticks
-
 })
 
+// ============================================================
+// Skill Distribution
+// Participant และ Staff คำนวณแยกกัน
+// ไม่มี skill ใน activity = ไม่นับเป็น 0 และไม่นำมาหาร
+// ============================================================
+const activitiesInSelectedPeriod = computed(() => {
+  const year = Number(selectedYear.value)
 
-/* =========================================
-   Summary Cards
-========================================= */
+  return activityDetails.value.filter(activity => {
+    if (!activity.start_at) return false
+    const date = new Date(activity.start_at)
+    if (Number.isNaN(date.getTime()) || date.getFullYear() !== year) return false
+
+    const monthIndex = date.getMonth()
+    if (!semesterMonthIndexes.value.includes(monthIndex)) return false
+
+    if (selectedPeriod.value === 'MONTHLY') {
+      return MONTH_LABELS[monthIndex] === selectedItem.value
+    }
+
+    const quarter = `Q${Math.floor(monthIndex / 3) + 1}`
+    return quarter === selectedItem.value
+  })
+})
+
+const skillDefinitions = computed(() =>
+  selectedSkillRole.value === 'participant' ? PARTICIPANT_SKILLS : STAFF_SKILLS
+)
+
+const displayedSkills = computed(() => {
+  const skillField = selectedSkillRole.value === 'participant'
+    ? 'participant_skills'
+    : 'staff_skills'
+
+  return skillDefinitions.value.map(([key, name]) => {
+    const values = []
+
+    for (const activity of activitiesInSelectedPeriod.value) {
+      const raw = activity?.[skillField]?.[key]
+      if (raw === undefined || raw === null || raw === '') continue
+
+      const level = Number(raw)
+      if (Number.isFinite(level) && level > 0) values.push(level)
+    }
+
+    if (values.length === 0) {
+      return { key, name, percentage: 0, averageLevel: null, evidenceCount: 0 }
+    }
+
+    const averageLevel = values.reduce((sum, value) => sum + value, 0) / values.length
+
+    return {
+      key,
+      name,
+      averageLevel: Number(averageLevel.toFixed(2)),
+      percentage: Math.round((averageLevel / 5) * 100),
+      evidenceCount: values.length
+    }
+  })
+})
+
+// Average รวมเฉพาะ skill ที่มีข้อมูลจริง
+const averageSkill = computed(() => {
+  const available = displayedSkills.value.filter(skill => skill.evidenceCount > 0)
+  if (available.length === 0) return 0
+  return Math.round(
+    available.reduce((sum, skill) => sum + skill.percentage, 0) / available.length
+  )
+})
+
+const selectedPeriodText = computed(() =>
+  `${selectedItem.value} · ${semesterLabel.value} · ${selectedYear.value}`
+)
 
 const summaryCards = computed(() => [
-
-  {
-    title: t.value.adminDashboard.activities,
-    value: dashboardData.totalActivities,
-    icon: CalendarDays,
-    type: 'blue'
-  },
-
-  {
-    title: t.value.adminDashboard.students,
-    value: dashboardData.totalStudents,
-    icon: Users,
-    type: 'blue'
-  },
-
-  {
-    title: t.value.adminDashboard.participants,
-    value: dashboardData.totalParticipants,
-    icon: TrendingUp,
-    type: 'green'
-  },
-
-  {
-    title: t.value.adminDashboard.completionRate,
-    value: `${dashboardData.completionRate}%`,
-    icon: CheckCircle,
-    type: 'orange'
-  }
-
+  { title: t.value.adminDashboard.activities, value: dashboardData.totalActivities, icon: CalendarDays, type: 'blue' },
+  { title: t.value.adminDashboard.students, value: dashboardData.totalStudents, icon: Users, type: 'blue' },
+  { title: t.value.adminDashboard.participants, value: dashboardData.totalParticipants, icon: TrendingUp, type: 'green' },
+  { title: t.value.adminDashboard.completionRate, value: `${dashboardData.completionRate}%`, icon: CheckCircle, type: 'orange' }
 ])
-
-
-/* =========================================
-   Average Skill
-========================================= */
-
-const averageSkill = computed(() => {
-
-  if (
-    dashboardData.skills.length === 0
-  ) {
-    return 0
-  }
-
-
-  const total =
-    dashboardData.skills.reduce(
-      (sum, skill) =>
-        sum + skill.percentage,
-      0
-    )
-
-
-  return Math.round(
-    total /
-    dashboardData.skills.length
-  )
-
-})
-
-
-/* =========================================
-   Skill Translation
-========================================= */
-
-const skillLabel = (name) => {
-
-  const skills = {
-    'CRITICAL THINKING': t.value.adminDashboard.criticalThinking,
-    'COMMUNICATION': t.value.adminDashboard.communication,
-    'LEADERSHIP': t.value.adminDashboard.leadership
-  }
-
-  return skills[name] || name
-
-}
-
 </script>
 
 
@@ -462,6 +314,42 @@ const skillLabel = (name) => {
       </div>
 
     </div>
+
+
+    <!-- =========================
+         Academic Year / Semester Filter
+    ========================== -->
+
+    <section class="history-filter">
+      <div class="history-filter-text">
+        <strong>Dashboard History</strong>
+        <span>เลือกปีและภาคเรียนเพื่อดู Activity Growth และ Skill Distribution ย้อนหลัง</span>
+      </div>
+
+      <div class="history-filter-controls">
+        <label class="filter-field">
+          <span>Academic Year</span>
+          <select v-model.number="selectedYear" @change="changeYear">
+            <option
+              v-for="year in availableYears"
+              :key="year"
+              :value="year"
+            >
+              {{ year }}
+            </option>
+          </select>
+        </label>
+
+        <label class="filter-field">
+          <span>Semester</span>
+          <select v-model="selectedSemester" @change="changeSemester">
+            <option value="ALL">All Semesters</option>
+            <option value="SEMESTER_1">Semester 1 (JAN - JUN)</option>
+            <option value="SEMESTER_2">Semester 2 (JUL - DEC)</option>
+          </select>
+        </label>
+      </div>
+    </section>
 
 
     <!-- =========================
@@ -516,7 +404,7 @@ const skillLabel = (name) => {
           <h2>{{ t.adminDashboard.activityGrowth }}</h2>
 
           <p>
-            {{ t.adminDashboard.activityGrowthDescription }}
+            {{ t.adminDashboard.activityGrowthDescription }} · {{ semesterLabel }} · {{ selectedYear }}
           </p>
 
         </div>
@@ -607,18 +495,16 @@ const skillLabel = (name) => {
 
 
             <div class="x-axis-labels">
-
-              <span
+              <div
                 v-for="item in chartData"
                 :key="`label-${item.month}`"
-                :class="{
-                  'selected-month': item.month === selectedItem
-                }"
+                class="x-axis-item"
+                :class="{ 'selected-month': item.month === selectedItem }"
                 @click="selectedItem = item.month"
               >
-                {{ item.month }}
-              </span>
-
+                <strong class="activity-count">{{ item.count }}</strong>
+                <span>{{ item.month }}</span>
+              </div>
             </div>
 
           </div>
@@ -639,13 +525,25 @@ const skillLabel = (name) => {
       <div class="card-header">
 
         <div>
-
           <h2>{{ t.adminDashboard.skillDistribution }}</h2>
-
           <p>
-            {{ t.adminDashboard.skillDescription }}
+            {{ t.adminDashboard.skillDescription }} · {{ selectedPeriodText }}
           </p>
+        </div>
 
+        <div class="skill-role-buttons">
+          <button
+            :class="{ active: selectedSkillRole === 'participant' }"
+            @click="selectedSkillRole = 'participant'"
+          >
+            PARTICIPANT
+          </button>
+          <button
+            :class="{ active: selectedSkillRole === 'staff' }"
+            @click="selectedSkillRole = 'staff'"
+          >
+            STAFF
+          </button>
         </div>
 
       </div>
@@ -658,7 +556,7 @@ const skillLabel = (name) => {
         <div class="skill-list">
 
           <div
-            v-for="skill in dashboardData.skills"
+            v-for="skill in displayedSkills"
             :key="skill.name"
             class="skill-item"
           >
@@ -666,11 +564,13 @@ const skillLabel = (name) => {
             <div class="skill-info">
 
               <span>
-                {{ skillLabel(skill.name) }}
+                {{ skill.name }}
               </span>
 
               <strong>
                 {{ skill.percentage }}%
+                <small v-if="skill.evidenceCount > 0">({{ skill.evidenceCount }} activities)</small>
+                <small v-else>(no data)</small>
               </strong>
 
             </div>
@@ -796,6 +696,77 @@ const skillLabel = (name) => {
   color: #8da0bd;
 }
 
+
+/* =========================
+   Dashboard History Filter
+========================= */
+
+.history-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+  padding: 16px 18px;
+  background: white;
+  border: 1px solid #edf0f5;
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(30, 60, 100, 0.04);
+}
+
+.history-filter-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-filter-text strong {
+  font-size: 14px;
+  color: #1d3268;
+}
+
+.history-filter-text span {
+  font-size: 11px;
+  color: #8da0bd;
+}
+
+.history-filter-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-field span {
+  font-size: 10px;
+  font-weight: 800;
+  color: #60738f;
+  letter-spacing: 0.4px;
+}
+
+.filter-field select {
+  min-width: 150px;
+  height: 38px;
+  padding: 0 34px 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  outline: none;
+  background: #f8faff;
+  color: #31508f;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.filter-field select:focus {
+  border-color: #7b08c7;
+  box-shadow: 0 0 0 3px rgba(123, 8, 199, 0.08);
+}
 
 /* =========================
    Summary Cards
@@ -1144,32 +1115,65 @@ const skillLabel = (name) => {
 }
 
 
-.x-axis-labels span {
+.x-axis-item {
   flex: 1 1 0;
-
   min-width: 45px;
-
   text-align: center;
+  cursor: pointer;
+  color: #9cacbf;
+}
 
+.x-axis-item span {
+  display: block;
+  margin-top: 3px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.5px;
+}
 
-  color: #9cacbf;
+.activity-count {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  color: #60738f;
+}
 
+.x-axis-item:hover,
+.x-axis-item.selected-month,
+.x-axis-item.selected-month .activity-count {
+  color: #3264ed;
+}
+
+
+.skill-role-buttons {
+  display: flex;
+  padding: 3px;
+  background: #f5f7fb;
+  border-radius: 7px;
+}
+
+.skill-role-buttons button {
+  border: none;
+  padding: 7px 12px;
+  background: transparent;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #9aa8bb;
   cursor: pointer;
 }
 
-
-.x-axis-labels span:hover {
-  color: #3264ed;
+.skill-role-buttons button.active {
+  color: white;
+  background: #7b08c7;
 }
 
-
-.x-axis-labels span.selected-month {
-  color: #3264ed;
+.skill-info strong small {
+  margin-left: 5px;
+  font-size: 9px;
+  font-weight: 600;
+  color: #9aa8bb;
 }
-
 
 /* =========================
    Skills
@@ -1351,6 +1355,20 @@ const skillLabel = (name) => {
 
 
 @media (max-width: 600px) {
+
+  .history-filter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .history-filter-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .filter-field select {
+    width: 100%;
+  }
 
   .dashboard {
     padding: 20px 15px;

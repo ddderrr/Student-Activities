@@ -353,10 +353,12 @@ def get_admin_student_skills(
 
         for skill_key in PARTICIPANT_SKILL_DEFINITIONS:
             values = entry["skill_values"][skill_key]
+            # ไม่มี activity ที่ให้ skill นี้กับนักศึกษาคนนี้
+            # ให้เป็น None (JSON = null) แทน 0 เพราะ level จริงอยู่ช่วง 1-5
             skills[skill_key] = (
                 round(sum(values) / len(values), 2)
                 if values
-                else 0
+                else None
             )
 
         students.append(
