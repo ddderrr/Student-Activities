@@ -11,11 +11,24 @@ import {
 
 import {
   Search,
-  UserRound,
+  Building2,
+  Globe2,
   SlidersHorizontal,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  ExternalLink,
+  FileText
 } from 'lucide-vue-next'
+
+import {
+  API_BASE,
+  studentHeaders
+} from '../../constants/currentStudent'
+
+import {
+  PARTICIPANT_SKILLS,
+  STAFF_SKILLS
+} from '../../constants/activitySkills'
 
 import {
   useRoute,
@@ -99,173 +112,176 @@ const error = ref(null)
    ภายหลัง Backend ควรส่งเฉพาะข้อมูลของผู้ใช้ปัจจุบัน
 ===================================================== */
 
-const activities = ref([
-  {
-    id: 1,
-
-    title:
-      'Science Volunteer Camp',
-
-    description:
-      'Volunteer activity at the Faculty of Science.',
-
-    studentName:
-      'Tanakit Wanprasert',
-
-    studentId:
-      '670510659',
-
-    status:
-      'Pending',
-
-    date:
-      '2026-09-10',
-
-    category:
-      'Community Service',
-
-    organizer:
-      'Faculty of Science',
-
-    reflection:
-      'This activity helped me improve teamwork, communication and responsibility while working with other students.',
-
-    skills: [
-      'Communication',
-      'Teamwork',
-      'Leadership'
-    ]
-  },
-
-
-  {
-    id: 2,
-
-    title:
-      'Leadership Workshop',
-
-    description:
-      'Leadership and teamwork development workshop.',
-
-    studentName:
-      'Tanakit Wanprasert',
-
-    studentId:
-      '670510659',
-
-    status:
-      'Pending',
-
-    date:
-      '2026-09-12',
-
-    category:
-      'Leadership',
-
-    organizer:
-      'Faculty of Science',
-
-    reflection:
-      'I learned how to work with a team, make decisions and communicate more clearly in group activities.',
-
-    skills: [
-      'Leadership',
-      'Communication',
-      'Teamwork'
-    ]
-  },
-
-
-  {
-    id: 3,
-
-    title:
-      'Communication Training',
-
-    description:
-      'Communication skills training program.',
-
-    studentName:
-      'Tanakit Wanprasert',
-
-    studentId:
-      '670510659',
-
-    status:
-      'Approved',
-
-    date:
-      '2026-09-13',
-
-    category:
-      'Science Communication',
-
-    organizer:
-      'Science Student Development Unit',
-
-    reflection:
-      'This training helped me improve my presentation skills and communicate scientific information more clearly.',
-
-    skills: [
-      'Communication',
-      'Presentation',
-      'Public Speaking'
-    ]
-  },
-
-
-  {
-    id: 4,
-
-    title:
-      'Programming Workshop',
-
-    description:
-      'Basic programming and problem solving workshop.',
-
-    studentName:
-      'Tanakit Wanprasert',
-
-    studentId:
-      '670510659',
-
-    status:
-      'Rejected',
-
-    date:
-      '2026-09-16',
-
-    category:
-      'Academic Activity',
-
-    organizer:
-      'Computer Science Department',
-
-    reflection:
-      'I practiced problem solving and programming with other students.',
-
-    skills: [
-      'Problem Solving',
-      'Critical Thinking'
-    ],
-
-    rejectionReason:
-      'Please upload a clearer participation certificate.'
-  }
-])
+const activities = ref([])
 
 
 /* =====================================================
-   Pending Count
+   แปลงข้อมูลจาก GET /api/student/me/activities
+   (กิจกรรมคณะ + กิจกรรมภายนอกที่อนุมัติแล้ว)
 ===================================================== */
 
-const totalPending = computed(() => {
+const SKILL_LABELS = Object.fromEntries(
+  [...STAFF_SKILLS, ...PARTICIPANT_SKILLS].map(
+    skill => [skill.key, skill.label]
+  )
+)
 
-  return activities.value.filter(
-    activity =>
-      activity.status.toLowerCase()
-      === 'pending'
-  ).length
+const STATUS_LABELS = {
+  active: 'Active',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+  approved: 'Approved'
+}
+
+const toActivityView = (item, student) => {
+
+  const isExternal =
+    item.source === 'external_activity'
+
+  return {
+    key: `${item.source}-${item.id}`,
+    id: item.id,
+    source: item.source,
+    sourceLabel: isExternal
+      ? 'External Activity'
+      : 'Faculty Activity',
+    title: item.title,
+    description: item.description || '',
+    studentName:
+      `${student.first_name} ${student.last_name}`,
+    studentId: student.student_id,
+    status: item.status,
+    statusLabel:
+      STATUS_LABELS[item.status] || item.status,
+    date: String(item.start_at).slice(0, 10),
+    endDate: String(item.end_at).slice(0, 10),
+    category: item.activity_type,
+    organizer: item.organizer,
+    location: item.location,
+    role: item.role === 'organizer'
+      ? 'Organizer'
+      : 'Participant',
+    skills: Object.entries(item.skills || {}).map(
+      ([key, level]) => ({
+        key,
+        label: SKILL_LABELS[key] || key,
+        level
+      })
+    ),
+    evidenceUrl: item.evidence_url
+      ? `${API_BASE}${item.evidence_url}`
+      : null
+  }
+
+}
+
+const SUBMISSION_STATUS_LABELS = {
+  pending: 'Pending',
+  approved: 'Approved',
+  rejected: 'Rejected'
+}
+
+// GET /api/student/me/external-activities (ทุกสถานะ)
+const toSubmissionView = (item) => ({
+  key: `submission-${item.id}`,
+  id: item.id,
+  source: 'submission',
+  sourceLabel: 'External Activity',
+  title: item.title,
+  description: item.description || '',
+  studentName:
+    `${item.student.first_name} ${item.student.last_name}`,
+  studentId: item.student_id,
+  status: item.status,
+  statusLabel: SUBMISSION_STATUS_LABELS[item.status] || item.status,
+  date: item.start_date,
+  endDate: item.end_date,
+  category: item.activity_type,
+  organizer: item.organization,
+  location: item.location,
+  role: item.role === 'organizer'
+    ? 'Organizer'
+    : 'Participant',
+  skills: Object.entries(item.skills || {}).map(
+    ([key, level]) => ({
+      key,
+      label: SKILL_LABELS[key] || key,
+      level
+    })
+  ),
+  evidenceUrl: `${API_BASE}${item.evidence.url}`,
+  rejectReason: item.reject_reason
+})
+
+const submissions = ref([])
+
+const dateRangeText = (activity) => {
+
+  return activity.date === activity.endDate
+    ? activity.date
+    : `${activity.date} – ${activity.endDate}`
+
+}
+
+
+/* =====================================================
+   Source Tabs (All / Faculty / External)
+===================================================== */
+
+const sourceFilter = ref('all')
+
+const SOURCE_TABS = [
+  { value: 'all', label: 'All' },
+  { value: 'activity', label: 'Faculty Activities' },
+  { value: 'external_activity', label: 'External Activities' },
+  { value: 'submissions', label: 'My Submissions' }
+]
+
+
+/* =====================================================
+   My Submissions: status filter
+===================================================== */
+
+const submissionStatus = ref('all')
+
+const SUBMISSION_STATUS_TABS = [
+  { value: 'all', label: 'All' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'rejected', label: 'Rejected' }
+]
+
+const submissionStatusCounts = computed(() => {
+
+  const counts = {
+    all: submissions.value.length,
+    pending: 0,
+    approved: 0,
+    rejected: 0
+  }
+
+  for (const item of submissions.value) {
+    counts[item.status] += 1
+  }
+
+  return counts
+
+})
+
+const sourceCounts = computed(() => {
+
+  const counts = {
+    all: activities.value.length,
+    activity: 0,
+    external_activity: 0,
+    submissions: submissions.value.length
+  }
+
+  for (const activity of activities.value) {
+    counts[activity.source] += 1
+  }
+
+  return counts
 
 })
 
@@ -282,37 +298,55 @@ const filteredActivities = computed(() => {
       .toLowerCase()
 
 
-  return activities.value.filter(
+  const baseList =
+    sourceFilter.value === 'submissions'
+      ? submissions.value.filter(
+        item =>
+          submissionStatus.value === 'all' ||
+          item.status === submissionStatus.value
+      )
+      : activities.value
+
+
+  return baseList.filter(
     activity => {
 
       const matchSearch =
         !keyword ||
 
-        activity.title
-          .toLowerCase()
-          .includes(keyword) ||
-
-        activity.description
-          .toLowerCase()
-          .includes(keyword) ||
-
-        activity.studentName
-          .toLowerCase()
-          .includes(keyword) ||
-
-        activity.studentId
-          .toLowerCase()
-          .includes(keyword)
+        [
+          activity.title,
+          activity.description,
+          activity.category,
+          activity.organizer,
+          activity.location
+        ].some(
+          value =>
+            String(value || '')
+              .toLowerCase()
+              .includes(keyword)
+        )
 
 
+      // วันที่เลือกอยู่ในช่วงวันเริ่ม-วันสิ้นสุดของกิจกรรม
       const matchDate =
         !selectedDate.value ||
-        activity.date === selectedDate.value
+        (
+          activity.date <= selectedDate.value &&
+          selectedDate.value <= activity.endDate
+        )
+
+
+      const matchSource =
+        sourceFilter.value === 'all' ||
+        sourceFilter.value === 'submissions' ||
+        activity.source === sourceFilter.value
 
 
       return (
         matchSearch &&
-        matchDate
+        matchDate &&
+        matchSource
       )
 
     }
@@ -406,7 +440,10 @@ const openActivityFromNotification = async () => {
     เพื่อให้ URL กลับมาสะอาด
   */
   await router.replace({
-    path: '/student/activities'
+    path: '/student/activities',
+    query: route.query.tab
+      ? { tab: route.query.tab }
+      : {}
   })
 
 }
@@ -416,6 +453,37 @@ const openActivityFromNotification = async () => {
   watch ช่วยให้กด Notification ได้
   แม้ตอนนี้อยู่หน้า /student/activities อยู่แล้ว
 */
+const selectSourceTab = (value) => {
+
+  sourceFilter.value = value
+
+  // เก็บแท็บไว้ใน URL เพื่อให้ refresh แล้วยังอยู่แท็บเดิม
+  router.replace({
+    query: {
+      ...route.query,
+      tab: value === 'all' ? undefined : value
+    }
+  })
+
+}
+
+
+watch(
+  () => route.query.tab,
+
+  (tab) => {
+    sourceFilter.value =
+      SOURCE_TABS.some(item => item.value === tab)
+        ? tab
+        : 'all'
+  },
+
+  {
+    immediate: true
+  }
+)
+
+
 watch(
   () => route.query.open,
 
@@ -446,12 +514,24 @@ const fetchActivities = async () => {
 
   try {
 
-    const response = await fetch(
-      'http://localhost:8000/api/student/me/activities'
-    )
+    const [response, submissionsResponse] =
+      await Promise.all([
+        fetch(
+          `${API_BASE}/api/student/me/activities`,
+          {
+            headers: studentHeaders()
+          }
+        ),
+        fetch(
+          `${API_BASE}/api/student/me/external-activities`,
+          {
+            headers: studentHeaders()
+          }
+        )
+      ])
 
 
-    if (!response.ok) {
+    if (!response.ok || !submissionsResponse.ok) {
 
       throw new Error(
         'Cannot load activities'
@@ -463,9 +543,19 @@ const fetchActivities = async () => {
     const data =
       await response.json()
 
+    const submissionsData =
+      await submissionsResponse.json()
+
 
     activities.value =
-      data
+      data.activities.map(
+        item => toActivityView(item, data.student)
+      )
+
+    submissions.value =
+      submissionsData.external_activities.map(
+        toSubmissionView
+      )
 
 
     /*
@@ -506,13 +596,7 @@ onMounted(() => {
   )
 
 
-  /*
-    ตอนนี้ใช้ Mock Data
-    ไม่ต้องเปิด fetchActivities()
-
-    ตอน Backend พร้อม:
-    fetchActivities()
-  */
+  fetchActivities()
 
 })
 
@@ -554,20 +638,23 @@ onBeforeUnmount(() => {
           </h1>
 
           <p>
-            Review and track your activity submissions.
+            Faculty activities you joined and approved external activities.
           </p>
 
         </div>
 
 
-        <div class="pending-card">
+        <div
+          class="pending-card"
+          data-testid="total-activities"
+        >
 
           <strong>
-            {{ totalPending }}
+            {{ sourceCounts.all }}
           </strong>
 
           <span>
-            TOTAL PENDING
+            TOTAL ACTIVITIES
           </span>
 
         </div>
@@ -581,12 +668,24 @@ onBeforeUnmount(() => {
 
       <section class="tabs-row">
 
-        <button
-          class="tab active"
-          type="button"
-        >
-          Pending
-        </button>
+        <div class="tabs">
+
+          <button
+            v-for="tab in SOURCE_TABS"
+            :key="tab.value"
+            class="tab"
+            :class="{ active: sourceFilter === tab.value }"
+            type="button"
+            :data-source="tab.value"
+            @click="selectSourceTab(tab.value)"
+          >
+            {{ tab.label }}
+            <span class="tab-count">
+              {{ sourceCounts[tab.value] }}
+            </span>
+          </button>
+
+        </div>
 
 
         <div
@@ -642,6 +741,33 @@ onBeforeUnmount(() => {
 
 
       <!-- =================================================
+           My Submissions: status filter
+      ================================================== -->
+
+      <div
+        v-if="sourceFilter === 'submissions'"
+        class="submission-status-tabs"
+        role="tablist"
+      >
+
+        <button
+          v-for="tab in SUBMISSION_STATUS_TABS"
+          :key="tab.value"
+          type="button"
+          role="tab"
+          :class="{ active: submissionStatus === tab.value }"
+          :aria-selected="submissionStatus === tab.value"
+          :data-status="tab.value"
+          @click="submissionStatus = tab.value"
+        >
+          {{ tab.label }}
+          <span>{{ submissionStatusCounts[tab.value] }}</span>
+        </button>
+
+      </div>
+
+
+      <!-- =================================================
            Loading
       ================================================== -->
 
@@ -676,15 +802,28 @@ onBeforeUnmount(() => {
 
         <div
           v-for="activity in displayedActivities"
-          :key="activity.id"
+          :key="activity.key"
           class="activity-card"
+          :data-source="activity.source"
+          :data-id="activity.id"
         >
 
           <!-- Avatar -->
 
-          <div class="avatar">
+          <div
+            class="avatar"
+            :class="{ external: activity.source !== 'activity' }"
+          >
 
-            <UserRound :size="20" />
+            <Globe2
+              v-if="activity.source !== 'activity'"
+              :size="19"
+            />
+
+            <Building2
+              v-else
+              :size="19"
+            />
 
           </div>
 
@@ -693,23 +832,42 @@ onBeforeUnmount(() => {
 
           <div class="activity-info">
 
-            <h3>
-              {{ activity.title }}
-            </h3>
+            <div class="title-row">
+
+              <h3>
+                {{ activity.title }}
+              </h3>
+
+              <span
+                class="source-badge"
+                :class="activity.source"
+              >
+                {{ activity.sourceLabel }}
+              </span>
+
+            </div>
 
             <p>
-              {{ activity.description }}
+              {{ activity.description || activity.category }}
             </p>
 
 
             <small>
 
-              {{ activity.studentName }}
+              {{ activity.organizer }}
 
               •
 
-              {{ activity.studentId }}
+              {{ activity.role }}
 
+            </small>
+
+
+            <small
+              v-if="activity.status === 'rejected' && activity.rejectReason"
+              class="reject-line"
+            >
+              เหตุผลที่ไม่อนุมัติ: {{ activity.rejectReason }}
             </small>
 
           </div>
@@ -720,18 +878,15 @@ onBeforeUnmount(() => {
           <div class="activity-meta">
 
             <span class="activity-date">
-              {{ activity.date }}
+              {{ dateRangeText(activity) }}
             </span>
 
 
             <span
               class="status"
-              :class="
-                activity.status
-                  .toLowerCase()
-              "
+              :class="activity.status"
             >
-              {{ activity.status }}
+              {{ activity.statusLabel }}
             </span>
 
 
@@ -781,8 +936,13 @@ onBeforeUnmount(() => {
           </h3>
 
           <p>
-            Try another activity name
-            or date.
+            {{
+              activities.length
+                ? 'Try another activity name or date.'
+                : sourceFilter === 'submissions'
+                  ? 'No external activity submissions yet.'
+                  : 'No faculty or approved external activities yet.'
+            }}
           </p>
 
         </div>
@@ -909,7 +1069,46 @@ onBeforeUnmount(() => {
                   </span>
 
                   <p>
-                    {{ selectedActivity.date }}
+                    {{ dateRangeText(selectedActivity) }}
+                  </p>
+
+                </div>
+
+
+                <div>
+
+                  <span class="detail-label">
+                    SOURCE
+                  </span>
+
+                  <p>
+                    {{ selectedActivity.sourceLabel }}
+                  </p>
+
+                </div>
+
+
+                <div>
+
+                  <span class="detail-label">
+                    ROLE
+                  </span>
+
+                  <p>
+                    {{ selectedActivity.role }}
+                  </p>
+
+                </div>
+
+
+                <div>
+
+                  <span class="detail-label">
+                    LOCATION
+                  </span>
+
+                  <p>
+                    {{ selectedActivity.location || '-' }}
                   </p>
 
                 </div>
@@ -940,18 +1139,35 @@ onBeforeUnmount(() => {
             <section class="detail-card">
 
               <h3>
-                Student Reflection
+                {{
+                  selectedActivity.source === 'activity'
+                    ? 'Activity Description'
+                    : 'Student Reflection'
+                }}
               </h3>
 
 
               <div class="reflection-text">
 
                 {{
-                  selectedActivity.reflection
-                  || 'No reflection provided.'
+                  selectedActivity.description
+                  || 'No description provided.'
                 }}
 
               </div>
+
+
+              <a
+                v-if="selectedActivity.evidenceUrl"
+                class="evidence-link"
+                :href="selectedActivity.evidenceUrl"
+                target="_blank"
+                rel="noopener"
+              >
+                <FileText :size="13" />
+                View evidence
+                <ExternalLink :size="11" />
+              </a>
 
             </section>
 
@@ -961,7 +1177,11 @@ onBeforeUnmount(() => {
             <section class="detail-card">
 
               <h3>
-                Self-Mapped Skills
+                {{
+                  selectedActivity.source === 'activity'
+                    ? 'Skills'
+                    : 'Skill Mapping'
+                }}
               </h3>
 
 
@@ -979,10 +1199,10 @@ onBeforeUnmount(() => {
                     in
                     selectedActivity.skills
                   "
-                  :key="skill"
+                  :key="skill.key"
                   class="skill"
                 >
-                  {{ skill }}
+                  {{ skill.label }} · Level {{ skill.level }}
                 </span>
 
               </div>
@@ -992,7 +1212,7 @@ onBeforeUnmount(() => {
                 v-else
                 class="no-data"
               >
-                No skills added.
+                No related skills.
               </p>
 
             </section>
@@ -1007,71 +1227,33 @@ onBeforeUnmount(() => {
           <div class="modal-right">
 
 
+
             <!-- Current Status -->
 
             <section
               class="status-detail-card"
-              :class="
-                selectedActivity.status
-                  .toLowerCase()
-              "
+              :class="selectedActivity.status"
             >
 
               <span class="detail-label">
                 CURRENT STATUS
               </span>
 
-
-              <!-- Pending -->
-
-              <div
-                v-if="
-                  selectedActivity.status
-                  === 'Pending'
-                "
-                class="big-status"
-              >
+              <div class="big-status">
 
                 <span class="status-symbol">
-                  ◷
+                  {{
+                    ['cancelled', 'rejected'].includes(selectedActivity.status)
+                      ? '✕'
+                      : selectedActivity.status === 'pending'
+                        ? '◷'
+                        : selectedActivity.status === 'active'
+                          ? '●'
+                          : '✓'
+                  }}
                 </span>
 
-                Pending Review
-
-              </div>
-
-
-              <!-- Approved -->
-
-              <div
-                v-else-if="
-                  selectedActivity.status
-                  === 'Approved'
-                "
-                class="big-status"
-              >
-
-                <span class="status-symbol">
-                  ✓
-                </span>
-
-                Approved
-
-              </div>
-
-
-              <!-- Rejected -->
-
-              <div
-                v-else
-                class="big-status"
-              >
-
-                <span class="status-symbol">
-                  ✕
-                </span>
-
-                Not Approved
+                {{ selectedActivity.statusLabel }}
 
               </div>
 
@@ -1083,85 +1265,98 @@ onBeforeUnmount(() => {
             <section class="detail-card">
 
               <h3>
-                Submission Status
+                {{ selectedActivity.sourceLabel }}
               </h3>
 
 
-              <!-- Pending -->
-
               <div
-                v-if="
-                  selectedActivity.status
-                  === 'Pending'
-                "
+                v-if="selectedActivity.status === 'pending'"
                 class="
                   status-message
                   pending-message
                 "
               >
-
                 <strong>
                   Waiting for Review
                 </strong>
-
                 <p>
-                  This activity is currently
-                  waiting for administrator
-                  review.
+                  This submission is waiting for
+                  administrator review.
                 </p>
-
               </div>
 
 
-              <!-- Approved -->
-
               <div
-                v-else-if="
-                  selectedActivity.status
-                  === 'Approved'
-                "
-                class="
-                  status-message
-                  approved-message
-                "
-              >
-
-                <strong>
-                  Activity Approved
-                </strong>
-
-                <p>
-                  This activity has already
-                  been reviewed and approved.
-                </p>
-
-              </div>
-
-
-              <!-- Rejected -->
-
-              <div
-                v-else
+                v-else-if="selectedActivity.status === 'rejected'"
                 class="
                   status-message
                   rejected-message
                 "
               >
-
                 <strong>
                   Activity Not Approved
                 </strong>
-
-                <p>
+                <p data-testid="reject-reason">
                   {{
-                    selectedActivity
-                      .rejectionReason
-
-                    ||
-                    'This activity was not approved.'
+                    selectedActivity.rejectReason
+                    || 'This activity was not approved.'
                   }}
                 </p>
+              </div>
 
+
+              <div
+                v-else-if="selectedActivity.source !== 'activity'"
+                class="
+                  status-message
+                  approved-message
+                "
+              >
+                <strong>
+                  Approved by Administrator
+                </strong>
+                <p>
+                  This external activity and your
+                  Skill Mapping were reviewed and approved.
+                </p>
+              </div>
+
+
+              <div
+                v-else-if="selectedActivity.status === 'cancelled'"
+                class="
+                  status-message
+                  rejected-message
+                "
+              >
+                <strong>
+                  Activity Cancelled
+                </strong>
+                <p>
+                  This faculty activity has been cancelled.
+                </p>
+              </div>
+
+
+              <div
+                v-else
+                class="
+                  status-message
+                  approved-message
+                "
+              >
+                <strong>
+                  {{
+                    selectedActivity.status === 'completed'
+                      ? 'Activity Completed'
+                      : 'Registered'
+                  }}
+                </strong>
+                <p>
+                  You are listed as a
+                  {{ selectedActivity.role.toLowerCase() }}
+                  in this faculty activity.
+                </p>
               </div>
 
             </section>
@@ -1290,6 +1485,35 @@ onBeforeUnmount(() => {
   margin-bottom: 22px;
 
   border-bottom: 1px solid #dfe3ea;
+}
+
+
+.tabs {
+  display: flex;
+
+  gap: 22px;
+}
+
+
+.tab:not(.active) {
+  border-bottom-color: transparent;
+
+  color: #7e8796;
+
+  font-weight: 500;
+}
+
+
+.tab-count {
+  margin-left: 4px;
+
+  padding: 1px 6px;
+
+  border-radius: 10px;
+
+  background: #eef1ff;
+
+  font-size: 10px;
 }
 
 
@@ -1531,6 +1755,152 @@ onBeforeUnmount(() => {
   color: #168c4c;
 
   background: #e6f8ed;
+}
+
+
+.status.active {
+  color: #1e45c8;
+
+  background: #eaf0ff;
+}
+
+
+.status.completed {
+  color: #168c4c;
+
+  background: #e6f8ed;
+}
+
+
+.status.cancelled {
+  color: #c33f3f;
+
+  background: #fdeaea;
+}
+
+
+.title-row {
+  display: flex;
+
+  align-items: center;
+
+  flex-wrap: wrap;
+
+  gap: 8px;
+
+  margin-bottom: 6px;
+}
+
+
+.title-row h3 {
+  margin: 0;
+}
+
+
+.source-badge {
+  padding: 3px 8px;
+
+  border-radius: 10px;
+
+  font-size: 9px;
+
+  font-weight: 700;
+
+  letter-spacing: 0.3px;
+
+  white-space: nowrap;
+}
+
+
+.source-badge.activity {
+  color: #1e45c8;
+
+  background: #eaf0ff;
+}
+
+
+.source-badge.external_activity,
+.source-badge.submission {
+  color: #7e10c6;
+
+  background: #f3e8ff;
+}
+
+
+.submission-status-tabs {
+  display: flex;
+
+  flex-wrap: wrap;
+
+  gap: 8px;
+
+  margin: -8px 0 18px;
+}
+
+
+.submission-status-tabs button {
+  padding: 6px 12px;
+
+  border: 1px solid #dfe3ea;
+
+  border-radius: 16px;
+
+  background: white;
+
+  color: #5b6472;
+
+  font-size: 11px;
+
+  font-weight: 600;
+
+  cursor: pointer;
+}
+
+
+.submission-status-tabs button span {
+  margin-left: 4px;
+
+  color: #9aa2af;
+}
+
+
+.submission-status-tabs button.active {
+  border-color: #1e45c8;
+
+  background: #eef1ff;
+
+  color: #1235a3;
+}
+
+
+.reject-line {
+  color: #c33f3f !important;
+}
+
+
+.avatar.external {
+  color: #7e10c6;
+
+  background: #f3e8ff;
+}
+
+
+.evidence-link {
+  display: inline-flex;
+
+  align-items: center;
+
+  gap: 5px;
+
+  margin-top: 12px;
+
+  color: #1e45c8;
+
+  font-size: 11px;
+
+  font-weight: 600;
+
+  text-decoration: none;
 }
 
 
@@ -1930,6 +2300,39 @@ onBeforeUnmount(() => {
 
 .status-detail-card.approved {
   border-top-color: #20bb68;
+}
+
+
+.status-detail-card.completed {
+  border-top-color: #20bb68;
+}
+
+
+.status-detail-card.active {
+  border-top-color: #2f62e9;
+}
+
+
+.status-detail-card.cancelled {
+  border-top-color: #e34d4d;
+}
+
+
+.status-detail-card.completed
+.status-symbol {
+  color: #19a95b;
+}
+
+
+.status-detail-card.active
+.status-symbol {
+  color: #2f62e9;
+}
+
+
+.status-detail-card.cancelled
+.status-symbol {
+  color: #dc4747;
 }
 
 

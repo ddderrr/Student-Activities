@@ -2,13 +2,23 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import {
   AlertTriangle,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
+  FileText,
+  Globe2,
+  LoaderCircle,
   ShieldCheck,
   SlidersHorizontal,
   ArrowUpDown,
+  TriangleAlert,
   X
 } from 'lucide-vue-next'
+import {
+  PARTICIPANT_SKILLS,
+  STAFF_SKILLS
+} from '../../constants/activitySkills'
 
 const API_BASE = 'http://127.0.0.1:8000'
 const PAGE_SIZE = 10
@@ -18,12 +28,14 @@ const AVATAR_COLORS = ['#2f5fdb', '#1c2b4a', '#8ea0ba', '#7c5cd6']
 const REQUEST_TYPE_OPTIONS = [
   { value: '', label: 'All Types' },
   { value: 'skill_validation', label: 'Skill Validation' },
-  { value: 'special_request', label: 'Special Request' }
+  { value: 'special_request', label: 'Special Request' },
+  { value: 'external_activity', label: 'External Activity' }
 ]
 
 const REQUEST_TYPE_ICONS = {
   skill_validation: ShieldCheck,
-  special_request: AlertTriangle
+  special_request: AlertTriangle,
+  external_activity: Globe2
 }
 
 const stats = ref({ total_pending: 0, approved_today: 0, rejected_today: 0 })
@@ -41,6 +53,164 @@ const sortOrder = ref('date_desc')
 const showFilterMenu = ref(false)
 
 const detailRequest = ref(null)
+const successMessage = ref('')
+
+// /api/requests รวม 2 แหล่ง id ซ้ำกันได้ ต้องใช้ source ประกอบ key
+function rowKey(request) {
+  return `${request.source}-${request.id}`
+}
+
+function isExternal(request) {
+  return request.source === 'external_activity'
+}
+
+/* =========================
+   External activity review
+========================= */
+const reviewItem = ref(null)
+const reviewOpen = ref(false)
+const reviewLoading = ref(false)
+const reviewError = ref('')
+
+// Skill Mapping ที่นักศึกษาตั้งมา (แสดงอย่างเดียว admin ไม่ต้องแก้)
+const reviewSkillRows = computed(() => {
+  if (!reviewItem.value) return []
+
+  const definitions =
+    reviewItem.value.skill_target_role === 'staff'
+      ? STAFF_SKILLS
+      : PARTICIPANT_SKILLS
+
+  return definitions
+    .map((skill) => ({
+      ...skill,
+      level: reviewItem.value.skills?.[skill.key] ?? null
+    }))
+    .sort((a, b) => (b.level ?? 0) - (a.level ?? 0))
+})
+
+const relatedSkillCount = computed(() =>
+  reviewSkillRows.value.filter((skill) => skill.level !== null).length
+)
+
+async function openReview(request) {
+  reviewOpen.value = true
+  reviewLoading.value = true
+  reviewError.value = ''
+  reviewItem.value = null
+  successMessage.value = ''
+
+  try {
+    const response = await fetch(`${API_BASE}/api/external-activities/${request.id}`)
+    const data = await response.json().catch(() => null)
+
+    if (!response.ok) throw new Error(data?.detail || 'โหลดรายละเอียดไม่สำเร็จ')
+
+    reviewItem.value = data
+  } catch (error) {
+    reviewError.value = error.message || 'โหลดรายละเอียดไม่สำเร็จ'
+  } finally {
+    reviewLoading.value = false
+  }
+}
+
+function closeReview() {
+  reviewOpen.value = false
+  reviewItem.value = null
+}
+
+/* =========================
+   Approve / reject from the table
+   (View Detail ใช้ดูอย่างเดียว)
+========================= */
+const decisionTarget = ref(null)
+const decisionComment = ref('')
+const decisionError = ref('')
+const deciding = ref(false)
+
+function openDecision(request, status) {
+  decisionTarget.value = { request, status }
+  decisionComment.value = ''
+  decisionError.value = ''
+  successMessage.value = ''
+}
+
+function closeDecision() {
+  if (deciding.value) return
+  decisionTarget.value = null
+}
+
+async function confirmDecision() {
+  if (!decisionTarget.value || deciding.value) return
+
+  const { request, status } = decisionTarget.value
+  const comment = decisionComment.value.trim()
+
+  decisionError.value = ''
+
+  if (status === 'rejected' && !comment) {
+    decisionError.value = 'กรุณาระบุเหตุผลที่ไม่อนุมัติ หรือสิ่งที่นักศึกษาต้องแก้ไข'
+    return
+  }
+
+  deciding.value = true
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/external-activities/${request.id}/decision`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          status === 'approved'
+            ? { status }
+            // คอมเมนต์นี้แสดงให้นักศึกษาเห็นใน My Submissions
+            : { status, reject_reason: comment }
+        )
+      }
+    )
+
+    const data = await response.json().catch(() => null)
+
+    if (!response.ok) throw new Error(data?.detail || 'บันทึกไม่สำเร็จ')
+
+    successMessage.value =
+      status === 'approved'
+        ? `อนุมัติ "${data.title}" แล้ว`
+        : `ไม่อนุมัติ "${data.title}" แล้ว`
+
+    deciding.value = false
+    closeDecision()
+    refreshAll()
+  } catch (error) {
+    decisionError.value = error.message || 'บันทึกไม่สำเร็จ'
+  } finally {
+    deciding.value = false
+  }
+}
+
+function formatDay(value) {
+  if (!value) return '-'
+
+  const [year, month, day] = value.split('-').map(Number)
+
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  })
+}
+
+function reviewDateRange(item) {
+  return item.start_date === item.end_date
+    ? formatDay(item.start_date)
+    : `${formatDay(item.start_date)} – ${formatDay(item.end_date)}`
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`
+}
 
 const totalPages = computed(() =>
   Math.max(1, Math.ceil(total.value / PAGE_SIZE))
@@ -149,7 +319,7 @@ function toggleSort() {
 }
 
 async function decideRequest(request, status) {
-  actionLoadingId.value = request.id
+  actionLoadingId.value = rowKey(request)
   actionError.value = ''
 
   try {
@@ -247,7 +417,12 @@ async function decideRequest(request, status) {
           </thead>
 
           <tbody>
-            <tr v-for="request in requests" :key="request.id">
+            <tr
+              v-for="request in requests"
+              :key="rowKey(request)"
+              :data-source="request.source"
+              :data-id="request.id"
+            >
               <td>
                 <div class="requester-cell">
                   <span
@@ -282,16 +457,37 @@ async function decideRequest(request, status) {
               <td class="date-cell">{{ formatDate(request.submitted_at) }}</td>
 
               <td>
-                <button class="detail-button" @click="detailRequest = request">
+                <button
+                  class="detail-button"
+                  @click="isExternal(request) ? openReview(request) : (detailRequest = request)"
+                >
                   View Detail
                 </button>
               </td>
 
               <td>
-                <div class="row-actions">
+                <div v-if="isExternal(request)" class="row-actions">
                   <button
                     class="approve-button"
-                    :disabled="actionLoadingId === request.id"
+                    :disabled="deciding"
+                    @click="openDecision(request, 'approved')"
+                  >
+                    อนุมัติ
+                  </button>
+
+                  <button
+                    class="reject-button"
+                    :disabled="deciding"
+                    @click="openDecision(request, 'rejected')"
+                  >
+                    ไม่อนุมัติ
+                  </button>
+                </div>
+
+                <div v-else class="row-actions">
+                  <button
+                    class="approve-button"
+                    :disabled="actionLoadingId === rowKey(request)"
                     @click="decideRequest(request, 'approved')"
                   >
                     อนุมัติ
@@ -299,7 +495,7 @@ async function decideRequest(request, status) {
 
                   <button
                     class="reject-button"
-                    :disabled="actionLoadingId === request.id"
+                    :disabled="actionLoadingId === rowKey(request)"
                     @click="decideRequest(request, 'rejected')"
                   >
                     ยกเลิก
@@ -344,6 +540,10 @@ async function decideRequest(request, status) {
       </div>
 
       <div v-if="actionError" class="action-error">{{ actionError }}</div>
+      <div v-if="successMessage" class="action-success" role="status">
+        <CheckCircle2 :size="15" />
+        {{ successMessage }}
+      </div>
     </section>
 
     <div v-if="detailRequest" class="modal-backdrop" @click.self="detailRequest = null">
@@ -368,6 +568,195 @@ async function decideRequest(request, status) {
           <dt>Submitted</dt>
           <dd>{{ formatDate(detailRequest.submitted_at) }}</dd>
         </dl>
+      </div>
+    </div>
+
+    <div v-if="reviewOpen" class="modal-backdrop" @click.self="closeReview">
+      <div class="modal review-modal" role="dialog" aria-label="External activity detail">
+        <div class="modal-header">
+          <div>
+            <p class="review-eyebrow">EXTERNAL ACTIVITY</p>
+            <h3>{{ reviewItem ? reviewItem.title : 'กำลังโหลด...' }}</h3>
+          </div>
+          <button class="modal-close" @click="closeReview">
+            <X :size="16" />
+          </button>
+        </div>
+
+        <p v-if="reviewLoading" class="load-status">กำลังโหลดรายละเอียด...</p>
+
+        <div v-else-if="reviewItem" class="review-grid">
+          <div class="review-left">
+            <section class="review-section">
+              <h4>Student</h4>
+              <p class="review-student">
+                {{ reviewItem.student.first_name }} {{ reviewItem.student.last_name }}
+                <small>ID: {{ reviewItem.student_id }} · {{ reviewItem.student.major }}</small>
+              </p>
+            </section>
+
+            <section class="review-section">
+              <h4>Activity Details</h4>
+              <dl class="review-details">
+                <dt>External Organizer</dt>
+                <dd data-field="organization">{{ reviewItem.organization }}</dd>
+                <dt>Category</dt>
+                <dd data-field="activity_type">{{ reviewItem.activity_type }}</dd>
+                <dt>Role</dt>
+                <dd data-field="role">{{ reviewItem.role === 'organizer' ? 'Organizer' : 'Participant' }}</dd>
+                <dt>Date</dt>
+                <dd data-field="date">{{ reviewDateRange(reviewItem) }}</dd>
+                <dt>Location</dt>
+                <dd data-field="location">{{ reviewItem.location }}</dd>
+                <dt>Submitted</dt>
+                <dd>{{ formatDate(reviewItem.submitted_at) }}</dd>
+              </dl>
+              <div class="review-description" data-field="description">
+                {{ reviewItem.description || 'ไม่มีคำอธิบาย' }}
+              </div>
+            </section>
+
+            <section class="review-section">
+              <h4>Evidence</h4>
+              <img
+                v-if="reviewItem.evidence.content_type.startsWith('image/')"
+                class="evidence-preview"
+                :src="`${API_BASE}${reviewItem.evidence.url}`"
+                :alt="reviewItem.evidence.original_name"
+              />
+              <a
+                class="evidence-file"
+                :href="`${API_BASE}${reviewItem.evidence.url}`"
+                target="_blank"
+                rel="noopener"
+              >
+                <FileText :size="15" />
+                <span>{{ reviewItem.evidence.original_name }}</span>
+                <small>{{ formatBytes(reviewItem.evidence.size) }}</small>
+                <ExternalLink :size="13" />
+              </a>
+            </section>
+          </div>
+
+          <div class="review-right">
+            <section class="review-section">
+              <div class="skills-heading">
+                <h4>Skill Mapping (by student)</h4>
+                <span class="skill-count">
+                  {{ relatedSkillCount }} related ·
+                  {{ reviewItem.skill_target_role === 'staff' ? 'Staff skills' : 'Participant skills' }}
+                </span>
+              </div>
+
+              <ul class="skill-readonly">
+                <li
+                  v-for="skill in reviewSkillRows"
+                  :key="skill.key"
+                  :data-skill="skill.key"
+                  :class="{ 'not-related': skill.level === null }"
+                >
+                  <div class="skill-readonly-name">
+                    <strong>{{ skill.label }}</strong>
+                    <small>{{ skill.description }}</small>
+                  </div>
+
+                  <div class="skill-readonly-level">
+                    <span v-if="skill.level !== null" class="level-bar" aria-hidden="true">
+                      <i
+                        v-for="level in 5"
+                        :key="level"
+                        :class="{ filled: level <= skill.level }"
+                      ></i>
+                    </span>
+                    <span class="level-text">
+                      {{ skill.level === null ? 'ไม่เกี่ยวข้อง' : `Level ${skill.level}` }}
+                    </span>
+                  </div>
+                </li>
+              </ul>
+            </section>
+          </div>
+        </div>
+
+        <div v-if="reviewError" class="review-error" role="alert">
+          <TriangleAlert :size="15" />
+          {{ reviewError }}
+        </div>
+      </div>
+    </div>
+
+    <!-- ยืนยันอนุมัติ / ไม่อนุมัติ (เปิดจากปุ่มในตาราง) -->
+    <div v-if="decisionTarget" class="modal-backdrop" @click.self="closeDecision">
+      <div
+        class="modal decision-modal"
+        role="dialog"
+        :aria-label="decisionTarget.status === 'approved' ? 'Confirm approval' : 'Reject with comment'"
+        :data-status="decisionTarget.status"
+      >
+        <div class="modal-header">
+          <h3>
+            {{ decisionTarget.status === 'approved' ? 'ยืนยันการอนุมัติ' : 'ไม่อนุมัติกิจกรรม' }}
+          </h3>
+          <button class="modal-close" :disabled="deciding" @click="closeDecision">
+            <X :size="16" />
+          </button>
+        </div>
+
+        <div class="decision-summary">
+          <strong>{{ decisionTarget.request.detail }}</strong>
+          <span>
+            {{ decisionTarget.request.requester_name }}
+            (ID: {{ decisionTarget.request.requester_student_id }})
+            · {{ decisionTarget.request.request_type_label }}
+          </span>
+        </div>
+
+        <p v-if="decisionTarget.status === 'approved'" class="decision-text">
+          ต้องการอนุมัติกิจกรรมนี้ใช่หรือไม่? กิจกรรมและ Skill Mapping ที่นักศึกษาตั้งไว้
+          จะถูกนับรวมในหน้า My Activities ของนักศึกษา
+        </p>
+
+        <label v-else class="reject-field">
+          <span>ความคิดเห็น / เหตุผลที่ไม่อนุมัติ *</span>
+          <textarea
+            v-model="decisionComment"
+            rows="4"
+            placeholder="อธิบายว่าทำไมไม่อนุมัติ หรือนักศึกษาต้องแก้ไขอะไร เช่น ไฟล์หลักฐานไม่ชัดเจน กรุณาแนบใหม่"
+            @input="decisionError = ''"
+          ></textarea>
+          <small class="decision-hint">ความคิดเห็นนี้จะแสดงให้นักศึกษาเห็นในหน้า My Submissions</small>
+        </label>
+
+        <div v-if="decisionError" class="review-error" role="alert">
+          <TriangleAlert :size="15" />
+          {{ decisionError }}
+        </div>
+
+        <div class="decision-actions">
+          <button class="reject-button" :disabled="deciding" @click="closeDecision">
+            ยกเลิก
+          </button>
+
+          <button
+            v-if="decisionTarget.status === 'approved'"
+            class="approve-button"
+            :disabled="deciding"
+            @click="confirmDecision"
+          >
+            <LoaderCircle v-if="deciding" class="spin" :size="14" />
+            ยืนยันอนุมัติ
+          </button>
+
+          <button
+            v-else
+            class="confirm-reject-button"
+            :disabled="deciding"
+            @click="confirmDecision"
+          >
+            <LoaderCircle v-if="deciding" class="spin" :size="14" />
+            ยืนยันไม่อนุมัติ
+          </button>
+        </div>
       </div>
     </div>
   </section>
@@ -685,4 +1074,337 @@ tbody td {
 .modal dt { font-size: 11px; color: #8ea0ba; margin-top: 12px; }
 .modal dt:first-child { margin-top: 0; }
 .modal dd { margin: 3px 0 0; font-size: 13px; color: #1c293d; }
+
+.action-success {
+  margin: 12px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #15803d;
+  font-size: 12.5px;
+}
+
+.review-modal {
+  width: min(960px, calc(100vw - 32px));
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 22px 24px;
+}
+
+.review-eyebrow {
+  margin: 0 0 3px;
+  color: #8ea0ba;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.review-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.review-left,
+.review-right {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.review-section {
+  padding: 14px 16px;
+  border: 1px solid #e5eaf2;
+  border-radius: 12px;
+}
+
+.review-section h4 {
+  margin: 0 0 10px;
+  color: #52617a;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.review-student {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.review-student small {
+  color: #8ea0ba;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.modal .review-details {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 6px 10px;
+}
+
+.modal .review-details dt,
+.modal .review-details dt:first-child {
+  margin: 0;
+}
+
+.modal .review-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.review-description {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid #7c5cd6;
+  border-radius: 6px;
+  background: #f7f5ff;
+  color: #3b4a61;
+  font-size: 12.5px;
+  white-space: pre-wrap;
+}
+
+.evidence-preview {
+  width: 100%;
+  max-height: 260px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  object-fit: contain;
+  background: #f4f7fc;
+}
+
+.evidence-file {
+  padding: 9px 11px;
+  border: 1px solid #e5eaf2;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #2f5fdb;
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.evidence-file span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-file small {
+  color: #8ea0ba;
+}
+
+.skills-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.skill-count {
+  color: #52617a;
+  font-size: 11px;
+}
+
+.review-hint {
+  margin: 0 0 10px;
+  color: #8ea0ba;
+  font-size: 11.5px;
+}
+
+.skill-readonly {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.skill-readonly li {
+  padding: 9px 11px;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.skill-readonly li.not-related {
+  background: #f8f9fb;
+  color: #9aa6b8;
+}
+
+.skill-readonly-name {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.skill-readonly-name strong {
+  font-size: 12.5px;
+}
+
+.skill-readonly-name small {
+  color: #8ea0ba;
+  font-size: 10.5px;
+}
+
+.skill-readonly-level {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.level-bar {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.level-bar i {
+  width: 14px;
+  height: 6px;
+  border-radius: 3px;
+  background: #e5eaf2;
+}
+
+.level-bar i.filled {
+  background: #2f5fdb;
+}
+
+.level-text {
+  min-width: 52px;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.not-related .level-text {
+  font-weight: 500;
+}
+
+.reject-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.reject-field textarea {
+  padding: 9px 11px;
+  border: 1px solid #f1c3c0;
+  border-radius: 8px;
+  color: #1c293d;
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.review-error {
+  margin-top: 14px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: #fdeaea;
+  color: #b42318;
+  font-size: 12.5px;
+}
+
+.decision-modal {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.decision-summary {
+  padding: 11px 13px;
+  border: 1px solid #e5eaf2;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #f8fafd;
+}
+
+.decision-summary strong {
+  font-size: 13.5px;
+}
+
+.decision-summary span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.decision-text {
+  margin: 14px 0 0;
+  color: #3b4a61;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.decision-modal .reject-field {
+  margin-top: 14px;
+}
+
+.decision-hint {
+  color: #8ea0ba;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.decision-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.decision-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.confirm-reject-button {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 8px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.decision-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.spin {
+  animation: spin 0.75s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 760px) {
+  .review-grid {
+    grid-template-columns: 1fr;
+  }
+}
 </style>
