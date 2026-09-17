@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
@@ -41,7 +41,15 @@ const majorOptions = [
 const activity = ref({
   id: activityId.value,
   uid: '',
-  name: ''
+  name: '',
+  activity_type: '',
+  start_at: null,
+  end_at: null,
+  department: '',
+  responsible_person: '',
+  advisor: '',
+  location: '',
+  description: ''
 })
 
 const participants = ref([])
@@ -52,6 +60,10 @@ const editingRowId = ref(null)
 const editDraft = ref(null)
 const savingRowId = ref(null)
 const saveMessage = ref('')
+
+const descriptionModalOpen = ref(false)
+const descriptionTextRef = ref(null)
+const descriptionIsOverflowing = ref(false)
 
 // รวมค่า major ที่บันทึกไว้ (เช่นจากไฟล์ import) ที่ไม่อยู่ใน list ด้วย
 // เพื่อให้ dropdown แสดงค่าปัจจุบันได้
@@ -73,21 +85,74 @@ const organizerCount = computed(
   () => participants.value.filter((student) => student.role === 'organizer').length
 )
 
+function formatActivityDate(value) {
+  if (!value) return '—'
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+
+  return date.toLocaleDateString('th-TH', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  })
+}
+
+function checkDescriptionOverflow() {
+  nextTick(() => {
+    const element = descriptionTextRef.value
+    descriptionIsOverflowing.value = Boolean(
+      element && element.scrollHeight > element.clientHeight + 1
+    )
+  })
+}
+
+function openDescriptionModal() {
+  descriptionModalOpen.value = true
+}
+
+function closeDescriptionModal() {
+  descriptionModalOpen.value = false
+}
+
+function handleModalEscape(event) {
+  if (event.key === 'Escape' && descriptionModalOpen.value) {
+    closeDescriptionModal()
+  }
+}
+
+const activityDateRange = computed(() => {
+  const start = formatActivityDate(activity.value.start_at)
+  const end = formatActivityDate(activity.value.end_at)
+
+  if (start === '—' && end === '—') return '—'
+  if (start === end) return start
+
+  return `${start} – ${end}`
+})
+
 async function fetchParticipants() {
   pageLoading.value = true
   loadError.value = ''
 
   try {
-    const response = await fetch(
-      `${API_BASE}/api/activities/${activityId.value}/participants`
-    )
+    const [participantsResponse, activityResponse] = await Promise.all([
+      fetch(`${API_BASE}/api/activities/${activityId.value}/participants`),
+      fetch(`${API_BASE}/api/activities/${activityId.value}`)
+    ])
 
-    if (!response.ok) throw new Error('โหลดข้อมูลไม่สำเร็จ')
+    if (!participantsResponse.ok || !activityResponse.ok) {
+      throw new Error('โหลดข้อมูลไม่สำเร็จ')
+    }
 
-    const data = await response.json()
+    const [participantsData, activityData] = await Promise.all([
+      participantsResponse.json(),
+      activityResponse.json()
+    ])
 
-    activity.value = data.activity
-    participants.value = data.students
+    activity.value = activityData
+    participants.value = participantsData.students
+    checkDescriptionOverflow()
   } catch (error) {
     loadError.value = error.message || 'โหลดข้อมูลไม่สำเร็จ'
   } finally {
@@ -95,7 +160,16 @@ async function fetchParticipants() {
   }
 }
 
-onMounted(fetchParticipants)
+onMounted(() => {
+  fetchParticipants()
+  window.addEventListener('resize', checkDescriptionOverflow)
+  window.addEventListener('keydown', handleModalEscape)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', checkDescriptionOverflow)
+  window.removeEventListener('keydown', handleModalEscape)
+})
 
 function goBack() {
   router.push('/admin/activities')
@@ -230,6 +304,49 @@ function roleLabel(role) {
         <div class="summary-with-icon">
           <Users :size="17" />
           <strong class="summary-number">{{ memberCount }}</strong>
+        </div>
+      </div>
+
+      <div class="summary-divider detail-divider"></div>
+
+      <div class="activity-detail-panel">
+        <span class="detail-heading">ACTIVITY DETAILS</span>
+
+        <div class="activity-detail-grid">
+          <div class="activity-detail-item">
+            <small>TYPE</small>
+            <strong>{{ activity.activity_type || '—' }}</strong>
+          </div>
+
+          <div class="activity-detail-item">
+            <small>DATE</small>
+            <strong>{{ activityDateRange }}</strong>
+          </div>
+
+          <div class="activity-detail-item">
+            <small>LOCATION</small>
+            <strong>{{ activity.location || '—' }}</strong>
+          </div>
+
+          <div class="activity-detail-item">
+            <small>RESPONSIBLE</small>
+            <strong>{{ activity.responsible_person || '—' }}</strong>
+          </div>
+
+          <div class="activity-detail-item activity-description">
+            <small>DESCRIPTION</small>
+            <strong ref="descriptionTextRef">
+              {{ activity.description || 'ไม่มีรายละเอียดเพิ่มเติม' }}
+            </strong>
+            <button
+              v-if="activity.description && descriptionIsOverflowing"
+              class="read-more-button"
+              type="button"
+              @click="openDescriptionModal"
+            >
+              อ่านเพิ่มเติม
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -408,6 +525,34 @@ function roleLabel(role) {
         {{ saveMessage }}
       </div>
     </section>
+
+    <div
+      v-if="descriptionModalOpen"
+      class="description-modal-overlay"
+      @click.self="closeDescriptionModal"
+    >
+      <div class="description-modal" role="dialog" aria-modal="true" aria-label="รายละเอียดกิจกรรม">
+        <div class="description-modal-header">
+          <div>
+            <span>ACTIVITY DESCRIPTION</span>
+            <h3>รายละเอียดกิจกรรม</h3>
+          </div>
+
+          <button
+            class="description-modal-close"
+            type="button"
+            aria-label="ปิด"
+            @click="closeDescriptionModal"
+          >
+            <X :size="18" />
+          </button>
+        </div>
+
+        <div class="description-modal-body">
+          {{ activity.description || 'ไม่มีรายละเอียดเพิ่มเติม' }}
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -472,6 +617,7 @@ function roleLabel(role) {
   display: flex;
   align-items: center;
   gap: 20px;
+  overflow: hidden;
 }
 
 .summary-item {
@@ -518,6 +664,167 @@ function roleLabel(role) {
   width: 1px;
   height: 42px;
   background: #e4e9f0;
+}
+
+
+.activity-detail-panel {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
+  padding-left: 2px;
+  overflow: hidden;
+}
+
+.detail-heading {
+  display: block;
+  margin-bottom: 9px;
+  color: #7f8fa5;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+}
+
+.activity-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 22px;
+  row-gap: 9px;
+}
+
+.activity-detail-item {
+  min-width: 0;
+}
+
+.activity-detail-item small {
+  display: block;
+  margin-bottom: 2px;
+  color: #9aa9bc;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.activity-detail-item strong {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: #33445a;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.activity-description {
+  grid-column: 1 / -1;
+}
+
+.activity-description strong {
+  display: -webkit-box;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+
+.read-more-button {
+  margin-top: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1769dc;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.read-more-button:hover {
+  text-decoration: underline;
+}
+
+.description-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(20, 32, 50, 0.38);
+  backdrop-filter: blur(2px);
+}
+
+.description-modal {
+  width: min(640px, 100%);
+  max-height: min(70vh, 620px);
+  overflow: hidden;
+  border: 1px solid #e0e7f0;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(29, 44, 68, 0.18);
+}
+
+.description-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid #edf1f5;
+}
+
+.description-modal-header span {
+  display: block;
+  margin-bottom: 4px;
+  color: #8ea0ba;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.description-modal-header h3 {
+  margin: 0;
+  color: #233248;
+  font-size: 18px;
+}
+
+.description-modal-close {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 9px;
+  background: #f3f6fa;
+  color: #6d7d91;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.description-modal-close:hover {
+  background: #eaf0f7;
+  color: #33445a;
+}
+
+.description-modal-body {
+  max-height: calc(min(70vh, 620px) - 78px);
+  overflow-y: auto;
+  padding: 20px 22px 24px;
+  color: #425268;
+  font-size: 13px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .table-card {
@@ -771,6 +1078,24 @@ tr.editing {
   .summary-item,
   .summary-item.activity-info {
     min-width: 0;
+  }
+
+  .activity-detail-panel {
+    width: 100%;
+    min-width: 0;
+    padding-left: 0;
+  }
+
+  .detail-divider {
+    display: none;
+  }
+
+  .activity-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .activity-description {
+    grid-column: auto;
   }
 }
 </style>

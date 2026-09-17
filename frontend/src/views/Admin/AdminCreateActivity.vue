@@ -34,18 +34,19 @@ const skillTarget = ref('staff')
 const submitting = ref(false)
 const errorMessage = ref('')
 
+const OTHER_ACTIVITY_TYPE = 'อื่นๆ (โปรดระบุ)'
+
 const activityTypes = [
   'กิจกรรมวิชาการ',
   'สัมมนา',
   'อบรม / Workshop',
   'จิตอาสา',
   'กิจกรรมพัฒนาทักษะ',
-  'กิจกรรมนันทนาการ'
+  'กิจกรรมนันทนาการ',
+  OTHER_ACTIVITY_TYPE
 ]
 
-// เวลาเก็บแยกจาก form เพราะ date picker ใช้ค่า YYYY-MM-DD
-const startTime = ref('')
-const endTime = ref('')
+const customActivityType = ref('')
 
 const form = ref({
   activity_type: '',
@@ -57,6 +58,14 @@ const form = ref({
   advisor: '',
   location: '',
   description: ''
+})
+
+const resolvedActivityType = computed(() => {
+  if (form.value.activity_type === OTHER_ACTIVITY_TYPE) {
+    return customActivityType.value.trim()
+  }
+
+  return form.value.activity_type.trim()
 })
 
 const staffSkills = ref(defaultSkillLevels(STAFF_SKILLS))
@@ -219,13 +228,19 @@ function goBack() {
 function validateStepOne() {
   errorMessage.value = ''
 
+  if (
+    form.value.activity_type === OTHER_ACTIVITY_TYPE &&
+    !customActivityType.value.trim()
+  ) {
+    errorMessage.value = 'กรุณาระบุประเภทกิจกรรมอื่นๆ'
+    return false
+  }
+
   const required = [
-    form.value.activity_type,
+    resolvedActivityType.value,
     form.value.name,
     form.value.start_at,
-    startTime.value,
     form.value.end_at,
-    endTime.value,
     form.value.responsible_person,
     form.value.location
   ]
@@ -235,16 +250,8 @@ function validateStepOne() {
     return false
   }
 
-  const start = new Date(`${form.value.start_at}T${startTime.value}`)
-  const end = new Date(`${form.value.end_at}T${endTime.value}`)
-
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    errorMessage.value = 'กรุณาระบุวันและเวลาให้ถูกต้อง'
-    return false
-  }
-
-  if (end <= start) {
-    errorMessage.value = 'วัน/เวลาสิ้นสุดต้องอยู่หลังวัน/เวลาเริ่มต้น'
+  if (form.value.end_at < form.value.start_at) {
+    errorMessage.value = 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น'
     return false
   }
 
@@ -275,8 +282,11 @@ async function createActivity() {
         },
         body: JSON.stringify({
           ...form.value,
-          start_at: `${form.value.start_at}T${startTime.value}:00`,
-          end_at: `${form.value.end_at}T${endTime.value}:00`,
+          activity_type: resolvedActivityType.value,
+          // Backend ยังรับ datetime อยู่ จึงกำหนดเวลาให้อัตโนมัติ
+          // เพื่อให้ผู้ใช้เลือกเฉพาะวันที่ และยังรองรับกิจกรรมที่จบวันเดียวกันได้
+          start_at: `${form.value.start_at}T00:00:00`,
+          end_at: `${form.value.end_at}T23:59:59`,
           staff_skills: staffSkills.value,
           participant_skills: participantSkills.value
         })
@@ -332,7 +342,6 @@ async function createActivity() {
           </div>
 
           <h1>Create New Activity</h1>
-          <p>สร้างกิจกรรมใหม่และกำหนด Skill ที่เกี่ยวข้องในขั้นตอนเดียว</p>
         </div>
 
         <div class="steps">
@@ -382,6 +391,14 @@ async function createActivity() {
                       {{ type }}
                     </option>
                   </select>
+
+                  <input
+                    v-if="form.activity_type === OTHER_ACTIVITY_TYPE"
+                    v-model="customActivityType"
+                    class="other-activity-input"
+                    type="text"
+                    placeholder="โปรดระบุประเภทกิจกรรม"
+                  />
                 </label>
 
                 <label class="field">
@@ -400,7 +417,7 @@ async function createActivity() {
                 <div class="section-icon"><CalendarDays :size="20" /></div>
                 <div>
                   <h2>กำหนดการ</h2>
-                  <p>เลือกวันและเวลาเริ่มต้น / สิ้นสุดของกิจกรรม</p>
+                  <p>เลือกวันที่เริ่มต้น / สิ้นสุดของกิจกรรม</p>
                 </div>
               </div>
 
@@ -463,10 +480,6 @@ async function createActivity() {
                     </div>
                   </div>
 
-                  <label class="time-field">
-                    <span>เวลาเริ่มต้น <b>*</b></span>
-                    <input v-model="startTime" type="time" data-time="start" />
-                  </label>
                 </div>
 
                 <div class="field date-field">
@@ -535,10 +548,6 @@ async function createActivity() {
                     </div>
                   </div>
 
-                  <label class="time-field">
-                    <span>เวลาสิ้นสุด <b>*</b></span>
-                    <input v-model="endTime" type="time" data-time="end" />
-                  </label>
                 </div>
               </div>
             </section>
@@ -628,7 +637,7 @@ async function createActivity() {
 
               <ul>
                 <li><Check :size="14" /> ชื่อและประเภทกิจกรรม</li>
-                <li><Check :size="14" /> วันและเวลาเริ่ม / สิ้นสุด</li>
+                <li><Check :size="14" /> วันที่เริ่ม / สิ้นสุด</li>
                 <li><Check :size="14" /> ผู้รับผิดชอบหลัก</li>
                 <li><Check :size="14" /> สถานที่จัดกิจกรรม</li>
               </ul>
@@ -647,8 +656,8 @@ async function createActivity() {
               <p>
                   {{
                     skillTarget === 'staff'
-                      ? 'Staff ใช้ชุด Skill สำหรับผู้จัดและผู้ปฏิบัติงาน'
-                      : 'Participant ใช้ชุด Skill สำหรับผู้เข้าร่วมกิจกรรม'
+                      ? 'Skill สำหรับผู้จัดกิจกรรม'
+                      : 'Skill สำหรับผู้เข้าร่วมกิจกรรม'
                   }}
                 </p>
             </div>
@@ -918,6 +927,10 @@ async function createActivity() {
 .field select {
   height: 43px;
   padding: 0 12px;
+}
+
+.other-activity-input {
+  margin-top: 4px;
 }
 
 
