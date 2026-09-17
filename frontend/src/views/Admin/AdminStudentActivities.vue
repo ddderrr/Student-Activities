@@ -27,6 +27,13 @@ import {
   Ban,
   Trash2
 } from 'lucide-vue-next'
+import SkillLevelEditor from '../../components/Admin/SkillLevelEditor.vue'
+import {
+  PARTICIPANT_SKILLS,
+  SKILLS_BY_ROLE,
+  STAFF_SKILLS,
+  skillLevelsFromSaved
+} from '../../constants/activitySkills'
 
 const searchText = ref('')
 const quickSearch = ref('')
@@ -198,8 +205,36 @@ const editActivityForm = ref({
   advisor: '',
   location: '',
   description: '',
-  status: 'active'
+  status: 'active',
+  staff_skills: {},
+  participant_skills: {}
 })
+
+const editSkillTarget = ref('staff')
+
+// แถว Skill ที่เปิดดูอยู่ในตารางกิจกรรม
+const expandedSkillsId = ref(null)
+
+function toggleSkillsRow(activityId) {
+  expandedSkillsId.value =
+    expandedSkillsId.value === activityId ? null : activityId
+}
+
+function activitySkillList(activity, role) {
+  const saved = activity[`${role}_skills`] || {}
+
+  return SKILLS_BY_ROLE[role]
+    .filter((skill) => saved[skill.key] !== undefined)
+    .map((skill) => ({
+      key: skill.key,
+      label: skill.label,
+      level: saved[skill.key]
+    }))
+}
+
+function skillCount(activity, role) {
+  return Object.keys(activity[`${role}_skills`] || {}).length
+}
 
 const showAddStudentModal = ref(false)
 const addStudentLoading = ref(false)
@@ -330,6 +365,15 @@ function formatDate(dateString) {
   }).format(date)
 }
 
+function formatTime(dateString) {
+  if (!dateString) return ''
+
+  const date = new Date(dateString)
+  if (Number.isNaN(date.getTime())) return ''
+
+  const pad = (number) => String(number).padStart(2, '0')
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
 
 function dateOnly(value) {
   if (!value) return ''
@@ -444,8 +488,12 @@ function openEditActivity(activity) {
     advisor: activity.advisor || '',
     location: activity.location || '',
     description: activity.description || '',
-    status: activity.status || 'active'
+    status: activity.status || 'active',
+    staff_skills: skillLevelsFromSaved(STAFF_SKILLS, activity.staff_skills),
+    participant_skills: skillLevelsFromSaved(PARTICIPANT_SKILLS, activity.participant_skills)
   }
+
+  editSkillTarget.value = 'staff'
 
   selectedActivity.value = activity
   showEditActivityModal.value = true
@@ -520,7 +568,9 @@ async function saveActivityEdits() {
       advisor: form.advisor.trim(),
       location: form.location.trim(),
       description: form.description.trim(),
-      status: form.status
+      status: form.status,
+      staff_skills: form.staff_skills,
+      participant_skills: form.participant_skills
     })
 
     showEditActivityModal.value = false
@@ -1342,10 +1392,11 @@ async function confirmParticipantsImport() {
             </template>
 
             <template v-else>
-            <tr
+            <template
               v-for="activity in paginatedActivities"
               :key="activity.id"
             >
+            <tr>
               <td>
                 <div class="activity-name">
                   <strong>{{ activity.name }}</strong>
@@ -1356,6 +1407,18 @@ async function confirmParticipantsImport() {
                     >
                       {{ statusLabel(activity.status) }}
                     </span>
+
+                    <button
+                      type="button"
+                      class="skills-toggle"
+                      :class="{ open: expandedSkillsId === activity.id }"
+                      :aria-expanded="expandedSkillsId === activity.id"
+                      @click="toggleSkillsRow(activity.id)"
+                    >
+                      Skills
+                      <span>S {{ skillCount(activity, 'staff') }} · P {{ skillCount(activity, 'participant') }}</span>
+                      <ChevronDown :size="11" />
+                    </button>
                   </div>
                 </div>
               </td>
@@ -1365,11 +1428,17 @@ async function confirmParticipantsImport() {
               </td>
 
               <td>
-                {{ formatDate(activity.start_at) }}
+                <div class="date-cell">
+                  <span>{{ formatDate(activity.start_at) }}</span>
+                  <small>{{ formatTime(activity.start_at) }}</small>
+                </div>
               </td>
 
               <td>
-                {{ formatDate(activity.end_at) }}
+                <div class="date-cell">
+                  <span>{{ formatDate(activity.end_at) }}</span>
+                  <small>{{ formatTime(activity.end_at) }}</small>
+                </div>
               </td>
 
               <td>
@@ -1493,6 +1562,38 @@ async function confirmParticipantsImport() {
                 </div>
               </td>
             </tr>
+
+            <tr
+              v-if="expandedSkillsId === activity.id"
+              class="skills-detail-row"
+            >
+              <td colspan="8">
+                <div class="skills-detail">
+                  <section
+                    v-for="role in ['staff', 'participant']"
+                    :key="role"
+                    class="skills-detail-group"
+                    :data-role="role"
+                  >
+                    <h4>{{ role === 'staff' ? 'Staff Skills' : 'Participant Skills' }}</h4>
+
+                    <ul v-if="activitySkillList(activity, role).length">
+                      <li
+                        v-for="skill in activitySkillList(activity, role)"
+                        :key="skill.key"
+                        :data-skill="skill.key"
+                      >
+                        <span>{{ skill.label }}</span>
+                        <strong>Level {{ skill.level }}</strong>
+                      </li>
+                    </ul>
+
+                    <p v-else class="skills-empty">ไม่มี Skill ที่เกี่ยวข้อง</p>
+                  </section>
+                </div>
+              </td>
+            </tr>
+            </template>
 
             <tr v-if="!paginatedActivities.length">
               <td colspan="8">
@@ -2174,6 +2275,42 @@ async function confirmParticipantsImport() {
               rows="4"
             ></textarea>
           </label>
+
+          <div class="edit-field full edit-skills">
+            <div class="edit-skills-heading">
+              <span>Skills</span>
+
+              <div class="edit-skill-tabs">
+                <button
+                  type="button"
+                  :class="{ active: editSkillTarget === 'staff' }"
+                  @click="editSkillTarget = 'staff'"
+                >
+                  Staff
+                </button>
+                <button
+                  type="button"
+                  :class="{ active: editSkillTarget === 'participant' }"
+                  @click="editSkillTarget = 'participant'"
+                >
+                  Participant
+                </button>
+              </div>
+            </div>
+
+            <SkillLevelEditor
+              v-if="editSkillTarget === 'staff'"
+              v-model="editActivityForm.staff_skills"
+              :definitions="STAFF_SKILLS"
+              compact
+            />
+            <SkillLevelEditor
+              v-else
+              v-model="editActivityForm.participant_skills"
+              :definitions="PARTICIPANT_SKILLS"
+              compact
+            />
+          </div>
         </div>
 
         <div
@@ -2698,6 +2835,144 @@ td {
   align-items: center;
   gap: 7px;
   flex-wrap: wrap;
+}
+
+.date-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.date-cell small {
+  color: #93a5bc;
+  font-size: 11px;
+}
+
+.skills-toggle {
+  padding: 3px 7px;
+  border: 1px solid #dde5f0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #fff;
+  color: #4b5d76;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.skills-toggle span {
+  color: #8b9ab0;
+  font-weight: 700;
+}
+
+.skills-toggle svg {
+  transition: transform 0.15s ease;
+}
+
+.skills-toggle.open {
+  border-color: #b9cdf3;
+  background: #eef4ff;
+  color: #1f5fcf;
+}
+
+.skills-toggle.open svg {
+  transform: rotate(180deg);
+}
+
+.skills-detail-row td {
+  height: auto;
+  padding: 0 14px 16px;
+  border-top: 0;
+  background: #fbfcfe;
+}
+
+.skills-detail {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.skills-detail-group {
+  padding: 12px 14px;
+  border: 1px solid #e7ecf3;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.skills-detail-group h4 {
+  margin: 0 0 8px;
+  color: #8ea0b8;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.skills-detail-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 5px;
+}
+
+.skills-detail-group li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.skills-detail-group li strong {
+  color: #17864d;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.skills-empty {
+  margin: 0;
+  color: #93a5bc;
+  font-size: 12px;
+}
+
+.edit-skills-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.edit-skills-heading > span {
+  color: #66758c;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.edit-skill-tabs {
+  padding: 3px;
+  border-radius: 9px;
+  display: inline-flex;
+  background: #f1f4f9;
+}
+
+.edit-skill-tabs button {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #66758c;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.edit-skill-tabs button.active {
+  background: #fff;
+  color: #1f5fcf;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
 .activity-status {

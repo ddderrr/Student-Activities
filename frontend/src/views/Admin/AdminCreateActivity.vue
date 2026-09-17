@@ -13,21 +13,18 @@ import {
   ClipboardList,
   FileText,
   GraduationCap,
-  Leaf,
-  Lightbulb,
   LoaderCircle,
   MapPin,
-  Rocket,
-  Scale,
   Sparkles,
   UsersRound,
-  UserRound,
-  Palette,
-  HandHeart,
-  Globe2,
-  HeartPulse,
-  Trees
+  UserRound
 } from 'lucide-vue-next'
+import SkillLevelEditor from '../../components/Admin/SkillLevelEditor.vue'
+import {
+  PARTICIPANT_SKILLS,
+  STAFF_SKILLS,
+  defaultSkillLevels
+} from '../../constants/activitySkills'
 
 const API_BASE = 'http://127.0.0.1:8000'
 const router = useRouter()
@@ -46,6 +43,10 @@ const activityTypes = [
   'กิจกรรมนันทนาการ'
 ]
 
+// เวลาเก็บแยกจาก form เพราะ date picker ใช้ค่า YYYY-MM-DD
+const startTime = ref('')
+const endTime = ref('')
+
 const form = ref({
   activity_type: '',
   name: '',
@@ -58,113 +59,25 @@ const form = ref({
   description: ''
 })
 
-const staffSkillDefinitions = [
-  {
-    key: 'creative_leadership',
-    label: 'Creative Leadership',
-    description: 'ภาวะผู้นำเชิงสร้างสรรค์',
-    icon: Lightbulb
-  },
-  {
-    key: 'innovation',
-    label: 'Innovation',
-    description: 'การคิดและสร้างนวัตกรรม',
-    icon: Sparkles
-  },
-  {
-    key: 'entrepreneurship',
-    label: 'Entrepreneurship',
-    description: 'ความเป็นผู้ประกอบการ',
-    icon: Rocket
-  },
-  {
-    key: 'promote_equality',
-    label: 'Promote Equality',
-    description: 'การส่งเสริมความเท่าเทียม',
-    icon: Scale
-  },
-  {
-    key: 'academic',
-    label: 'Academic',
-    description: 'ทักษะทางวิชาการ',
-    icon: GraduationCap
-  },
-  {
-    key: 'nature_environmental',
-    label: 'Nature and Environmental',
-    description: 'ธรรมชาติและสิ่งแวดล้อม',
-    icon: Leaf
-  }
-]
-
-const participantSkillDefinitions = [
-  {
-    key: 'arts_culture_traditions',
-    label: 'Arts, Culture, and Traditions',
-    description: 'ศิลปะ วัฒนธรรม และประเพณี',
-    icon: Palette
-  },
-  {
-    key: 'volunteerism',
-    label: 'Volunteerism',
-    description: 'จิตอาสาและการมีส่วนร่วมเพื่อสังคม',
-    icon: HandHeart
-  },
-  {
-    key: 'academics',
-    label: 'Academics',
-    description: 'การเรียนรู้และพัฒนาทางวิชาการ',
-    icon: GraduationCap
-  },
-  {
-    key: 'internationalization',
-    label: 'Internationalization',
-    description: 'ความเป็นสากลและการเรียนรู้ข้ามวัฒนธรรม',
-    icon: Globe2
-  },
-  {
-    key: 'health_promotion',
-    label: 'Health Promotion',
-    description: 'การส่งเสริมสุขภาพและความเป็นอยู่ที่ดี',
-    icon: HeartPulse
-  },
-  {
-    key: 'nature_environmental_conservation',
-    label: 'Nature and Environmental Conservation',
-    description: 'การอนุรักษ์ธรรมชาติและสิ่งแวดล้อม',
-    icon: Trees
-  }
-]
-
-const staffSkills = ref({
-  creative_leadership: 3,
-  innovation: 3,
-  entrepreneurship: 3,
-  promote_equality: 3,
-  academic: 3,
-  nature_environmental: 3
-})
-
-const participantSkills = ref({
-  arts_culture_traditions: 3,
-  volunteerism: 3,
-  academics: 3,
-  internationalization: 3,
-  health_promotion: 3,
-  nature_environmental_conservation: 3
-})
+const staffSkills = ref(defaultSkillLevels(STAFF_SKILLS))
+const participantSkills = ref(defaultSkillLevels(PARTICIPANT_SKILLS))
 
 const activeSkillDefinitions = computed(() =>
   skillTarget.value === 'staff'
-    ? staffSkillDefinitions
-    : participantSkillDefinitions
+    ? STAFF_SKILLS
+    : PARTICIPANT_SKILLS
 )
 
-const activeSkills = computed(() =>
-  skillTarget.value === 'staff'
-    ? staffSkills.value
-    : participantSkills.value
-)
+const activeSkills = computed({
+  get: () =>
+    skillTarget.value === 'staff'
+      ? staffSkills.value
+      : participantSkills.value,
+  set: (value) => {
+    if (skillTarget.value === 'staff') staffSkills.value = value
+    else participantSkills.value = value
+  }
+})
 
 const openCalendar = ref(null)
 const calendarCursor = ref(new Date())
@@ -310,7 +223,9 @@ function validateStepOne() {
     form.value.activity_type,
     form.value.name,
     form.value.start_at,
+    startTime.value,
     form.value.end_at,
+    endTime.value,
     form.value.responsible_person,
     form.value.location
   ]
@@ -320,16 +235,16 @@ function validateStepOne() {
     return false
   }
 
-  const start = new Date(form.value.start_at)
-  const end = new Date(form.value.end_at)
+  const start = new Date(`${form.value.start_at}T${startTime.value}`)
+  const end = new Date(`${form.value.end_at}T${endTime.value}`)
 
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    errorMessage.value = 'กรุณาระบุวันที่ให้ถูกต้อง'
+    errorMessage.value = 'กรุณาระบุวันและเวลาให้ถูกต้อง'
     return false
   }
 
-  if (end < start) {
-    errorMessage.value = 'วันที่สิ้นสุดต้องไม่อยู่ก่อนวันที่เริ่มต้น'
+  if (end <= start) {
+    errorMessage.value = 'วัน/เวลาสิ้นสุดต้องอยู่หลังวัน/เวลาเริ่มต้น'
     return false
   }
 
@@ -360,9 +275,8 @@ async function createActivity() {
         },
         body: JSON.stringify({
           ...form.value,
-          // UI เลือกเฉพาะวันที่ แต่ยังส่งค่า datetime ให้ Backend เหมือนเดิม
-          start_at: `${form.value.start_at}T00:00:00`,
-          end_at: `${form.value.end_at}T23:59:59`,
+          start_at: `${form.value.start_at}T${startTime.value}:00`,
+          end_at: `${form.value.end_at}T${endTime.value}:00`,
           staff_skills: staffSkills.value,
           participant_skills: participantSkills.value
         })
@@ -486,7 +400,7 @@ async function createActivity() {
                 <div class="section-icon"><CalendarDays :size="20" /></div>
                 <div>
                   <h2>กำหนดการ</h2>
-                  <p>เลือกวันที่เริ่มต้นและวันที่สิ้นสุดของกิจกรรม</p>
+                  <p>เลือกวันและเวลาเริ่มต้น / สิ้นสุดของกิจกรรม</p>
                 </div>
               </div>
 
@@ -548,6 +462,11 @@ async function createActivity() {
                       </div>
                     </div>
                   </div>
+
+                  <label class="time-field">
+                    <span>เวลาเริ่มต้น <b>*</b></span>
+                    <input v-model="startTime" type="time" data-time="start" />
+                  </label>
                 </div>
 
                 <div class="field date-field">
@@ -615,6 +534,11 @@ async function createActivity() {
                       </div>
                     </div>
                   </div>
+
+                  <label class="time-field">
+                    <span>เวลาสิ้นสุด <b>*</b></span>
+                    <input v-model="endTime" type="time" data-time="end" />
+                  </label>
                 </div>
               </div>
             </section>
@@ -704,7 +628,7 @@ async function createActivity() {
 
               <ul>
                 <li><Check :size="14" /> ชื่อและประเภทกิจกรรม</li>
-                <li><Check :size="14" /> วันที่เริ่ม / สิ้นสุด</li>
+                <li><Check :size="14" /> วันและเวลาเริ่ม / สิ้นสุด</li>
                 <li><Check :size="14" /> ผู้รับผิดชอบหลัก</li>
                 <li><Check :size="14" /> สถานที่จัดกิจกรรม</li>
               </ul>
@@ -745,38 +669,10 @@ async function createActivity() {
             </div>
           </div>
 
-          <div class="skill-list">
-            <article
-              v-for="skill in activeSkillDefinitions"
-              :key="skill.key"
-              class="skill-row"
-            >
-              <div class="skill-topline">
-                <div class="skill-name">
-                  <div class="skill-icon"><component :is="skill.icon" :size="18" /></div>
-                  <div>
-                    <strong>{{ skill.label }}</strong>
-                    <small>{{ skill.description }}</small>
-                  </div>
-                </div>
-
-                <span class="level-badge">LEVEL {{ activeSkills[skill.key] }}</span>
-              </div>
-
-              <input
-                v-model.number="activeSkills[skill.key]"
-                class="skill-range"
-                type="range"
-                min="1"
-                max="5"
-                step="1"
-              />
-
-              <div class="range-labels">
-                <span v-for="level in 5" :key="level">{{ level }}</span>
-              </div>
-            </article>
-          </div>
+          <SkillLevelEditor
+            v-model="activeSkills"
+            :definitions="activeSkillDefinitions"
+          />
         </section>
       </template>
 
@@ -959,15 +855,11 @@ async function createActivity() {
   gap: 11px;
 }
 
-.section-icon,
-.skill-icon {
+.section-icon {
   display: grid;
   place-items: center;
   background: #f5f4f4;
   color: #1769dc;
-}
-
-.section-icon {
   width: 39px;
   height: 39px;
   border-radius: 11px;
@@ -1043,6 +935,19 @@ async function createActivity() {
 
 .date-picker {
   position: relative;
+}
+
+.time-field {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.time-field > span {
+  color: #5f6d80;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .date-trigger {
@@ -1402,74 +1307,15 @@ async function createActivity() {
   box-shadow: 0 2px 7px rgba(15, 23, 42, 0.07);
 }
 
-.skill-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
 
-.skill-row {
-  padding: 17px 18px;
-  border: 1px solid #e7ebf1;
-  border-radius: 12px;
-  background: #fbfcfe;
-}
 
-.skill-topline {
-  margin-bottom: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-}
 
-.skill-name {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
 
-.skill-icon {
-  width: 35px;
-  height: 35px;
-  border-radius: 9px;
-}
 
-.skill-name strong {
-  display: block;
-  color: #26364b;
-  font-size: 12px;
-}
 
-.skill-name small {
-  display: block;
-  margin-top: 2px;
-  color: #94a1b1;
-  font-size: 9px;
-}
 
-.level-badge {
-  padding: 5px 9px;
-  border-radius: 999px;
-  background: #e8f8ee;
-  color: #17864d;
-  font-size: 9px;
-  font-weight: 800;
-}
 
-.skill-range {
-  width: 100%;
-  accent-color: #155bc7;
-  cursor: pointer;
-}
 
-.range-labels {
-  margin-top: 3px;
-  display: flex;
-  justify-content: space-between;
-  color: #8290a2;
-  font-size: 9px;
-}
 
 .action-bar {
   position: sticky;
