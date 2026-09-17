@@ -956,7 +956,8 @@ const fetchNotifications = async () => {
 
   background: #f5f7fb;
 
-  overflow-x: hidden;
+  /* clip แทน hidden: hidden ทำให้ layout เป็น scroll container แล้ว sidebar sticky ไม่ทำงาน */
+  overflow-x: clip;
 
 }
 
