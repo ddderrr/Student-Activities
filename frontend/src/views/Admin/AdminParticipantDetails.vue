@@ -53,6 +53,18 @@ const editDraft = ref(null)
 const savingRowId = ref(null)
 const saveMessage = ref('')
 
+// รวมค่า major ที่บันทึกไว้ (เช่นจากไฟล์ import) ที่ไม่อยู่ใน list ด้วย
+// เพื่อให้ dropdown แสดงค่าปัจจุบันได้
+const editMajorOptions = computed(() => {
+  const saved = participants.value.find(
+    (student) => student.student_id === editingRowId.value
+  )?.major
+
+  if (!saved || majorOptions.includes(saved)) return majorOptions
+
+  return [saved, ...majorOptions]
+})
+
 const memberCount = computed(() => participants.value.length)
 const participantCount = computed(
   () => participants.value.filter((student) => student.role === 'participant').length
@@ -301,7 +313,7 @@ function roleLabel(role) {
                     class="row-select"
                   >
                     <option
-                      v-for="major in majorOptions"
+                      v-for="major in editMajorOptions"
                       :key="major"
                       :value="major"
                     >
