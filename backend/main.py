@@ -478,6 +478,24 @@ def validate_activity_status(status: str):
         )
 
 
+ACTIVITY_REQUIRED_TEXT_FIELDS = (
+    "name",
+    "activity_type",
+    "responsible_person",
+    "location",
+)
+
+
+def validate_required_text(values: dict):
+    # ค่าว่างหรือช่องว่างล้วนถือว่าไม่ได้กรอก
+    for field_name, value in values.items():
+        if value is None or not str(value).strip():
+            raise HTTPException(
+                status_code=400,
+                detail=f"{field_name} ห้ามว่าง",
+            )
+
+
 def validate_skill_levels(
     skills: dict[str, int],
     allowed_skills: dict[str, str],
@@ -621,6 +639,13 @@ def create_activity(
     payload: ActivityCreate,
     db: Session = Depends(get_db),
 ):
+    validate_required_text(
+        {
+            field_name: getattr(payload, field_name)
+            for field_name in ACTIVITY_REQUIRED_TEXT_FIELDS
+        }
+    )
+
     if payload.end_at <= payload.start_at:
         raise HTTPException(
             status_code=400,
@@ -737,22 +762,13 @@ def update_activity(
             detail="วัน/เวลาสิ้นสุดต้องอยู่หลังวัน/เวลาเริ่มต้น",
         )
 
-    required_text_fields = {
-        "name",
-        "activity_type",
-        "responsible_person",
-        "location",
-    }
-
-    for field_name in required_text_fields:
-        if field_name in updates:
-            value = updates[field_name]
-
-            if value is None or not str(value).strip():
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"{field_name} ห้ามว่าง",
-                )
+    validate_required_text(
+        {
+            field_name: updates[field_name]
+            for field_name in ACTIVITY_REQUIRED_TEXT_FIELDS
+            if field_name in updates
+        }
+    )
 
     text_fields = {
         "name",
@@ -1538,6 +1554,13 @@ def create_request(
     payload: StudentRequestCreate,
     db: Session = Depends(get_db),
 ):
+    validate_required_text(
+        {
+            "requester_name": payload.requester_name,
+            "requester_student_id": payload.requester_student_id,
+        }
+    )
+
     if payload.request_type not in REQUEST_TYPE_DEFINITIONS:
         raise HTTPException(
             status_code=400,
