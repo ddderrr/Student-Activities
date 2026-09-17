@@ -211,19 +211,15 @@ const averageSkillScore = computed(() => {
 const facultySkillAverages = computed(() => {
   const result = {}
 
+  // null = ไม่มีนักศึกษาคนไหนในภาคเรียนนี้มีข้อมูล skill นี้ (ไม่ใช่คะแนน 0)
   skillKeys.forEach(skill => {
-    if (semesterStudents.value.length === 0) {
-      result[skill.key] = 0
-      return
-    }
-
     const values = semesterStudents.value
       .map(student => skillValueOf(student, skill.key))
       .filter(value => value !== null)
 
     result[skill.key] = values.length
       ? values.reduce((sum, value) => sum + value, 0) / values.length
-      : 0
+      : null
   })
 
   return result
@@ -264,12 +260,14 @@ const benchmarkRadarPoints = computed(() => buildRadarPoints(benchmarkScores.val
 /* =========================
    Top / Growth Area
 ========================= */
+// จัดอันดับเฉพาะ skill ที่มีข้อมูลจริง ไม่งั้น skill ที่ไม่มีข้อมูลจะกลายเป็น Growth Area เสมอ
 const rankedFacultySkills = computed(() =>
   skillKeys
     .map(skill => ({
       ...skill,
-      score: facultySkillAverages.value[skill.key] ?? 0
+      score: facultySkillAverages.value[skill.key]
     }))
+    .filter(skill => skill.score !== null)
     .sort((a, b) => b.score - a.score)
 )
 
@@ -831,13 +829,13 @@ onBeforeUnmount(() => {
             <CheckCircle :size="18" />
 
             <span>
-              {{ t.adminStudentSkills.topArea }}: {{ topArea ? skillDisplay(topArea.label).toUpperCase() : '—' }}
+              {{ t.adminStudentSkills.topArea }}: {{ topArea ? skillDisplay(topArea.label).toUpperCase() : 'N/A' }}
             </span>
 
           </div>
 
           <p>
-            {{ t.adminStudentSkills.facultyAverage }}: {{ topArea ? topArea.score.toFixed(2) : '—' }} / 5.0
+            {{ t.adminStudentSkills.facultyAverage }}: {{ topArea ? topArea.score.toFixed(2) : 'N/A' }}<template v-if="topArea"> / 5.0</template>
           </p>
 
 
@@ -846,7 +844,7 @@ onBeforeUnmount(() => {
             <CheckCircle :size="13" />
 
             <span>
-              {{ t.adminStudentSkills.highestScore }}: {{ topArea ? topArea.score.toFixed(2) : '—' }}
+              {{ t.adminStudentSkills.highestScore }}: {{ topArea ? topArea.score.toFixed(2) : 'N/A' }}
             </span>
 
           </div>
@@ -880,7 +878,7 @@ onBeforeUnmount(() => {
           </div>
 
           <p>
-            {{ growthArea ? skillDisplay(growthArea.label) : '—' }}
+            {{ growthArea ? skillDisplay(growthArea.label) : 'N/A' }}
             <span v-if="growthArea"> — {{ growthArea.score.toFixed(2) }} / 5.0</span>
           </p>
 
