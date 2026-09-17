@@ -59,3 +59,8 @@ lerna-debug.log*
 # =========================
 .DS_Store
 Thumbs.db
+
+# =========================
+# Uploaded files (external activity evidence)
+# =========================
+backend/uploads/

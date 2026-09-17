@@ -1,6 +1,7 @@
 from sqlalchemy import (
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
@@ -83,6 +84,12 @@ class Student(Base):
 
     memberships = relationship(
         "ActivityMember",
+        back_populates="student",
+        cascade="all, delete-orphan",
+    )
+
+    external_activities = relationship(
+        "ExternalActivity",
         back_populates="student",
         cascade="all, delete-orphan",
     )
@@ -224,6 +231,129 @@ class ActivitySkill(Base):
 
     activity = relationship(
         "Activity",
+        back_populates="skill_levels",
+    )
+
+    skill = relationship("Skill")
+
+
+class ExternalActivity(Base):
+    # กิจกรรมภายนอกที่นักศึกษาส่งเอง ต้องผ่านการอนุมัติจาก admin
+    __tablename__ = "external_activities"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(
+        String(30),
+        ForeignKey(
+            "students.student_id",
+            ondelete="CASCADE",
+            onupdate="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    title = Column(String(255), nullable=False)
+    organization = Column(String(255), nullable=False)
+    activity_type = Column(String(120), nullable=False)
+
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+
+    location = Column(String(255), nullable=False)
+    role = Column(String(20), nullable=False)
+    description = Column(Text, nullable=False, default="")
+
+    # ไฟล์จริงอยู่ใน backend/uploads/external_activities/ เก็บแค่ชื่อไฟล์ (uuid)
+    evidence_filename = Column(String(100), nullable=False)
+    evidence_original_name = Column(String(255), nullable=False)
+    evidence_content_type = Column(String(100), nullable=False)
+    evidence_size = Column(Integer, nullable=False)
+
+    status = Column(
+        String(20),
+        nullable=False,
+        default="pending",
+        server_default="pending",
+    )
+    reject_reason = Column(Text, nullable=True)
+
+    # ใช้ convention เดียวกับ student_requests: submitted_at จาก DB now(),
+    # decided_at จาก datetime.now() ฝั่ง Python
+    submitted_at = Column(
+        DateTime(timezone=False),
+        nullable=False,
+        server_default=func.now(),
+    )
+    decided_at = Column(DateTime(timezone=False), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('participant', 'organizer')",
+            name="ck_external_activity_role",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected')",
+            name="ck_external_activity_status",
+        ),
+        CheckConstraint(
+            "end_date >= start_date",
+            name="ck_external_activity_dates",
+        ),
+    )
+
+    student = relationship(
+        "Student",
+        back_populates="external_activities",
+    )
+
+    skill_levels = relationship(
+        "ExternalActivitySkill",
+        back_populates="external_activity",
+        cascade="all, delete-orphan",
+    )
+
+
+class ExternalActivitySkill(Base):
+    # นักศึกษาตั้งเอง (Skill Mapping) ตอนส่งฟอร์ม
+    # role participant -> participant skills, organizer -> staff skills
+    __tablename__ = "external_activity_skills"
+
+    external_activity_id = Column(
+        Integer,
+        ForeignKey(
+            "external_activities.id",
+            ondelete="CASCADE",
+        ),
+        primary_key=True,
+    )
+
+    skill_key = Column(
+        String(80),
+        ForeignKey(
+            "skills.key",
+            ondelete="CASCADE",
+        ),
+        primary_key=True,
+    )
+
+    target_role = Column(String(20), nullable=False)
+    level = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "target_role IN ('staff', 'participant')",
+            name="ck_external_activity_skill_target_role",
+        ),
+        CheckConstraint(
+            "level >= 1 AND level <= 5",
+            name="ck_external_activity_skill_level",
+        ),
+    )
+
+    external_activity = relationship(
+        "ExternalActivity",
         back_populates="skill_levels",
     )
 

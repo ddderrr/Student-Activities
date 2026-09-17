@@ -1,12 +1,15 @@
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime
 from io import BytesIO
+import json
 from pathlib import Path
+from uuid import uuid4
 import unicodedata
 
 import pandas as pd
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -16,6 +19,8 @@ from models import (
     Activity,
     ActivityMember,
     ActivitySkill,
+    ExternalActivity,
+    ExternalActivitySkill,
     Skill,
     Student,
     StudentRequest,
@@ -45,6 +50,13 @@ SKILL_DEFINITIONS = {
     **PARTICIPANT_SKILL_DEFINITIONS,
 }
 
+# ไฟล์หลักฐานกิจกรรมภายนอก (ไม่ serve แบบ static ต้องผ่าน endpoint)
+EXTERNAL_ACTIVITY_UPLOAD_DIR = (
+    Path(__file__).resolve().parent
+    / "uploads"
+    / "external_activities"
+)
+
 
 def seed_skills():
     with SessionLocal() as db:
@@ -73,6 +85,7 @@ async def lifespan(app: FastAPI):
     # ภายหลังใช้ Alembic migration แทน create_all
     Base.metadata.create_all(bind=engine)
     seed_skills()
+    EXTERNAL_ACTIVITY_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     yield
 
@@ -308,6 +321,36 @@ def get_admin_student_skills(
         )
         .all()
     )
+
+    # กิจกรรมภายนอกที่อนุมัติแล้ว (เฉพาะ role participant) นับรวมด้วย
+    # ใช้ start_date จัดภาคเรียนเหมือน start_at ของกิจกรรมปกติ
+    external_rows = (
+        db.query(
+            Student.student_id,
+            Student.first_name,
+            Student.last_name,
+            Student.major,
+            ExternalActivity.start_date,
+            ExternalActivitySkill.skill_key,
+            ExternalActivitySkill.level,
+        )
+        .join(
+            ExternalActivity,
+            ExternalActivity.student_id == Student.student_id,
+        )
+        .join(
+            ExternalActivitySkill,
+            ExternalActivitySkill.external_activity_id == ExternalActivity.id,
+        )
+        .filter(
+            ExternalActivity.status == "approved",
+            ExternalActivity.role == "participant",
+            ExternalActivitySkill.target_role == "participant",
+        )
+        .all()
+    )
+
+    rows = [*rows, *external_rows]
 
     # (semester, student_id) -> student data + accumulated skill levels
     grouped: dict[tuple[str, str], dict] = {}
@@ -1485,6 +1528,560 @@ def update_activity_participant(
 
 
 # ============================================================
+# EXTERNAL ACTIVITIES (ส่งโดยนักศึกษา อนุมัติโดย admin)
+# ============================================================
+
+
+EXTERNAL_ACTIVITY_REQUEST_TYPE = "external_activity"
+EXTERNAL_ACTIVITY_REQUEST_LABEL = "External Activity"
+
+EVIDENCE_MAX_BYTES = 5 * 1024 * 1024
+
+# ชนิดไฟล์ตรวจจาก magic bytes จริง ไม่เชื่อ content-type ที่ browser ส่งมา
+EVIDENCE_FILE_TYPES = {
+    "jpeg": {
+        "extensions": {".jpg", ".jpeg"},
+        "stored_extension": ".jpg",
+        "content_type": "image/jpeg",
+    },
+    "png": {
+        "extensions": {".png"},
+        "stored_extension": ".png",
+        "content_type": "image/png",
+    },
+    "pdf": {
+        "extensions": {".pdf"},
+        "stored_extension": ".pdf",
+        "content_type": "application/pdf",
+    },
+}
+
+# role ของนักศึกษา -> ชุด Skill ที่ admin กำหนดตอนอนุมัติ
+EXTERNAL_ROLE_SKILLS = {
+    "participant": ("participant", PARTICIPANT_SKILL_DEFINITIONS, "Participant"),
+    "organizer": ("staff", STAFF_SKILL_DEFINITIONS, "Staff"),
+}
+
+EXTERNAL_ACTIVITY_MAX_LENGTHS = {
+    "title": 255,
+    "organization": 255,
+    "activity_type": 120,
+    "location": 255,
+}
+
+
+def get_current_student(
+    x_student_id: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> Student:
+    # ยังไม่มีระบบ login นักศึกษา: frontend ส่ง student ID จำลองมาใน header
+    # เปลี่ยนเป็นอ่านจาก session/token เมื่อมีระบบ login จริง
+    student_id = (x_student_id or "").strip()
+
+    if not student_id:
+        raise HTTPException(
+            status_code=401,
+            detail="ไม่พบข้อมูลนักศึกษา (X-Student-Id)",
+        )
+
+    student = db.get(Student, student_id)
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบนักศึกษา",
+        )
+
+    return student
+
+
+def detect_evidence_type(contents: bytes) -> str | None:
+    if contents.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+
+    if contents.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+
+    if contents.startswith(b"%PDF-"):
+        return "pdf"
+
+    return None
+
+
+async def read_evidence_file(file: UploadFile) -> dict:
+    original_name = Path(file.filename or "").name
+    extension = Path(original_name).suffix.lower()
+
+    allowed_extensions = {
+        allowed
+        for file_type in EVIDENCE_FILE_TYPES.values()
+        for allowed in file_type["extensions"]
+    }
+
+    if extension not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail="ไฟล์หลักฐานต้องเป็น .jpg, .jpeg, .png หรือ .pdf",
+        )
+
+    contents = await file.read(EVIDENCE_MAX_BYTES + 1)
+
+    if not contents:
+        raise HTTPException(
+            status_code=400,
+            detail="ไฟล์หลักฐานว่าง",
+        )
+
+    if len(contents) > EVIDENCE_MAX_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail="ไฟล์หลักฐานต้องมีขนาดไม่เกิน 5MB",
+        )
+
+    detected = detect_evidence_type(contents)
+
+    if (
+        detected is None
+        or extension not in EVIDENCE_FILE_TYPES[detected]["extensions"]
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="เนื้อหาไฟล์ไม่ตรงกับนามสกุลไฟล์ (รองรับ jpg, png, pdf)",
+        )
+
+    file_type = EVIDENCE_FILE_TYPES[detected]
+
+    return {
+        "contents": contents,
+        "original_name": original_name[:255],
+        "content_type": file_type["content_type"],
+        "stored_name": f"{uuid4().hex}{file_type['stored_extension']}",
+    }
+
+
+def parse_submitted_skills(raw_skills: str, role: str) -> tuple[str, dict]:
+    """
+    Skill Mapping ที่นักศึกษาตั้งเองตอนส่งฟอร์ม
+    multipart ส่ง object ตรง ๆ ไม่ได้ จึงรับเป็น JSON string: {"skill_key": level | null}
+    """
+    target_role, allowed_skills, target_label = EXTERNAL_ROLE_SKILLS[role]
+
+    try:
+        skills = json.loads(raw_skills)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=400,
+            detail="skills ต้องเป็น JSON object",
+        )
+
+    if not isinstance(skills, dict) or any(
+        level is not None
+        and (isinstance(level, bool) or not isinstance(level, int))
+        for level in skills.values()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="skills ต้องเป็น JSON object ของ skill_key -> level (1-5) หรือ null",
+        )
+
+    validate_skill_levels(
+        skills,
+        allowed_skills,
+        target_label,
+    )
+
+    related_skills = {
+        skill_key: level
+        for skill_key, level in skills.items()
+        if level is not None
+    }
+
+    if not related_skills:
+        raise HTTPException(
+            status_code=400,
+            detail="ต้องกำหนดระดับ Skill ที่เกี่ยวข้องอย่างน้อย 1 รายการ",
+        )
+
+    return target_role, related_skills
+
+
+def external_activity_skills(external_activity: ExternalActivity) -> dict:
+    return {
+        link.skill_key: link.level
+        for link in external_activity.skill_levels
+    }
+
+
+def serialize_external_activity(
+    external_activity: ExternalActivity,
+) -> dict:
+    student = external_activity.student
+    target_role = EXTERNAL_ROLE_SKILLS[external_activity.role][0]
+
+    return {
+        "id": external_activity.id,
+        "student_id": external_activity.student_id,
+        "student": {
+            "student_id": student.student_id,
+            "first_name": student.first_name,
+            "last_name": student.last_name,
+            "faculty": student.faculty,
+            "major": student.major,
+        },
+        "title": external_activity.title,
+        "organization": external_activity.organization,
+        "activity_type": external_activity.activity_type,
+        "start_date": external_activity.start_date,
+        "end_date": external_activity.end_date,
+        "location": external_activity.location,
+        "role": external_activity.role,
+        "description": external_activity.description,
+        "status": external_activity.status,
+        "reject_reason": external_activity.reject_reason,
+        "submitted_at": external_activity.submitted_at,
+        "decided_at": external_activity.decided_at,
+        "skill_target_role": target_role,
+        "skills": external_activity_skills(external_activity),
+        "evidence": {
+            "original_name": external_activity.evidence_original_name,
+            "content_type": external_activity.evidence_content_type,
+            "size": external_activity.evidence_size,
+            "url": f"/api/external-activities/{external_activity.id}/evidence",
+        },
+    }
+
+
+def require_external_activity(
+    db: Session,
+    external_activity_id: int,
+) -> ExternalActivity:
+    external_activity = db.get(ExternalActivity, external_activity_id)
+
+    if not external_activity:
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบกิจกรรมภายนอกนี้",
+        )
+
+    return external_activity
+
+
+@app.post(
+    "/api/student/me/external-activities",
+    status_code=201,
+)
+async def submit_external_activity(
+    title: str = Form(...),
+    organization: str = Form(...),
+    activity_type: str = Form(...),
+    start_date: date = Form(...),
+    end_date: date = Form(...),
+    location: str = Form(...),
+    role: str = Form(...),
+    description: str = Form(""),
+    skills: str = Form(...),
+    evidence: UploadFile = File(...),
+    student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    values = {
+        "title": title,
+        "organization": organization,
+        "activity_type": activity_type,
+        "location": location,
+    }
+
+    validate_required_text({**values, "role": role})
+
+    for field_name, max_length in EXTERNAL_ACTIVITY_MAX_LENGTHS.items():
+        if len(values[field_name].strip()) > max_length:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{field_name} ยาวเกิน {max_length} ตัวอักษร",
+            )
+
+    role = role.strip().lower()
+
+    if role not in EXTERNAL_ROLE_SKILLS:
+        raise HTTPException(
+            status_code=400,
+            detail="role ต้องเป็น participant หรือ organizer",
+        )
+
+    if end_date < start_date:
+        raise HTTPException(
+            status_code=400,
+            detail="วันที่สิ้นสุดต้องไม่อยู่ก่อนวันที่เริ่มต้น",
+        )
+
+    # role participant -> participant skills, organizer -> staff skills
+    target_role, related_skills = parse_submitted_skills(skills, role)
+
+    # ตรวจไฟล์เป็นขั้นสุดท้าย และเขียนลงดิสก์หลังข้อมูลอื่นผ่านหมดแล้ว
+    evidence_file = await read_evidence_file(evidence)
+    evidence_path = EXTERNAL_ACTIVITY_UPLOAD_DIR / evidence_file["stored_name"]
+    evidence_path.write_bytes(evidence_file["contents"])
+
+    try:
+        external_activity = ExternalActivity(
+            student_id=student.student_id,
+            title=title.strip(),
+            organization=organization.strip(),
+            activity_type=activity_type.strip(),
+            start_date=start_date,
+            end_date=end_date,
+            location=location.strip(),
+            role=role,
+            description=description.strip(),
+            evidence_filename=evidence_file["stored_name"],
+            evidence_original_name=evidence_file["original_name"],
+            evidence_content_type=evidence_file["content_type"],
+            evidence_size=len(evidence_file["contents"]),
+            status="pending",
+            skill_levels=[
+                ExternalActivitySkill(
+                    skill_key=skill_key,
+                    target_role=target_role,
+                    level=level,
+                )
+                for skill_key, level in related_skills.items()
+            ],
+        )
+
+        db.add(external_activity)
+        db.commit()
+    except Exception:
+        db.rollback()
+        evidence_path.unlink(missing_ok=True)
+        raise
+
+    db.refresh(external_activity)
+
+    return serialize_external_activity(external_activity)
+
+
+@app.get("/api/student/me/external-activities")
+def list_my_external_activities(
+    student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    items = (
+        db.query(ExternalActivity)
+        .filter(ExternalActivity.student_id == student.student_id)
+        .order_by(
+            ExternalActivity.submitted_at.desc(),
+            ExternalActivity.id.desc(),
+        )
+        .all()
+    )
+
+    return {
+        "total": len(items),
+        "external_activities": [
+            serialize_external_activity(item)
+            for item in items
+        ],
+    }
+
+
+@app.get("/api/student/me/activities")
+def list_my_activities(
+    student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    """
+    My Activities: กิจกรรมของคณะที่นักศึกษาเป็นสมาชิก
+    + กิจกรรมภายนอกที่ได้รับอนุมัติแล้ว
+    """
+
+    items = []
+
+    memberships = (
+        db.query(ActivityMember, Activity)
+        .join(Activity, Activity.id == ActivityMember.activity_id)
+        .filter(ActivityMember.student_id == student.student_id)
+        .all()
+    )
+
+    for member, activity in memberships:
+        target_role = (
+            "staff"
+            if member.role == "organizer"
+            else "participant"
+        )
+
+        items.append(
+            {
+                "source": "activity",
+                "id": activity.id,
+                "title": activity.name,
+                "activity_type": activity.activity_type,
+                "organizer": (
+                    activity.department
+                    or activity.responsible_person
+                ),
+                "start_at": activity.start_at,
+                "end_at": activity.end_at,
+                "location": activity.location,
+                "description": activity.description,
+                "role": member.role,
+                "status": activity.status,
+                "skills": {
+                    link.skill_key: link.level
+                    for link in activity.skill_levels
+                    if link.target_role == target_role
+                },
+                "evidence_url": None,
+            }
+        )
+
+    approved_external = (
+        db.query(ExternalActivity)
+        .filter(
+            ExternalActivity.student_id == student.student_id,
+            ExternalActivity.status == "approved",
+        )
+        .all()
+    )
+
+    for external_activity in approved_external:
+        items.append(
+            {
+                "source": "external_activity",
+                "id": external_activity.id,
+                "title": external_activity.title,
+                "activity_type": external_activity.activity_type,
+                "organizer": external_activity.organization,
+                "start_at": datetime.combine(
+                    external_activity.start_date,
+                    datetime.min.time(),
+                ),
+                "end_at": datetime.combine(
+                    external_activity.end_date,
+                    datetime.min.time(),
+                ),
+                "location": external_activity.location,
+                "description": external_activity.description,
+                "role": external_activity.role,
+                "status": external_activity.status,
+                "skills": external_activity_skills(external_activity),
+                "evidence_url": (
+                    f"/api/external-activities/{external_activity.id}/evidence"
+                ),
+            }
+        )
+
+    items.sort(
+        key=lambda item: (item["start_at"], item["source"], item["id"]),
+        reverse=True,
+    )
+
+    return {
+        "student": {
+            "student_id": student.student_id,
+            "first_name": student.first_name,
+            "last_name": student.last_name,
+            "email": student.email,
+            "faculty": student.faculty,
+            "major": student.major,
+        },
+        "total": len(items),
+        "activities": items,
+    }
+
+
+@app.get("/api/external-activities/{external_activity_id}")
+def get_external_activity(
+    external_activity_id: int,
+    db: Session = Depends(get_db),
+):
+    return serialize_external_activity(
+        require_external_activity(db, external_activity_id)
+    )
+
+
+@app.get("/api/external-activities/{external_activity_id}/evidence")
+def get_external_activity_evidence(
+    external_activity_id: int,
+    db: Session = Depends(get_db),
+):
+    external_activity = require_external_activity(
+        db,
+        external_activity_id,
+    )
+
+    # เก็บเฉพาะชื่อไฟล์ที่ระบบสร้างเอง ใช้ .name กันไม่ให้หลุดออกนอกโฟลเดอร์
+    path = (
+        EXTERNAL_ACTIVITY_UPLOAD_DIR
+        / Path(external_activity.evidence_filename).name
+    )
+
+    if not path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบไฟล์หลักฐาน",
+        )
+
+    return FileResponse(
+        path,
+        media_type=external_activity.evidence_content_type,
+        filename=external_activity.evidence_original_name,
+        content_disposition_type="inline",
+    )
+
+
+class ExternalActivityDecision(BaseModel):
+    # skill levels นักศึกษาตั้งมาตั้งแต่ตอนส่งแล้ว admin แค่อนุมัติ/ไม่อนุมัติ
+    status: str
+    reject_reason: str | None = None
+
+
+@app.patch("/api/external-activities/{external_activity_id}/decision")
+def decide_external_activity(
+    external_activity_id: int,
+    payload: ExternalActivityDecision,
+    db: Session = Depends(get_db),
+):
+    if payload.status not in {"approved", "rejected"}:
+        raise HTTPException(
+            status_code=400,
+            detail="status ต้องเป็น approved หรือ rejected",
+        )
+
+    external_activity = require_external_activity(
+        db,
+        external_activity_id,
+    )
+
+    if external_activity.status != "pending":
+        raise HTTPException(
+            status_code=400,
+            detail="กิจกรรมนี้ถูกดำเนินการไปแล้ว",
+        )
+
+    if payload.status == "approved":
+        external_activity.reject_reason = None
+    else:
+        reject_reason = (payload.reject_reason or "").strip()
+
+        if not reject_reason:
+            raise HTTPException(
+                status_code=400,
+                detail="กรุณาระบุเหตุผลที่ไม่อนุมัติ",
+            )
+
+        external_activity.reject_reason = reject_reason
+
+    external_activity.status = payload.status
+    external_activity.decided_at = datetime.now()
+
+    db.commit()
+    db.refresh(external_activity)
+
+    return serialize_external_activity(external_activity)
+
+
+# ============================================================
 # STUDENT REQUESTS (Approvals)
 # ============================================================
 
@@ -1509,6 +2106,7 @@ class RequestDecision(BaseModel):
 def serialize_request(request: StudentRequest) -> dict:
     return {
         "id": request.id,
+        "source": "student_request",
         "requester_name": request.requester_name,
         "requester_student_id": request.requester_student_id,
         "request_type": request.request_type,
@@ -1561,10 +2159,57 @@ def get_request_stats(
         or 0
     )
 
+    # รวมกิจกรรมภายนอกเข้าไปในตัวเลขของหน้า Approvals ด้วย
+    total_pending += (
+        db.query(func.count(ExternalActivity.id))
+        .filter(ExternalActivity.status == "pending")
+        .scalar()
+        or 0
+    )
+
+    approved_today += (
+        db.query(func.count(ExternalActivity.id))
+        .filter(
+            ExternalActivity.status == "approved",
+            ExternalActivity.decided_at >= today_start,
+        )
+        .scalar()
+        or 0
+    )
+
+    rejected_today += (
+        db.query(func.count(ExternalActivity.id))
+        .filter(
+            ExternalActivity.status == "rejected",
+            ExternalActivity.decided_at >= today_start,
+        )
+        .scalar()
+        or 0
+    )
+
     return {
         "total_pending": total_pending,
         "approved_today": approved_today,
         "rejected_today": rejected_today,
+    }
+
+
+def serialize_external_request(
+    external_activity: ExternalActivity,
+) -> dict:
+    student = external_activity.student
+
+    return {
+        "id": external_activity.id,
+        "source": EXTERNAL_ACTIVITY_REQUEST_TYPE,
+        "requester_name": f"{student.first_name} {student.last_name}".strip(),
+        "requester_student_id": external_activity.student_id,
+        "request_type": EXTERNAL_ACTIVITY_REQUEST_TYPE,
+        "request_type_label": EXTERNAL_ACTIVITY_REQUEST_LABEL,
+        "detail": external_activity.title,
+        "status": external_activity.status,
+        "submitted_at": external_activity.submitted_at,
+        "decided_at": external_activity.decided_at,
     }
 
 
@@ -1577,36 +2222,54 @@ def list_requests(
     page_size: int = 10,
     db: Session = Depends(get_db),
 ):
-    query = db.query(StudentRequest)
+    # รวม 2 แหล่ง (student_requests + external_activities) แล้วเรียง/แบ่งหน้าใน Python
+    # ปริมาณคำขอยังน้อย ถ้าเยอะขึ้นควรย้ายไปทำ UNION ใน SQL
+    include_student_requests = (
+        not request_type
+        or request_type != EXTERNAL_ACTIVITY_REQUEST_TYPE
+    )
+    include_external = (
+        not request_type
+        or request_type == EXTERNAL_ACTIVITY_REQUEST_TYPE
+    )
 
-    if status:
-        query = query.filter(StudentRequest.status == status)
+    items = []
 
-    if request_type:
-        query = query.filter(StudentRequest.request_type == request_type)
+    if include_student_requests:
+        query = db.query(StudentRequest)
 
-    if sort == "date_asc":
-        query = query.order_by(StudentRequest.submitted_at.asc())
-    else:
-        query = query.order_by(StudentRequest.submitted_at.desc())
+        if status:
+            query = query.filter(StudentRequest.status == status)
 
-    total = query.count()
+        if request_type:
+            query = query.filter(StudentRequest.request_type == request_type)
+
+        items.extend(serialize_request(item) for item in query.all())
+
+    if include_external:
+        query = db.query(ExternalActivity)
+
+        if status:
+            query = query.filter(ExternalActivity.status == status)
+
+        items.extend(serialize_external_request(item) for item in query.all())
+
+    items.sort(
+        key=lambda item: (item["submitted_at"], item["source"], item["id"]),
+        reverse=sort != "date_asc",
+    )
+
+    total = len(items)
 
     page = max(page, 1)
     page_size = max(1, min(page_size, 100))
-
-    items = (
-        query
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
+    start = (page - 1) * page_size
 
     return {
         "total": total,
         "page": page,
         "page_size": page_size,
-        "requests": [serialize_request(item) for item in items],
+        "requests": items[start:start + page_size],
     }
 
 
