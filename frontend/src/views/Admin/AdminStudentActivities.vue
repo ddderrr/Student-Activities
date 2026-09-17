@@ -2636,8 +2636,22 @@ async function confirmParticipantsImport() {
 
 table {
   width: 100%;
-  min-width: 1260px;
   border-collapse: collapse;
+}
+
+/*
+  ตารางกิจกรรมมี 8 คอลัมน์: ลด min-width + padding แนวนอน
+  ให้พอดีจอ 1280px ขึ้นไปโดยไม่ต้องเลื่อนหาคอลัมน์ MANAGE ACTIVITY
+  จอเล็กกว่านั้นยังเลื่อนแนวนอนใน .table-scroll ได้เหมือนเดิม
+*/
+.activities-table-card table {
+  min-width: 980px;
+}
+
+.activities-table-card th,
+.activities-table-card td {
+  padding-left: 14px;
+  padding-right: 14px;
 }
 
 thead {
