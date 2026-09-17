@@ -53,7 +53,10 @@ const editDraft = ref(null)
 const savingRowId = ref(null)
 const saveMessage = ref('')
 
-const participantCount = computed(() => participants.value.length)
+const memberCount = computed(() => participants.value.length)
+const participantCount = computed(
+  () => participants.value.filter((student) => student.role === 'participant').length
+)
 const organizerCount = computed(
   () => participants.value.filter((student) => student.role === 'organizer').length
 )
@@ -214,7 +217,7 @@ function roleLabel(role) {
         <span>TOTAL MEMBERS</span>
         <div class="summary-with-icon">
           <Users :size="17" />
-          <strong class="summary-number">{{ participantCount }}</strong>
+          <strong class="summary-number">{{ memberCount }}</strong>
         </div>
       </div>
     </section>
@@ -229,7 +232,7 @@ function roleLabel(role) {
         </div>
 
         <span class="row-count">
-          {{ participantCount }} students
+          {{ memberCount }} students
         </span>
       </div>
 
