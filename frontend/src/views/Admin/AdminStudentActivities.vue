@@ -286,10 +286,27 @@ const activeActivities = computed(
     ).length
 )
 
-/*
-  Placeholder ก่อนเชื่อม Backend จริง
-*/
-const pendingEvaluations = ref(12)
+// จำนวนคำขอประเภท Skill Validation ที่รออนุมัติ
+const pendingEvaluations = ref(null)
+
+async function fetchPendingEvaluations() {
+  try {
+    const params = new URLSearchParams({
+      status: 'pending',
+      request_type: 'skill_validation',
+      page_size: '1'
+    })
+
+    const response = await fetch(`${API_BASE}/api/requests?${params}`)
+    if (!response.ok) throw new Error('ไม่สามารถโหลดจำนวนคำขอที่รออนุมัติได้')
+
+    const data = await response.json()
+    pendingEvaluations.value = data.total ?? 0
+  } catch (error) {
+    console.error(error)
+    pendingEvaluations.value = null
+  }
+}
 
 function applyFilters() {
   currentPage.value = 1
@@ -382,7 +399,10 @@ async function fetchActivities() {
   }
 }
 
-onMounted(fetchActivities)
+onMounted(() => {
+  fetchActivities()
+  fetchPendingEvaluations()
+})
 
 function createActivity() {
   router.push('/admin/activities/create')
@@ -1130,7 +1150,7 @@ async function confirmParticipantsImport() {
 
         <div>
           <span class="summary-label">PENDING EVALUATIONS</span>
-          <strong class="summary-value">{{ pendingEvaluations }}</strong>
+          <strong class="summary-value">{{ pendingEvaluations ?? '—' }}</strong>
         </div>
       </article>
     </div>
