@@ -811,7 +811,7 @@ function backToImportFiles() {
 
 function isSupportedImportFile(file) {
   const name = file?.name?.toLowerCase() || ''
-  return name.endsWith('.csv') || name.endsWith('.xlsx')
+  return name.endsWith('.csv') || name.endsWith('.xlsx') || name.endsWith('.xls')
 }
 
 function addImportFiles(fileList) {
@@ -838,7 +838,7 @@ function addImportFiles(fileList) {
   resetImportPreviewState()
 
   if (rejectedFiles.length) {
-    importError.value = 'รองรับเฉพาะไฟล์ .csv และ .xlsx เท่านั้น'
+    importError.value = 'รองรับเฉพาะไฟล์ .csv, .xlsx และ .xls เท่านั้น'
   }
 }
 
@@ -1889,7 +1889,7 @@ async function confirmParticipantsImport() {
 
               <div>
                 <strong>ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์</strong>
-                <span>รองรับไฟล์ .csv และ .xlsx</span>
+                <span>รองรับไฟล์ .csv, .xlsx และ .xls</span>
               </div>
             </button>
 
@@ -1927,7 +1927,7 @@ async function confirmParticipantsImport() {
             <input
               ref="importFileInput"
               type="file"
-              accept=".csv,.xlsx"
+              accept=".csv,.xlsx,.xls"
               multiple
               hidden
               @change="handleImportFile"

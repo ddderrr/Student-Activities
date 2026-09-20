@@ -1080,6 +1080,8 @@ def normalize_student_columns(
 
 def validate_students(
     df: pd.DataFrame,
+    *,
+    require_email: bool = True,
 ) -> list[dict]:
     invalid_rows = []
 
@@ -1095,9 +1097,13 @@ def validate_students(
         if not row["last_name"]:
             errors.append("ไม่มีนามสกุล")
 
-        if not row["email"]:
+        email = row["email"]
+
+        # ไฟล์เช็คชื่อรุ่นเก่า (.xls) ไม่มี column email เลย
+        # จึงไม่บังคับว่าต้องมี แต่ถ้ามีค่ามาก็ยังตรวจรูปแบบ
+        if require_email and not email:
             errors.append("ไม่มีอีเมล")
-        elif "@" not in row["email"]:
+        elif email and "@" not in email:
             errors.append(
                 "รูปแบบอีเมลไม่ถูกต้อง"
             )
@@ -1136,10 +1142,11 @@ async def read_student_file(
     if extension not in {
         ".csv",
         ".xlsx",
+        ".xls",
     }:
         raise HTTPException(
             status_code=400,
-            detail="รองรับเฉพาะไฟล์ .csv และ .xlsx",
+            detail="รองรับเฉพาะไฟล์ .csv, .xlsx และ .xls",
         )
 
     contents = await file.read()
@@ -1150,26 +1157,72 @@ async def read_student_file(
             detail="ไฟล์ว่าง",
         )
 
-    try:
-        if extension == ".csv":
-            df = pd.read_csv(
-                BytesIO(contents),
-                dtype=str,
-            )
-        else:
-            df = pd.read_excel(
-                BytesIO(contents),
-                dtype=str,
+    is_legacy_xls = extension == ".xls"
+
+    if is_legacy_xls:
+        # ไฟล์ export จากระบบเช็คชื่อรุ่นเก่า: จำนวนแถว metadata
+        # ก่อน header ไม่คงที่ (บางไฟล์มีแถวว่างแทรก) จึงหา
+        # แถว header จริงจากเนื้อหาแทนการนับจำนวนแถวตายตัว
+        df = read_legacy_xls_dataframe(contents)
+    else:
+        try:
+            if extension == ".csv":
+                df = pd.read_csv(
+                    BytesIO(contents),
+                    dtype=str,
+                )
+            else:
+                df = pd.read_excel(
+                    BytesIO(contents),
+                    dtype=str,
+                )
+
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"ไม่สามารถอ่านไฟล์ได้: {exc}",
             )
 
-    except Exception as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"ไม่สามารถอ่านไฟล์ได้: {exc}",
+    if is_legacy_xls:
+        # ไฟล์นี้ไม่มี column email และมีแค่ชื่อเต็ม (ไม่แยก
+        # ชื่อ/นามสกุล) จึงต้องตัดชื่อเต็มเองและปล่อย email ว่าง
+        df = normalize_legacy_student_columns(df)
+
+        first_names = []
+        last_names = []
+
+        for full_name in df["full_name"]:
+            first_name, last_name = split_full_name(
+                str(full_name).strip()
+            )
+            first_names.append(first_name)
+            last_names.append(last_name)
+
+        df["first_name"] = first_names
+        df["last_name"] = last_names
+        df["email"] = ""
+        df["major"] = ""
+        df["role"] = "participant"
+
+        df = df[
+            [
+                "student_id",
+                "first_name",
+                "last_name",
+                "email",
+                "faculty",
+                "major",
+                "role",
+            ]
+        ]
+
+        invalid_rows = validate_students(
+            df,
+            require_email=False,
         )
-
-    df = normalize_student_columns(df)
-    invalid_rows = validate_students(df)
+    else:
+        df = normalize_student_columns(df)
+        invalid_rows = validate_students(df)
 
     return {
         "filename": filename,
@@ -1181,6 +1234,386 @@ async def read_student_file(
         "invalid_count": len(invalid_rows),
         "invalid_rows": invalid_rows,
     }
+
+
+# ============================================================
+# STUDENTS
+# ============================================================
+
+
+def import_students_from_xlsx(
+    filename: str,
+    contents: bytes,
+    db: Session,
+) -> dict:
+    """
+    ไฟล์ master data ทั่วไป: student_id, first_name, last_name,
+    email, faculty, major
+    """
+    try:
+        df = pd.read_excel(
+            BytesIO(contents),
+            dtype=str,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ไม่สามารถอ่านไฟล์ได้: {exc}",
+        )
+
+    df = normalize_student_columns(df)
+
+    id_column = df["student_id"].astype(str).str.strip()
+    duplicate_ids_in_file = set(
+        id_column[
+            id_column.ne("") & id_column.duplicated(keep=False)
+        ]
+    )
+
+    failed_rows = []
+    new_students: dict[str, Student] = {}
+
+    for index, row in df.iterrows():
+        row_number = int(index) + 2
+
+        student_id = str(row.get("student_id", "")).strip()
+        first_name = str(row.get("first_name", "")).strip()
+        last_name = str(row.get("last_name", "")).strip()
+        email = str(row.get("email", "")).strip()
+        faculty = (
+            str(row.get("faculty", "")).strip()
+            or "Faculty of Science"
+        )
+        major = str(row.get("major", "")).strip()
+
+        errors = []
+
+        if not student_id:
+            errors.append("ไม่มีรหัสนักศึกษา")
+
+        if not first_name:
+            errors.append("ไม่มีชื่อ")
+
+        if not last_name:
+            errors.append("ไม่มีนามสกุล")
+
+        if not email:
+            errors.append("ไม่มีอีเมล")
+        elif "@" not in email:
+            errors.append("รูปแบบอีเมลไม่ถูกต้อง")
+
+        if student_id and student_id in duplicate_ids_in_file:
+            errors.append("รหัสนักศึกษาซ้ำในไฟล์")
+        elif student_id and db.get(Student, student_id) is not None:
+            errors.append("มีรหัสนักศึกษานี้ในระบบแล้ว")
+
+        if errors:
+            failed_rows.append(
+                {
+                    "row": row_number,
+                    "student_id": student_id,
+                    "errors": errors,
+                }
+            )
+            continue
+
+        new_students[student_id] = Student(
+            student_id=student_id,
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            faculty=faculty,
+            major=major,
+        )
+
+    for student in new_students.values():
+        db.add(student)
+
+    db.commit()
+
+    return {
+        "filename": filename,
+        "total": len(df),
+        "success_count": len(new_students),
+        "failed_count": len(failed_rows),
+        "failed_rows": failed_rows,
+    }
+
+
+LEGACY_STUDENT_COLUMN_ALIASES = {
+    "ลำดับ": "seq",
+    "รหัสนักศึกษา": "student_id",
+    "ชื่อ": "full_name",
+    "คณะ": "faculty",
+    "เวลา": "check_in_time",
+}
+
+LEGACY_STUDENT_REQUIRED_COLUMNS = [
+    "student_id",
+    "full_name",
+    "faculty",
+]
+
+
+LEGACY_HEADER_MARKER_ALIASES = {
+    "รหัสนักศึกษา",
+    "ชื่อ",
+}
+
+
+def find_legacy_header_row(raw_df: pd.DataFrame) -> int:
+    for index, row in raw_df.iterrows():
+        cells = {
+            normalize_text(value)
+            for value in row.tolist()
+            if pd.notna(value)
+        }
+
+        if LEGACY_HEADER_MARKER_ALIASES.issubset(cells):
+            return int(index)
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "ไม่พบแถว header ที่มีคอลัมน์ "
+            "รหัสนักศึกษา, ชื่อ ในไฟล์"
+        ),
+    )
+
+
+def read_legacy_xls_dataframe(
+    contents: bytes,
+) -> pd.DataFrame:
+    """
+    ไฟล์ export จากระบบเช็คชื่อรุ่นเก่ามีแถว metadata นำหน้า
+    header จริง แต่จำนวนแถวไม่คงที่ระหว่างไฟล์ (บางไฟล์มีแถวว่าง
+    แทรกอยู่) จึงหาแถว header จากเนื้อหาจริงแทนการ skiprows
+    แบบตายตัว
+    """
+    try:
+        raw = pd.read_excel(
+            BytesIO(contents),
+            engine="xlrd",
+            header=None,
+            dtype=str,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ไม่สามารถอ่านไฟล์ได้: {exc}",
+        )
+
+    header_row = find_legacy_header_row(raw)
+
+    df = raw.iloc[header_row + 1 :].copy()
+    df.columns = [
+        normalize_text(value) if pd.notna(value) else ""
+        for value in raw.iloc[header_row].tolist()
+    ]
+
+    return df.reset_index(drop=True)
+
+
+def normalize_legacy_student_columns(
+    df: pd.DataFrame,
+) -> pd.DataFrame:
+    df.columns = [
+        normalize_text(column) for column in df.columns
+    ]
+
+    rename_map = {
+        column: LEGACY_STUDENT_COLUMN_ALIASES[
+            normalize_text(column)
+        ]
+        for column in df.columns
+        if normalize_text(column)
+        in LEGACY_STUDENT_COLUMN_ALIASES
+    }
+
+    df = df.rename(columns=rename_map)
+
+    missing_columns = [
+        column
+        for column in LEGACY_STUDENT_REQUIRED_COLUMNS
+        if column not in df.columns
+    ]
+
+    if missing_columns:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "ไม่พบ column ที่จำเป็น: "
+                + ", ".join(missing_columns)
+                + f" | column ที่พบ: {list(df.columns)}"
+            ),
+        )
+
+    df = df[LEGACY_STUDENT_REQUIRED_COLUMNS].copy()
+    df = df.fillna("")
+
+    for column in LEGACY_STUDENT_REQUIRED_COLUMNS:
+        df[column] = df[column].astype(str).str.strip()
+
+    return df
+
+
+def split_full_name(full_name: str) -> tuple[str, str]:
+    # ชื่อไทยไม่มี column แยกนามสกุล จึงตัดคำแรกเป็นชื่อ
+    # ที่เหลือ (ถ้ามี) เป็นนามสกุล
+    parts = full_name.split(None, 1)
+
+    if not parts:
+        return "", ""
+
+    if len(parts) == 1:
+        return parts[0], ""
+
+    return parts[0], parts[1]
+
+
+def import_students_from_legacy_xls(
+    filename: str,
+    contents: bytes,
+    db: Session,
+) -> dict:
+    """
+    ไฟล์ export จากระบบเช็คชื่อรุ่นเก่า (.xls / BIFF): มีแถว
+    metadata นำหน้า (รหัสกิจกรรม, ชื่อกิจกรรม, เวลา export, จำนวน
+    ฯลฯ) จำนวนไม่คงที่ระหว่างไฟล์ ตามด้วย header จริง: ลำดับ,
+    รหัสนักศึกษา, ชื่อ, คณะ, เวลา แล้วเป็นข้อมูลนักศึกษา
+
+    ไฟล์นี้ไม่มี email และมีแค่ชื่อเต็ม (ไม่แยกชื่อ/นามสกุล) จึง
+    ต้องตัดชื่อเต็มเอง และเก็บ email เป็นค่าว่าง เพราะไม่มีข้อมูลจริง
+    """
+    df = read_legacy_xls_dataframe(contents)
+    df = normalize_legacy_student_columns(df)
+
+    id_column = df["student_id"].astype(str).str.strip()
+    duplicate_ids_in_file = set(
+        id_column[
+            id_column.ne("") & id_column.duplicated(keep=False)
+        ]
+    )
+
+    errors = []
+    warnings = []
+    seen_ids: set[str] = set()
+    new_students: dict[str, Student] = {}
+
+    for index, row in df.iterrows():
+        # นับ row แบบสัมพัทธ์กับตารางที่ตัด header ออกแล้ว
+        # (เหมือน read_student_file) ไม่ใช่เลขแถวจริงในไฟล์ .xls
+        row_number = int(index) + 2
+
+        student_id = str(row.get("student_id", "")).strip()
+        full_name = str(row.get("full_name", "")).strip()
+        faculty = str(row.get("faculty", "")).strip()
+
+        if not student_id:
+            errors.append(
+                {
+                    "row": row_number,
+                    "reason": "ไม่มีรหัสนักศึกษา",
+                }
+            )
+            continue
+
+        if (
+            student_id in duplicate_ids_in_file
+            and student_id in seen_ids
+        ):
+            warnings.append(
+                {
+                    "row": row_number,
+                    "student_id": student_id,
+                    "reason": "รหัสนักศึกษาซ้ำในไฟล์ ข้ามแถวนี้",
+                }
+            )
+            continue
+
+        if db.get(Student, student_id) is not None:
+            seen_ids.add(student_id)
+            warnings.append(
+                {
+                    "row": row_number,
+                    "student_id": student_id,
+                    "reason": "มีรหัสนักศึกษานี้ในระบบแล้ว ข้ามแถวนี้",
+                }
+            )
+            continue
+
+        seen_ids.add(student_id)
+
+        first_name, last_name = split_full_name(full_name)
+
+        new_students[student_id] = Student(
+            student_id=student_id,
+            first_name=first_name,
+            last_name=last_name,
+            email="",
+            faculty=faculty or "Faculty of Science",
+            major="",
+        )
+
+    for student in new_students.values():
+        db.add(student)
+
+    db.commit()
+
+    return {
+        "filename": filename,
+        "total": len(df),
+        "success": len(new_students),
+        "skipped": len(warnings),
+        "errors": errors,
+        "warnings": warnings,
+    }
+
+
+@app.post("/api/students/import", status_code=201)
+async def import_students(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """
+    นำเข้านักศึกษาแบบ bulk โดยไม่ผูกกับกิจกรรมใดๆ (ต่างจาก
+    /api/activities/{id}/participants/import ที่แนบนักศึกษาเข้า
+    กิจกรรมไปด้วย)
+
+    - .xlsx : ไฟล์ master data ทั่วไป (student_id, first_name,
+      last_name, email, faculty, major)
+    - .xls  : ไฟล์ export จากระบบเช็คชื่อรุ่นเก่า (ดู
+      import_students_from_legacy_xls)
+    """
+    filename = file.filename or ""
+    extension = Path(filename).suffix.lower()
+
+    if extension not in {".xlsx", ".xls"}:
+        raise HTTPException(
+            status_code=400,
+            detail="รองรับเฉพาะไฟล์ .xlsx และ .xls เท่านั้น",
+        )
+
+    contents = await file.read()
+
+    if not contents:
+        raise HTTPException(
+            status_code=400,
+            detail="ไฟล์ว่าง",
+        )
+
+    if extension == ".xls":
+        return import_students_from_legacy_xls(
+            filename,
+            contents,
+            db,
+        )
+
+    return import_students_from_xlsx(
+        filename,
+        contents,
+        db,
+    )
 
 
 # ============================================================
@@ -1314,7 +1747,7 @@ def confirm_activity_participants(
                 ),
             )
 
-        if "@" not in email:
+        if email and "@" not in email:
             raise HTTPException(
                 status_code=400,
                 detail=(

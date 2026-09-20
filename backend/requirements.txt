@@ -6,4 +6,8 @@ python-dotenv
 pydantic
 pandas
 openpyxl
+xlrd
 python-multipart
+pytest
+httpx
+xlwt
