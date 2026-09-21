@@ -91,12 +91,26 @@ body,
 
 
 body {
+  /* Inter คุมภาษาอังกฤษ, Sarabun คุม fallback ภาษาไทย (Inter ไม่มี glyph ไทย
+     เบราว์เซอร์จะข้ามไปใช้ Sarabun ให้อัตโนมัติเมื่อเจอตัวอักษรไทย) */
   font-family:
-    Inter,
+    'Inter',
+    'Sarabun',
     Arial,
     sans-serif;
 
+  font-weight: 400;
+  line-height: 1.6;
+
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+
   background: #f7f8fc;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 
