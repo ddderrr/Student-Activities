@@ -1,7 +1,13 @@
+<script setup>
+import { useLanguage } from '../../composables/useLanguage'
+
+const { t } = useLanguage()
+</script>
+
 <template>
   <div class="settings-page">
-    <h1>Settings</h1>
-    <p>Settings page is coming soon.</p>
+    <h1>{{ t.adminSettings.title }}</h1>
+    <p>{{ t.adminSettings.comingSoon }}</p>
   </div>
 </template>
 

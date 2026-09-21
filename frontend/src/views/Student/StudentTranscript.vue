@@ -1,11 +1,17 @@
+<script setup>
+import { useLanguage } from '../../composables/useLanguage'
+
+const { t } = useLanguage()
+</script>
+
 <template>
 
   <div class="placeholder-page">
 
-    <h1>Tran</h1>
+    <h1>{{ t.studentTranscript.title }}</h1>
 
     <p>
-      This page will be available soon.
+      {{ t.studentTranscript.comingSoon }}
     </p>
 
   </div>

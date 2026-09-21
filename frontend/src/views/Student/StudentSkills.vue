@@ -11,6 +11,9 @@ import {
   API_BASE,
   studentHeaders
 } from '../../constants/currentStudent'
+import { useLanguage } from '../../composables/useLanguage'
+
+const { t } = useLanguage()
 
 const loading = ref(true)
 const exporting = ref(false)
@@ -144,12 +147,12 @@ function formatDate(value) {
 
 function statusLabel(status) {
   const labels = {
-    active: 'Active',
-    completed: 'Completed',
-    approved: 'Approved',
-    pending: 'Pending',
-    rejected: 'Rejected',
-    cancelled: 'Cancelled'
+    active: t.value.studentSkills.statusActive,
+    completed: t.value.studentSkills.statusCompleted,
+    approved: t.value.studentSkills.statusApproved,
+    pending: t.value.studentSkills.statusPending,
+    rejected: t.value.studentSkills.statusRejected,
+    cancelled: t.value.studentSkills.statusCancelled
   }
 
   return labels[status] || status || '-'
@@ -179,7 +182,7 @@ async function loadSkills() {
 
     if (!response.ok) {
       throw new Error(
-        data?.detail || 'โหลดข้อมูลทักษะไม่สำเร็จ'
+        data?.detail || t.value.studentSkills.loadError
       )
     }
 
@@ -196,7 +199,7 @@ async function loadSkills() {
   } catch (error) {
     errorMessage.value =
       error instanceof TypeError
-        ? `เชื่อมต่อ Backend ไม่ได้ (${API_BASE})`
+        ? `${t.value.studentSkills.connectionError} (${API_BASE})`
         : error.message
   } finally {
     loading.value = false
@@ -230,14 +233,14 @@ async function fetchTranscriptPdf() {
     const data = await response.json().catch(() => null)
 
     throw new Error(
-      data?.detail || 'สร้าง Transcript PDF ไม่สำเร็จ'
+      data?.detail || t.value.studentSkills.exportError
     )
   }
 
   const blob = await response.blob()
 
   if (blob.type !== 'application/pdf') {
-    throw new Error('ไฟล์ที่ Backend ส่งกลับมาไม่ใช่ PDF')
+    throw new Error(t.value.studentSkills.notPdfError)
   }
 
   return {
@@ -300,15 +303,16 @@ async function printTranscript() {
   const printWindow = window.open('', '_blank')
 
   if (!printWindow) {
-    errorMessage.value =
-      'Browser บล็อกหน้าต่าง Print กรุณาอนุญาต Pop-ups แล้วลองใหม่'
+    errorMessage.value = t.value.studentSkills.popupBlockedError
     return
   }
+
+  const preparingTranscriptText = t.value.studentSkills.preparingTranscript
 
   printWindow.document.write(`
     <html>
       <head>
-        <title>Preparing transcript...</title>
+        <title>${preparingTranscriptText}</title>
         <style>
           body {
             font-family: Arial, sans-serif;
@@ -320,7 +324,7 @@ async function printTranscript() {
           }
         </style>
       </head>
-      <body>Preparing transcript...</body>
+      <body>${preparingTranscriptText}</body>
     </html>
   `)
   printWindow.document.close()
@@ -358,7 +362,7 @@ onMounted(loadSkills)
   <section class="skills-page">
     <div v-if="loading" class="state-card">
       <LoaderCircle class="spin" :size="22" />
-      <span>กำลังโหลดข้อมูลทักษะ...</span>
+      <span>{{ t.studentSkills.loading }}</span>
     </div>
 
     <div
@@ -369,14 +373,14 @@ onMounted(loadSkills)
 
       <button type="button" @click="loadSkills">
         <RefreshCw :size="15" />
-        ลองใหม่
+        {{ t.studentSkills.retry }}
       </button>
     </div>
 
     <template v-else>
       <div class="page-heading">
         <div>
-          <h1>ทักษะของฉัน</h1>
+          <h1>{{ t.studentSkills.title }}</h1>
 
           <p v-if="student">
             {{ student.first_name }}
@@ -395,7 +399,7 @@ onMounted(loadSkills)
           <optgroup
             v-for="group in periodGroups"
             :key="group.year"
-            :label="`Year ${group.year}`"
+            :label="`${t.studentSkills.year} ${group.year}`"
           >
             <option
               v-for="period in group.items"
@@ -420,7 +424,7 @@ onMounted(loadSkills)
           <BarChart3 :size="18" />
 
           <span>
-            Skill Overview - Radar Chart View
+            {{ t.studentSkills.radarChartTitle }}
           </span>
 
           <span
@@ -555,10 +559,10 @@ onMounted(loadSkills)
                 v-if="!hasSkillData"
                 class="radar-empty"
               >
-                <strong>Skill Radar</strong>
+                <strong>{{ t.studentSkills.skillRadar }}</strong>
 
                 <span>
-                  ยังไม่มีข้อมูลทักษะในช่วงเวลานี้
+                  {{ t.studentSkills.noDataInPeriod }}
                 </span>
               </div>
             </div>
@@ -599,12 +603,12 @@ onMounted(loadSkills)
             <CalendarDays :size="17" />
 
             <span>
-              กิจกรรมที่นำมาคำนวณทักษะ
+              {{ t.studentSkills.activitiesUsedTitle }}
             </span>
           </div>
 
           <span class="activity-count">
-            {{ currentActivities.length }} กิจกรรม
+            {{ currentActivities.length }} {{ t.studentSkills.activitiesUnit }}
           </span>
         </div>
 
@@ -618,11 +622,11 @@ onMounted(loadSkills)
             <table>
               <thead>
                 <tr>
-                  <th>ACTIVITY NAME</th>
-                  <th>DESCRIPTION</th>
-                  <th>SKILLS GAINED</th>
-                  <th>DATE</th>
-                  <th>STATUS</th>
+                  <th>{{ t.studentSkills.tableActivityName }}</th>
+                  <th>{{ t.studentSkills.tableDescription }}</th>
+                  <th>{{ t.studentSkills.tableSkillsGained }}</th>
+                  <th>{{ t.studentSkills.tableDate }}</th>
+                  <th>{{ t.studentSkills.tableStatus }}</th>
                 </tr>
               </thead>
 
@@ -670,12 +674,11 @@ onMounted(loadSkills)
                   <td colspan="5">
                     <div class="empty-table">
                       <strong>
-                        No activity data available
+                        {{ t.studentSkills.noActivityData }}
                       </strong>
 
                       <span>
-                        กิจกรรมที่ถูกนำมาคำนวณทักษะ
-                        จะแสดงที่นี่
+                        {{ t.studentSkills.noActivityDataSubtitle }}
                       </span>
                     </div>
                   </td>
@@ -695,7 +698,7 @@ onMounted(loadSkills)
           @click="openExportModal"
         >
           <Download :size="15" />
-          Export to e-Portfolio / Transcript
+          {{ t.studentSkills.exportButton }}
         </button>
       </div>
     </template>
@@ -709,9 +712,9 @@ onMounted(loadSkills)
         <div class="export-modal">
           <div class="export-modal-header">
             <div>
-              <h2>Export Transcript</h2>
+              <h2>{{ t.studentSkills.exportModalTitle }}</h2>
               <p>
-                เลือกรูปแบบ Transcript ก่อน Print หรือ Download
+                {{ t.studentSkills.exportModalSubtitle }}
               </p>
             </div>
 
@@ -726,14 +729,14 @@ onMounted(loadSkills)
           </div>
 
           <div class="export-period-box">
-            <span>ช่วงข้อมูลที่เลือก</span>
+            <span>{{ t.studentSkills.selectedPeriodLabel }}</span>
             <strong>
               {{ currentPeriod.label || '-' }}
             </strong>
           </div>
 
           <div class="export-section">
-            <h3>Transcript Style</h3>
+            <h3>{{ t.studentSkills.transcriptStyleTitle }}</h3>
 
             <label
               class="export-option"
@@ -748,10 +751,9 @@ onMounted(loadSkills)
               />
 
               <div>
-                <strong>With Radar Chart</strong>
+                <strong>{{ t.studentSkills.withRadarChart }}</strong>
                 <span>
-                  มีกราฟ Radar + คะแนนทักษะ +
-                  รายการกิจกรรม
+                  {{ t.studentSkills.withRadarChartDesc }}
                 </span>
               </div>
             </label>
@@ -769,10 +771,9 @@ onMounted(loadSkills)
               />
 
               <div>
-                <strong>Without Radar Chart</strong>
+                <strong>{{ t.studentSkills.withoutRadarChart }}</strong>
                 <span>
-                  ไม่มีกราฟ แต่ยังมีคะแนนทักษะและ
-                  รายการกิจกรรมครบ
+                  {{ t.studentSkills.withoutRadarChartDesc }}
                 </span>
               </div>
             </label>
@@ -798,8 +799,8 @@ onMounted(loadSkills)
               {{
                 exporting &&
                 exportAction === 'print'
-                  ? 'กำลังเตรียม...'
-                  : 'Print'
+                  ? t.studentSkills.preparingDots
+                  : t.studentSkills.printButton
               }}
             </button>
 
@@ -825,8 +826,8 @@ onMounted(loadSkills)
               {{
                 exporting &&
                 exportAction === 'download'
-                  ? 'กำลังสร้าง PDF...'
-                  : 'Download PDF'
+                  ? t.studentSkills.generatingPdf
+                  : t.studentSkills.downloadPdfButton
               }}
             </button>
           </div>

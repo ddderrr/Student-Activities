@@ -105,7 +105,7 @@ const logout = () => {
 
       <button
         class="collapse-button"
-        :title="props.collapsed ? 'Open sidebar' : 'Close sidebar'"
+        :title="props.collapsed ? t.studentSidebar.openSidebar : t.studentSidebar.closeSidebar"
         @click="emit('toggle')"
       >
         <PanelLeftOpen

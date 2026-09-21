@@ -25,9 +25,11 @@ import {
   STAFF_SKILLS,
   defaultSkillLevels
 } from '../../constants/activitySkills'
+import { useLanguage } from '../../composables/useLanguage'
 
 const API_BASE = 'http://127.0.0.1:8000'
 const router = useRouter()
+const { t } = useLanguage()
 
 const currentStep = ref(1)
 const skillTarget = ref('staff')
@@ -91,7 +93,7 @@ const activeSkills = computed({
 const openCalendar = ref(null)
 const calendarCursor = ref(new Date())
 
-const weekDays = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา']
+const weekDays = computed(() => t.value.adminCreateActivity.weekDays)
 
 const calendarTitle = computed(() =>
   new Intl.DateTimeFormat('th-TH-u-ca-gregory', {
@@ -141,7 +143,7 @@ function parseDateKey(value) {
 
 function formatDisplayDate(value) {
   const date = parseDateKey(value)
-  if (!date) return 'เลือกวันที่'
+  if (!date) return t.value.adminCreateActivity.selectDatePlaceholder
 
   return new Intl.DateTimeFormat('th-TH-u-ca-gregory', {
     day: '2-digit',
@@ -232,7 +234,7 @@ function validateStepOne() {
     form.value.activity_type === OTHER_ACTIVITY_TYPE &&
     !customActivityType.value.trim()
   ) {
-    errorMessage.value = 'กรุณาระบุประเภทกิจกรรมอื่นๆ'
+    errorMessage.value = t.value.adminCreateActivity.validateOtherActivityTypeRequired
     return false
   }
 
@@ -246,12 +248,12 @@ function validateStepOne() {
   ]
 
   if (required.some((value) => !String(value || '').trim())) {
-    errorMessage.value = 'กรุณากรอกข้อมูลที่มีเครื่องหมาย * ให้ครบ'
+    errorMessage.value = t.value.adminCreateActivity.validateRequiredFields
     return false
   }
 
   if (form.value.end_at < form.value.start_at) {
-    errorMessage.value = 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น'
+    errorMessage.value = t.value.adminCreateActivity.validateEndDateBeforeStart
     return false
   }
 
@@ -295,7 +297,7 @@ async function createActivity() {
       console.error('Create activity network error:', networkError)
 
       throw new Error(
-        `เชื่อมต่อ Backend ไม่ได้ (${API_BASE}) กรุณาตรวจว่า uvicorn ยังรันอยู่`
+        `${t.value.adminCreateActivity.backendConnectionError} (${API_BASE}) ${t.value.adminCreateActivity.backendConnectionErrorHint}`
       )
     }
 
@@ -316,7 +318,7 @@ async function createActivity() {
         ? data.detail.map((item) => item.msg || String(item)).join(', ')
         : data.detail
 
-      throw new Error(detail || 'ไม่สามารถสร้างกิจกรรมได้')
+      throw new Error(detail || t.value.adminCreateActivity.createActivityError)
     }
 
     router.push('/admin/activities')
@@ -324,7 +326,7 @@ async function createActivity() {
     console.error('Create activity error:', error)
 
     errorMessage.value =
-      error.message || 'ไม่สามารถสร้างกิจกรรมได้'
+      error.message || t.value.adminCreateActivity.createActivityError
   } finally {
     submitting.value = false
   }
@@ -338,18 +340,18 @@ async function createActivity() {
         <div>
           <div class="eyebrow">
             <Sparkles :size="15" />
-            ACTIVITY MANAGEMENT
+            {{ t.adminCreateActivity.eyebrowActivityManagement }}
           </div>
 
-          <h1>Create New Activity</h1>
+          <h1>{{ t.adminCreateActivity.pageTitle }}</h1>
         </div>
 
         <div class="steps">
           <div class="step" :class="{ active: currentStep >= 1 }">
             <span>1</span>
             <div>
-              <strong>Activity Info</strong>
-              <small>รายละเอียดกิจกรรม</small>
+              <strong>{{ t.adminCreateActivity.stepActivityInfoTitle }}</strong>
+              <small>{{ t.adminCreateActivity.stepActivityInfoSubtitle }}</small>
             </div>
           </div>
 
@@ -358,8 +360,8 @@ async function createActivity() {
           <div class="step" :class="{ active: currentStep === 2 }">
             <span>2</span>
             <div>
-              <strong>Attach Skills</strong>
-              <small>กำหนดระดับ Skill</small>
+              <strong>{{ t.adminCreateActivity.stepAttachSkillsTitle }}</strong>
+              <small>{{ t.adminCreateActivity.stepAttachSkillsSubtitle }}</small>
             </div>
           </div>
         </div>
@@ -377,16 +379,16 @@ async function createActivity() {
               <div class="section-heading">
                 <div class="section-icon"><ClipboardList :size="20" /></div>
                 <div>
-                  <h2>ข้อมูลพื้นฐาน</h2>
-                  <p>ข้อมูลหลักที่ใช้แสดงในหน้ากิจกรรม</p>
+                  <h2>{{ t.adminCreateActivity.basicInfoTitle }}</h2>
+                  <p>{{ t.adminCreateActivity.basicInfoSubtitle }}</p>
                 </div>
               </div>
 
               <div class="form-grid">
                 <label class="field">
-                  <span>ประเภทกิจกรรม <b>*</b></span>
+                  <span>{{ t.adminCreateActivity.activityTypeLabel }} <b>*</b></span>
                   <select v-model="form.activity_type">
-                    <option disabled value="">เลือกประเภทกิจกรรม</option>
+                    <option disabled value="">{{ t.adminCreateActivity.selectActivityTypePlaceholder }}</option>
                     <option v-for="type in activityTypes" :key="type" :value="type">
                       {{ type }}
                     </option>
@@ -397,16 +399,16 @@ async function createActivity() {
                     v-model="customActivityType"
                     class="other-activity-input"
                     type="text"
-                    placeholder="โปรดระบุประเภทกิจกรรม"
+                    :placeholder="t.adminCreateActivity.customActivityTypePlaceholder"
                   />
                 </label>
 
                 <label class="field">
-                  <span>ชื่อกิจกรรม (ไทย/อังกฤษ) <b>*</b></span>
+                  <span>{{ t.adminCreateActivity.activityNameLabel }} <b>*</b></span>
                   <input
                     v-model="form.name"
                     type="text"
-                    placeholder="เช่น Bio-Tech Innovations 2026"
+                    :placeholder="t.adminCreateActivity.activityNamePlaceholder"
                   />
                 </label>
               </div>
@@ -416,14 +418,14 @@ async function createActivity() {
               <div class="section-heading">
                 <div class="section-icon"><CalendarDays :size="20" /></div>
                 <div>
-                  <h2>กำหนดการ</h2>
-                  <p>เลือกวันที่เริ่มต้น / สิ้นสุดของกิจกรรม</p>
+                  <h2>{{ t.adminCreateActivity.scheduleTitle }}</h2>
+                  <p>{{ t.adminCreateActivity.scheduleSubtitle }}</p>
                 </div>
               </div>
 
               <div class="form-grid date-grid">
                 <div class="field date-field">
-                  <span>วันที่เริ่มต้น <b>*</b></span>
+                  <span>{{ t.adminCreateActivity.startDateLabel }} <b>*</b></span>
                   <div class="date-picker" @click.stop>
                     <button
                       type="button"
@@ -433,7 +435,7 @@ async function createActivity() {
                     >
                       <span class="date-trigger-icon"><CalendarDays :size="18" /></span>
                       <span class="date-trigger-text">
-                        <small>START DATE</small>
+                        <small>{{ t.adminCreateActivity.startDateBadge }}</small>
                         <strong>{{ formatDisplayDate(form.start_at) }}</strong>
                       </span>
                     </button>
@@ -444,7 +446,7 @@ async function createActivity() {
                           <ChevronLeft :size="18" />
                         </button>
                         <div>
-                          <small>เลือกวันที่เริ่มต้น</small>
+                          <small>{{ t.adminCreateActivity.calendarHeaderSelectStart }}</small>
                           <strong>{{ calendarTitle }}</strong>
                         </div>
                         <button type="button" class="calendar-nav" @click="changeMonth(1)">
@@ -474,8 +476,8 @@ async function createActivity() {
                       </div>
 
                       <div class="calendar-footer">
-                        <span>เลือกได้ทุกวันที่ต้องการ</span>
-                        <button type="button" @click="selectToday">วันนี้</button>
+                        <span>{{ t.adminCreateActivity.calendarFooterHintStart }}</span>
+                        <button type="button" @click="selectToday">{{ t.adminCreateActivity.todayButton }}</button>
                       </div>
                     </div>
                   </div>
@@ -483,7 +485,7 @@ async function createActivity() {
                 </div>
 
                 <div class="field date-field">
-                  <span>วันที่สิ้นสุด <b>*</b></span>
+                  <span>{{ t.adminCreateActivity.endDateLabel }} <b>*</b></span>
                   <div class="date-picker end-picker" @click.stop>
                     <button
                       type="button"
@@ -493,7 +495,7 @@ async function createActivity() {
                     >
                       <span class="date-trigger-icon"><CalendarDays :size="18" /></span>
                       <span class="date-trigger-text">
-                        <small>END DATE</small>
+                        <small>{{ t.adminCreateActivity.endDateBadge }}</small>
                         <strong>{{ formatDisplayDate(form.end_at) }}</strong>
                       </span>
                     </button>
@@ -504,7 +506,7 @@ async function createActivity() {
                           <ChevronLeft :size="18" />
                         </button>
                         <div>
-                          <small>เลือกวันที่สิ้นสุด</small>
+                          <small>{{ t.adminCreateActivity.calendarHeaderSelectEnd }}</small>
                           <strong>{{ calendarTitle }}</strong>
                         </div>
                         <button type="button" class="calendar-nav" @click="changeMonth(1)">
@@ -536,13 +538,13 @@ async function createActivity() {
                       </div>
 
                       <div class="calendar-footer">
-                        <span>วันสิ้นสุดต้องไม่ก่อนวันเริ่มต้น</span>
+                        <span>{{ t.adminCreateActivity.calendarFooterHintEnd }}</span>
                         <button
                           type="button"
                           :disabled="Boolean(form.start_at && toDateKey(new Date()) < form.start_at)"
                           @click="selectToday"
                         >
-                          วันนี้
+                          {{ t.adminCreateActivity.todayButton }}
                         </button>
                       </div>
                     </div>
@@ -556,53 +558,53 @@ async function createActivity() {
               <div class="section-heading">
                 <div class="section-icon"><Building2 :size="20" /></div>
                 <div>
-                  <h2>หน่วยงานและบุคลากร</h2>
-                  <p>ระบุหน่วยงาน ผู้รับผิดชอบ และสถานที่</p>
+                  <h2>{{ t.adminCreateActivity.orgPersonnelTitle }}</h2>
+                  <p>{{ t.adminCreateActivity.orgPersonnelSubtitle }}</p>
                 </div>
               </div>
 
               <div class="form-grid">
                 <label class="field">
-                  <span>หน่วยงานที่จัด (ภาควิชา/คณะ)</span>
+                  <span>{{ t.adminCreateActivity.departmentLabel }}</span>
                   <input
                     v-model="form.department"
                     type="text"
-                    placeholder="เช่น Physics Department"
+                    :placeholder="t.adminCreateActivity.departmentPlaceholder"
                   />
                 </label>
 
                 <label class="field">
-                  <span>ผู้รับผิดชอบหลัก <b>*</b></span>
+                  <span>{{ t.adminCreateActivity.responsiblePersonLabel }} <b>*</b></span>
                   <div class="input-icon">
                     <UserRound :size="17" />
                     <input
                       v-model="form.responsible_person"
                       type="text"
-                      placeholder="ค้นหาชื่อบุคลากร..."
+                      :placeholder="t.adminCreateActivity.responsiblePersonPlaceholder"
                     />
                   </div>
                 </label>
 
                 <label class="field">
-                  <span>อาจารย์ที่ปรึกษา (อาจารย์ผู้รับผิดชอบ)</span>
+                  <span>{{ t.adminCreateActivity.advisorLabel }}</span>
                   <div class="input-icon">
                     <UserRound :size="17" />
                     <input
                       v-model="form.advisor"
                       type="text"
-                      placeholder="ชื่ออาจารย์ที่ปรึกษา"
+                      :placeholder="t.adminCreateActivity.advisorPlaceholder"
                     />
                   </div>
                 </label>
 
                 <label class="field">
-                  <span>สถานที่ <b>*</b></span>
+                  <span>{{ t.adminCreateActivity.locationLabel }} <b>*</b></span>
                   <div class="input-icon">
                     <MapPin :size="17" />
                     <input
                       v-model="form.location"
                       type="text"
-                      placeholder="เช่น Room 402, Science Building 3"
+                      :placeholder="t.adminCreateActivity.locationPlaceholder"
                     />
                   </div>
                 </label>
@@ -613,17 +615,17 @@ async function createActivity() {
               <div class="section-heading">
                 <div class="section-icon"><FileText :size="20" /></div>
                 <div>
-                  <h2>รายละเอียดเพิ่มเติม</h2>
-                  <p>ระบุวัตถุประสงค์ ผลลัพธ์ และกลุ่มเป้าหมาย</p>
+                  <h2>{{ t.adminCreateActivity.additionalDetailsTitle }}</h2>
+                  <p>{{ t.adminCreateActivity.additionalDetailsSubtitle }}</p>
                 </div>
               </div>
 
               <label class="field">
-                <span>รายละเอียดกิจกรรม</span>
+                <span>{{ t.adminCreateActivity.descriptionLabel }}</span>
                 <textarea
                   v-model="form.description"
                   rows="6"
-                  placeholder="ระบุวัตถุประสงค์ ผลลัพธ์ที่คาดหวัง และกลุ่มเป้าหมาย..."
+                  :placeholder="t.adminCreateActivity.descriptionPlaceholder"
                 ></textarea>
               </label>
             </section>
@@ -632,14 +634,14 @@ async function createActivity() {
           <aside class="tips-column">
             <section class="tips-card">
               <div class="tips-icon"><CheckCircle2 :size="21" /></div>
-              <h3>ก่อนกดถัดไป</h3>
-              <p>ตรวจสอบข้อมูลสำคัญให้ครบก่อนกำหนด Skill ของกิจกรรม</p>
+              <h3>{{ t.adminCreateActivity.tipsTitle }}</h3>
+              <p>{{ t.adminCreateActivity.tipsSubtitle }}</p>
 
               <ul>
-                <li><Check :size="14" /> ชื่อและประเภทกิจกรรม</li>
-                <li><Check :size="14" /> วันที่เริ่ม / สิ้นสุด</li>
-                <li><Check :size="14" /> ผู้รับผิดชอบหลัก</li>
-                <li><Check :size="14" /> สถานที่จัดกิจกรรม</li>
+                <li><Check :size="14" /> {{ t.adminCreateActivity.tipNameAndType }}</li>
+                <li><Check :size="14" /> {{ t.adminCreateActivity.tipDates }}</li>
+                <li><Check :size="14" /> {{ t.adminCreateActivity.responsiblePersonLabel }}</li>
+                <li><Check :size="14" /> {{ t.adminCreateActivity.tipLocation }}</li>
               </ul>
             </section>
           </aside>
@@ -651,13 +653,13 @@ async function createActivity() {
         <section class="skills-card">
           <div class="skills-heading">
             <div>
-              <div class="eyebrow"><GraduationCap :size="15" /> ATTACH SKILLS</div>
-              <h2>กำหนด Skill ของกิจกรรม</h2>
+              <div class="eyebrow"><GraduationCap :size="15" /> {{ t.adminCreateActivity.skillsEyebrow }}</div>
+              <h2>{{ t.adminCreateActivity.skillsSectionTitle }}</h2>
               <p>
                   {{
                     skillTarget === 'staff'
-                      ? 'Skill สำหรับผู้จัดกิจกรรม'
-                      : 'Skill สำหรับผู้เข้าร่วมกิจกรรม'
+                      ? t.adminCreateActivity.skillsForStaffDescription
+                      : t.adminCreateActivity.skillsForParticipantDescription
                   }}
                 </p>
             </div>
@@ -667,13 +669,13 @@ async function createActivity() {
                 :class="{ active: skillTarget === 'staff' }"
                 @click="skillTarget = 'staff'"
               >
-                Staff
+                {{ t.adminCreateActivity.staffLabel }}
               </button>
               <button
                 :class="{ active: skillTarget === 'participant' }"
                 @click="skillTarget = 'participant'"
               >
-                Participant
+                {{ t.adminCreateActivity.participantLabel }}
               </button>
             </div>
           </div>
@@ -688,7 +690,7 @@ async function createActivity() {
       <footer class="action-bar">
         <button class="secondary-button" :disabled="submitting" @click="goBack">
           <ArrowLeft :size="17" />
-          {{ currentStep === 1 ? 'Cancel' : 'Back' }}
+          {{ currentStep === 1 ? t.adminCreateActivity.cancelButton : t.adminCreateActivity.backButton }}
         </button>
 
         <button
@@ -696,7 +698,7 @@ async function createActivity() {
           class="primary-button"
           @click="nextStep"
         >
-          Continue
+          {{ t.adminCreateActivity.continueButton }}
           <ArrowRight :size="17" />
         </button>
 
@@ -708,7 +710,7 @@ async function createActivity() {
         >
           <LoaderCircle v-if="submitting" class="spin" :size="17" />
           <CheckCircle2 v-else :size="17" />
-          {{ submitting ? 'Creating...' : 'Create Activity' }}
+          {{ submitting ? t.adminCreateActivity.creatingButton : t.adminCreateActivity.createActivityButton }}
         </button>
       </footer>
     </div>

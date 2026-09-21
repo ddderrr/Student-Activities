@@ -70,9 +70,9 @@ const availableYears = computed(() => {
 })
 
 const semesterLabel = computed(() => {
-  if (selectedSemester.value === 'SEMESTER_1') return 'Semester 1'
-  if (selectedSemester.value === 'SEMESTER_2') return 'Semester 2'
-  return 'All Semesters'
+  if (selectedSemester.value === 'SEMESTER_1') return t.value.adminDashboard.semester1
+  if (selectedSemester.value === 'SEMESTER_2') return t.value.adminDashboard.semester2
+  return t.value.adminDashboard.allSemesters
 })
 
 const resetSelectedItem = () => {
@@ -317,8 +317,32 @@ const averageSkill = computed(() => {
   )
 })
 
+const monthLabelMap = computed(() => ({
+  JAN: t.value.adminDashboard.monthJan,
+  FEB: t.value.adminDashboard.monthFeb,
+  MAR: t.value.adminDashboard.monthMar,
+  APR: t.value.adminDashboard.monthApr,
+  MAY: t.value.adminDashboard.monthMay,
+  JUN: t.value.adminDashboard.monthJun,
+  JUL: t.value.adminDashboard.monthJul,
+  AUG: t.value.adminDashboard.monthAug,
+  SEP: t.value.adminDashboard.monthSep,
+  OCT: t.value.adminDashboard.monthOct,
+  NOV: t.value.adminDashboard.monthNov,
+  DEC: t.value.adminDashboard.monthDec,
+  Q1: t.value.adminDashboard.quarterQ1,
+  Q2: t.value.adminDashboard.quarterQ2,
+  Q3: t.value.adminDashboard.quarterQ3,
+  Q4: t.value.adminDashboard.quarterQ4
+}))
+
+// Display-only translation for month/quarter labels.
+// MONTH_LABELS / quarter strings themselves stay untranslated because they are
+// also used internally for date-matching (selectedItem, chart selection, etc).
+const displayLabel = (label) => monthLabelMap.value[label] || label
+
 const selectedPeriodText = computed(() =>
-  `${selectedItem.value} · ${semesterLabel.value} · ${selectedYear.value}`
+  `${displayLabel(selectedItem.value)} · ${semesterLabel.value} · ${selectedYear.value}`
 )
 
 const summaryCards = computed(() => [
@@ -357,13 +381,13 @@ const summaryCards = computed(() => [
 
     <section class="history-filter">
       <div class="history-filter-text">
-        <strong>Dashboard History</strong>
-        <span>เลือกปีและภาคเรียนเพื่อดู Summary, Activity Growth และ Skill Distribution ย้อนหลัง</span>
+        <strong>{{ t.adminDashboard.dashboardHistory }}</strong>
+        <span>{{ t.adminDashboard.dashboardHistoryDescription }}</span>
       </div>
 
       <div class="history-filter-controls">
         <label class="filter-field">
-          <span>Academic Year</span>
+          <span>{{ t.adminDashboard.academicYear }}</span>
           <select v-model.number="selectedYear" @change="changeYear">
             <option
               v-for="year in availableYears"
@@ -376,11 +400,11 @@ const summaryCards = computed(() => [
         </label>
 
         <label class="filter-field">
-          <span>Semester</span>
+          <span>{{ t.adminDashboard.semester }}</span>
           <select v-model="selectedSemester" @change="changeSemester">
-            <option value="ALL">All Semesters</option>
-            <option value="SEMESTER_1">Semester 1 (JAN - JUN)</option>
-            <option value="SEMESTER_2">Semester 2 (JUL - DEC)</option>
+            <option value="ALL">{{ t.adminDashboard.allSemesters }}</option>
+            <option value="SEMESTER_1">{{ t.adminDashboard.semester1 }} ({{ displayLabel('JAN') }} - {{ displayLabel('JUN') }})</option>
+            <option value="SEMESTER_2">{{ t.adminDashboard.semester2 }} ({{ displayLabel('JUL') }} - {{ displayLabel('DEC') }})</option>
           </select>
         </label>
       </div>
@@ -519,7 +543,7 @@ const summaryCards = computed(() => [
                     :style="{
                       height: `${(item.count / yAxisMax) * 100}%`
                     }"
-                    :title="`${item.month}: ${item.count}`"
+                    :title="`${displayLabel(item.month)}: ${item.count}`"
                   ></div>
 
                 </div>
@@ -538,7 +562,7 @@ const summaryCards = computed(() => [
                 @click="selectedItem = item.month"
               >
                 <strong class="activity-count">{{ item.count }}</strong>
-                <span>{{ item.month }}</span>
+                <span>{{ displayLabel(item.month) }}</span>
               </div>
             </div>
 
@@ -571,13 +595,13 @@ const summaryCards = computed(() => [
             :class="{ active: selectedSkillRole === 'participant' }"
             @click="selectedSkillRole = 'participant'"
           >
-            PARTICIPANT
+            {{ t.adminDashboard.participantRole }}
           </button>
           <button
             :class="{ active: selectedSkillRole === 'staff' }"
             @click="selectedSkillRole = 'staff'"
           >
-            STAFF
+            {{ t.adminDashboard.staffRole }}
           </button>
         </div>
 
@@ -604,8 +628,8 @@ const summaryCards = computed(() => [
 
               <strong>
                 {{ skill.percentage }}%
-                <small v-if="skill.evidenceCount > 0">({{ skill.evidenceCount }} activities)</small>
-                <small v-else>(no data)</small>
+                <small v-if="skill.evidenceCount > 0">({{ skill.evidenceCount }} {{ t.adminDashboard.activitiesUnit }})</small>
+                <small v-else>({{ t.adminDashboard.noData }})</small>
               </strong>
 
             </div>

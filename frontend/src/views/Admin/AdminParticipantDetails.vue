@@ -9,6 +9,9 @@ import {
   Users,
   ShieldCheck
 } from 'lucide-vue-next'
+import { useLanguage } from '../../composables/useLanguage'
+
+const { t } = useLanguage()
 
 const API_BASE = 'http://127.0.0.1:8000'
 
@@ -17,10 +20,10 @@ const router = useRouter()
 
 const activityId = computed(() => Number(route.params.activityId || 1))
 
-const roleOptions = [
-  { value: 'participant', label: 'Participant' },
-  { value: 'organizer', label: 'Organizer' }
-]
+const roleOptions = computed(() => [
+  { value: 'participant', label: t.value.adminParticipantDetails.participantRole },
+  { value: 'organizer', label: t.value.adminParticipantDetails.organizerRole }
+])
 
 const majorOptions = [
   'เคมี',
@@ -142,7 +145,7 @@ async function fetchParticipants() {
     ])
 
     if (!participantsResponse.ok || !activityResponse.ok) {
-      throw new Error('โหลดข้อมูลไม่สำเร็จ')
+      throw new Error(t.value.adminParticipantDetails.loadFailedError)
     }
 
     const [participantsData, activityData] = await Promise.all([
@@ -154,7 +157,7 @@ async function fetchParticipants() {
     participants.value = participantsData.students
     checkDescriptionOverflow()
   } catch (error) {
-    loadError.value = error.message || 'โหลดข้อมูลไม่สำเร็จ'
+    loadError.value = error.message || t.value.adminParticipantDetails.loadFailedError
   } finally {
     pageLoading.value = false
   }
@@ -202,7 +205,7 @@ function validateDraft() {
 
 async function saveRow() {
   if (!validateDraft()) {
-    saveMessage.value = 'กรุณากรอกข้อมูลให้ครบ'
+    saveMessage.value = t.value.adminParticipantDetails.fillAllFieldsError
     return
   }
 
@@ -229,7 +232,7 @@ async function saveRow() {
 
     if (!response.ok) {
       const errorBody = await response.json().catch(() => null)
-      throw new Error(errorBody?.detail || 'บันทึกข้อมูลไม่สำเร็จ')
+      throw new Error(errorBody?.detail || t.value.adminParticipantDetails.saveFailedError)
     }
 
     const updated = await response.json()
@@ -245,14 +248,16 @@ async function saveRow() {
     editingRowId.value = null
     editDraft.value = null
   } catch (error) {
-    saveMessage.value = error.message || 'ไม่สามารถบันทึกข้อมูลได้'
+    saveMessage.value = error.message || t.value.adminParticipantDetails.saveFailedFallbackError
   } finally {
     savingRowId.value = null
   }
 }
 
 function roleLabel(role) {
-  return role === 'organizer' ? 'Organizer' : 'Participant'
+  return role === 'organizer'
+    ? t.value.adminParticipantDetails.organizerRole
+    : t.value.adminParticipantDetails.participantRole
 }
 </script>
 
@@ -260,22 +265,22 @@ function roleLabel(role) {
   <section class="details-page">
     <header class="page-header">
       <div>
-        <p class="eyebrow">ACTIVITY MANAGEMENT</p>
-        <h1>Participant Details</h1>
+        <p class="eyebrow">{{ t.adminParticipantDetails.eyebrowActivityManagement }}</p>
+        <h1>{{ t.adminParticipantDetails.pageTitle }}</h1>
         <p class="subtitle">
-          ตรวจสอบและแก้ไขข้อมูลผู้เข้าร่วมกิจกรรม
+          {{ t.adminParticipantDetails.pageSubtitle }}
         </p>
       </div>
 
       <button class="back-button" @click="goBack">
         <ArrowLeft :size="17" />
-        Back to Activities
+        {{ t.adminParticipantDetails.backButton }}
       </button>
     </header>
 
     <section class="activity-summary">
       <div class="summary-item activity-info">
-        <span>ACTIVITY</span>
+        <span>{{ t.adminParticipantDetails.activityLabel }}</span>
         <strong>{{ activity.name }}</strong>
         <small>{{ activity.uid }}</small>
       </div>
@@ -283,14 +288,14 @@ function roleLabel(role) {
       <div class="summary-divider"></div>
 
       <div class="summary-item">
-        <span>PARTICIPANTS</span>
+        <span>{{ t.adminParticipantDetails.participantsLabel }}</span>
         <strong class="summary-number">{{ participantCount }}</strong>
       </div>
 
       <div class="summary-divider"></div>
 
       <div class="summary-item">
-        <span>ORGANIZERS</span>
+        <span>{{ t.adminParticipantDetails.organizersLabel }}</span>
         <div class="summary-with-icon">
           <ShieldCheck :size="17" />
           <strong class="summary-number">{{ organizerCount }}</strong>
@@ -300,7 +305,7 @@ function roleLabel(role) {
       <div class="summary-divider"></div>
 
       <div class="summary-item">
-        <span>TOTAL MEMBERS</span>
+        <span>{{ t.adminParticipantDetails.totalMembersLabel }}</span>
         <div class="summary-with-icon">
           <Users :size="17" />
           <strong class="summary-number">{{ memberCount }}</strong>
@@ -310,33 +315,33 @@ function roleLabel(role) {
       <div class="summary-divider detail-divider"></div>
 
       <div class="activity-detail-panel">
-        <span class="detail-heading">ACTIVITY DETAILS</span>
+        <span class="detail-heading">{{ t.adminParticipantDetails.activityDetailsLabel }}</span>
 
         <div class="activity-detail-grid">
           <div class="activity-detail-item">
-            <small>TYPE</small>
+            <small>{{ t.adminParticipantDetails.typeLabel }}</small>
             <strong>{{ activity.activity_type || '—' }}</strong>
           </div>
 
           <div class="activity-detail-item">
-            <small>DATE</small>
+            <small>{{ t.adminParticipantDetails.dateLabel }}</small>
             <strong>{{ activityDateRange }}</strong>
           </div>
 
           <div class="activity-detail-item">
-            <small>LOCATION</small>
+            <small>{{ t.adminParticipantDetails.locationLabel }}</small>
             <strong>{{ activity.location || '—' }}</strong>
           </div>
 
           <div class="activity-detail-item">
-            <small>RESPONSIBLE</small>
+            <small>{{ t.adminParticipantDetails.responsibleLabel }}</small>
             <strong>{{ activity.responsible_person || '—' }}</strong>
           </div>
 
           <div class="activity-detail-item activity-description">
-            <small>DESCRIPTION</small>
+            <small>{{ t.adminParticipantDetails.descriptionLabel }}</small>
             <strong ref="descriptionTextRef">
-              {{ activity.description || 'ไม่มีรายละเอียดเพิ่มเติม' }}
+              {{ activity.description || t.adminParticipantDetails.noDescriptionText }}
             </strong>
             <button
               v-if="activity.description && descriptionIsOverflowing"
@@ -344,7 +349,7 @@ function roleLabel(role) {
               type="button"
               @click="openDescriptionModal"
             >
-              อ่านเพิ่มเติม
+              {{ t.adminParticipantDetails.readMoreButton }}
             </button>
           </div>
         </div>
@@ -354,30 +359,30 @@ function roleLabel(role) {
     <section class="table-card">
       <div class="table-heading">
         <div>
-          <h2>Students in Activity</h2>
+          <h2>{{ t.adminParticipantDetails.studentsInActivityTitle }}</h2>
           <p>
-            กด Edit เพื่อแก้ไขข้อมูลทั้งแถวได้พร้อมกัน
+            {{ t.adminParticipantDetails.studentsInActivitySubtitle }}
           </p>
         </div>
 
         <span class="row-count">
-          {{ memberCount }} students
+          {{ memberCount }} {{ t.adminParticipantDetails.studentsCountSuffix }}
         </span>
       </div>
 
-      <p v-if="pageLoading" class="load-status">กำลังโหลดข้อมูล...</p>
+      <p v-if="pageLoading" class="load-status">{{ t.adminParticipantDetails.loadingText }}</p>
       <p v-else-if="loadError" class="load-status load-status-error">{{ loadError }}</p>
 
       <div v-else class="table-scroll">
         <table>
           <thead>
             <tr>
-              <th>STUDENT ID</th>
-              <th>STUDENT NAME</th>
-              <th>FACULTY</th>
-              <th>MAJOR</th>
-              <th>ROLE</th>
-              <th>ACTIONS</th>
+              <th>{{ t.adminParticipantDetails.studentIdHeader }}</th>
+              <th>{{ t.adminParticipantDetails.studentNameHeader }}</th>
+              <th>{{ t.adminParticipantDetails.facultyHeader }}</th>
+              <th>{{ t.adminParticipantDetails.majorHeader }}</th>
+              <th>{{ t.adminParticipantDetails.roleHeader }}</th>
+              <th>{{ t.adminParticipantDetails.actionsHeader }}</th>
             </tr>
           </thead>
 
@@ -404,14 +409,14 @@ function roleLabel(role) {
                       v-model="editDraft.first_name"
                       class="row-input"
                       type="text"
-                      placeholder="First name"
+                      :placeholder="t.adminParticipantDetails.firstNamePlaceholder"
                     />
 
                     <input
                       v-model="editDraft.last_name"
                       class="row-input"
                       type="text"
-                      placeholder="Last name"
+                      :placeholder="t.adminParticipantDetails.lastNamePlaceholder"
                     />
                   </div>
                 </td>
@@ -468,7 +473,7 @@ function roleLabel(role) {
 
                       <Save v-else :size="14" />
 
-                      {{ savingRowId === student.student_id ? 'Saving' : 'Save' }}
+                      {{ savingRowId === student.student_id ? t.adminParticipantDetails.savingButton : t.adminParticipantDetails.saveButton }}
                     </button>
 
                     <button
@@ -512,7 +517,7 @@ function roleLabel(role) {
                     @click="startEdit(student)"
                   >
                     <Pencil :size="14" />
-                    Edit
+                    {{ t.adminParticipantDetails.editButton }}
                   </button>
                 </td>
               </template>
@@ -531,17 +536,17 @@ function roleLabel(role) {
       class="description-modal-overlay"
       @click.self="closeDescriptionModal"
     >
-      <div class="description-modal" role="dialog" aria-modal="true" aria-label="รายละเอียดกิจกรรม">
+      <div class="description-modal" role="dialog" aria-modal="true" :aria-label="t.adminParticipantDetails.activityDescriptionModalTitle">
         <div class="description-modal-header">
           <div>
-            <span>ACTIVITY DESCRIPTION</span>
-            <h3>รายละเอียดกิจกรรม</h3>
+            <span>{{ t.adminParticipantDetails.modalActivityDescriptionLabel }}</span>
+            <h3>{{ t.adminParticipantDetails.activityDescriptionModalTitle }}</h3>
           </div>
 
           <button
             class="description-modal-close"
             type="button"
-            aria-label="ปิด"
+            :aria-label="t.adminParticipantDetails.closeButtonAriaLabel"
             @click="closeDescriptionModal"
           >
             <X :size="18" />
@@ -549,7 +554,7 @@ function roleLabel(role) {
         </div>
 
         <div class="description-modal-body">
-          {{ activity.description || 'ไม่มีรายละเอียดเพิ่มเติม' }}
+          {{ activity.description || t.adminParticipantDetails.noDescriptionText }}
         </div>
       </div>
     </div>

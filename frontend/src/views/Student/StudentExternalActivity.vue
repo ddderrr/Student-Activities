@@ -1,5 +1,6 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   CheckCircle2,
   ImagePlus,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-vue-next'
 import SkillLevelEditor from '../../components/Admin/SkillLevelEditor.vue'
 import DatePicker from '../../components/common/DatePicker.vue'
+import { useLanguage } from '../../composables/useLanguage'
 import {
   API_BASE,
   EVIDENCE_EXTENSIONS,
@@ -27,6 +29,8 @@ import {
 } from '../../constants/activitySkills'
 
 // role ของนักศึกษากำหนดชุด Skill: participant -> Participant skills, organizer -> Staff skills
+const { t } = useLanguage()
+
 const SKILLS_BY_ROLE = {
   participant: PARTICIPANT_SKILLS,
   organizer: STAFF_SKILLS
@@ -58,6 +62,8 @@ const emptyForm = () => ({
   description: ''
 })
 
+const route = useRoute()
+
 const form = ref(emptyForm())
 const skillLevels = ref(emptySkillLevels())
 const evidenceFile = ref(null)
@@ -67,6 +73,56 @@ const isDragging = ref(false)
 const formError = ref('')
 const successMessage = ref('')
 const submitting = ref(false)
+
+// แก้ไข+ส่งใหม่กิจกรรมที่ถูกไม่อนุมัติ: /student/external-activity?edit=<id>
+const editingId = ref(null)
+const existingEvidence = ref(null)
+
+onMounted(async () => {
+  const editId = Number(route.query.edit)
+  if (!editId) return
+
+  try {
+    const response = await fetch(`${API_BASE}/api/student/me/external-activities`, {
+      headers: studentHeaders()
+    })
+
+    if (!response.ok) throw new Error(t.value.studentExternalActivity.loadEditFailed)
+
+    const data = await response.json()
+    const item = (data.external_activities || []).find((activity) => activity.id === editId)
+
+    if (!item || item.status !== 'rejected') {
+      formError.value = t.value.studentExternalActivity.editNotFound
+      return
+    }
+
+    editingId.value = item.id
+
+    form.value = {
+      title: item.title,
+      organization: item.organization,
+      activity_type: item.activity_type,
+      role: item.role,
+      start_date: item.start_date,
+      end_date: item.end_date,
+      location: item.location,
+      description: item.description || ''
+    }
+
+    const definitions = SKILLS_BY_ROLE[item.role]
+    skillLevels.value = {
+      ...emptySkillLevels(),
+      [item.role]: Object.fromEntries(
+        definitions.map((skill) => [skill.key, item.skills?.[skill.key] ?? null])
+      )
+    }
+
+    existingEvidence.value = item.evidence
+  } catch (error) {
+    formError.value = error.message || t.value.studentExternalActivity.loadEditFailed
+  }
+})
 
 /* =========================
    Skill Mapping
@@ -89,7 +145,7 @@ const dateRangeError = computed(() => {
   if (!form.value.start_date || !form.value.end_date) return ''
 
   return form.value.end_date < form.value.start_date
-    ? 'วันที่สิ้นสุดต้องไม่อยู่ก่อนวันที่เริ่มต้น'
+    ? t.value.studentExternalActivity.dateRangeError
     : ''
 })
 
@@ -104,13 +160,13 @@ function fileProblem(file) {
   const name = file.name.toLowerCase()
 
   if (!EVIDENCE_EXTENSIONS.some((extension) => name.endsWith(extension))) {
-    return 'ไฟล์หลักฐานต้องเป็น .jpg, .jpeg, .png หรือ .pdf'
+    return t.value.studentExternalActivity.fileTypeError
   }
 
-  if (file.size === 0) return 'ไฟล์หลักฐานว่าง'
+  if (file.size === 0) return t.value.studentExternalActivity.fileEmptyError
 
   if (file.size > EVIDENCE_MAX_BYTES) {
-    return 'ไฟล์หลักฐานต้องมีขนาดไม่เกิน 5MB'
+    return t.value.studentExternalActivity.fileSizeError
   }
 
   return ''
@@ -162,7 +218,7 @@ function validateForm() {
   ]
 
   if (required.some((item) => !String(item || '').trim())) {
-    return 'กรุณากรอกข้อมูลที่มีเครื่องหมาย * ให้ครบ'
+    return t.value.studentExternalActivity.requiredFieldsError
   }
 
   if (dateRangeError.value) {
@@ -170,14 +226,14 @@ function validateForm() {
   }
 
   if (relatedSkillCount.value === 0) {
-    return 'กรุณากำหนดระดับ Skill ที่เกี่ยวข้องอย่างน้อย 1 รายการ (Skill Mapping)'
+    return t.value.studentExternalActivity.skillRequiredError
   }
 
-  if (!evidenceFile.value) {
-    return 'กรุณาแนบไฟล์หลักฐาน (เกียรติบัตร หรือรูปถ่าย)'
+  if (!evidenceFile.value && !existingEvidence.value) {
+    return t.value.studentExternalActivity.evidenceRequiredError
   }
 
-  return fileProblem(evidenceFile.value)
+  return evidenceFile.value ? fileProblem(evidenceFile.value) : ''
 }
 
 function errorDetail(data, fallback) {
@@ -203,13 +259,21 @@ async function submitActivity() {
 
   // ส่งเฉพาะชุด Skill ของ role ที่เลือก
   body.append('skills', JSON.stringify(activeSkillLevels.value))
-  body.append('evidence', evidenceFile.value)
+
+  // ตอนแก้ไข ถ้าไม่ได้เลือกไฟล์ใหม่ ไม่ต้องแนบ 'evidence' ไป backend จะใช้ไฟล์เดิมต่อ
+  if (evidenceFile.value) {
+    body.append('evidence', evidenceFile.value)
+  }
 
   submitting.value = true
 
   try {
-    const response = await fetch(`${API_BASE}/api/student/me/external-activities`, {
-      method: 'POST',
+    const url = editingId.value
+      ? `${API_BASE}/api/student/me/external-activities/${editingId.value}`
+      : `${API_BASE}/api/student/me/external-activities`
+
+    const response = await fetch(url, {
+      method: editingId.value ? 'PUT' : 'POST',
       headers: studentHeaders(),
       body
     })
@@ -217,17 +281,21 @@ async function submitActivity() {
     const data = await response.json().catch(() => null)
 
     if (!response.ok) {
-      throw new Error(errorDetail(data, 'ส่งกิจกรรมไม่สำเร็จ'))
+      throw new Error(errorDetail(data, t.value.studentExternalActivity.submitFailedFallback))
     }
 
-    successMessage.value = `ส่งกิจกรรม "${data.title}" แล้ว รอแอดมินตรวจสอบและอนุมัติ`
+    successMessage.value = editingId.value
+      ? `${t.value.studentExternalActivity.resubmitSuccessPrefix} "${data.title}" ${t.value.studentExternalActivity.resubmitSuccessSuffix}`
+      : `${t.value.studentExternalActivity.submitSuccessPrefix} "${data.title}" ${t.value.studentExternalActivity.submitSuccessSuffix}`
     form.value = emptyForm()
     skillLevels.value = emptySkillLevels()
     evidenceFile.value = null
+    existingEvidence.value = null
+    editingId.value = null
   } catch (error) {
     formError.value =
       error instanceof TypeError
-        ? `เชื่อมต่อ Backend ไม่ได้ (${API_BASE})`
+        ? `${t.value.studentExternalActivity.connectionError} (${API_BASE})`
         : error.message
   } finally {
     submitting.value = false
@@ -238,8 +306,14 @@ async function submitActivity() {
 <template>
   <section class="external-page">
     <header class="page-title">
-      <h1>Add External Activity</h1>
-      <p>ส่งกิจกรรมที่เข้าร่วมภายนอกคณะ พร้อมหลักฐานและ Skill Mapping เพื่อให้แอดมินตรวจสอบและอนุมัติ</p>
+      <h1>{{ editingId ? t.studentExternalActivity.editTitle : t.studentExternalActivity.addTitle }}</h1>
+      <p>
+        {{
+          editingId
+            ? t.studentExternalActivity.editSubtitle
+            : t.studentExternalActivity.addSubtitle
+        }}
+      </p>
     </header>
 
     <form class="page-grid" novalidate @submit.prevent="submitActivity">
@@ -248,36 +322,36 @@ async function submitActivity() {
         <section class="card">
           <div class="card-heading">
             <span class="heading-icon"><Info :size="16" /></span>
-            <h2>Activity Details</h2>
+            <h2>{{ t.studentExternalActivity.activityDetailsHeading }}</h2>
           </div>
 
           <div class="form-grid">
             <label class="field full">
-              <span>Activity Name <b>*</b></span>
+              <span>{{ t.studentExternalActivity.activityNameLabel }} <b>*</b></span>
               <input
                 v-model="form.title"
                 name="title"
                 type="text"
                 maxlength="255"
-                placeholder="Enter the name of the activity you joined"
+                :placeholder="t.studentExternalActivity.activityNamePlaceholder"
               />
             </label>
 
             <label class="field full">
-              <span>External Organizer <b>*</b></span>
+              <span>{{ t.studentExternalActivity.organizerLabel }} <b>*</b></span>
               <input
                 v-model="form.organization"
                 name="organization"
                 type="text"
                 maxlength="255"
-                placeholder="หน่วยงาน / องค์กรที่จัดกิจกรรม"
+                :placeholder="t.studentExternalActivity.organizerPlaceholder"
               />
             </label>
 
             <label class="field">
-              <span>Activity Category <b>*</b></span>
+              <span>{{ t.studentExternalActivity.categoryLabel }} <b>*</b></span>
               <select v-model="form.activity_type" name="activity_type">
-                <option disabled value="">Select category</option>
+                <option disabled value="">{{ t.studentExternalActivity.selectCategoryOption }}</option>
                 <option
                   v-for="category in EXTERNAL_ACTIVITY_CATEGORIES"
                   :key="category"
@@ -289,7 +363,7 @@ async function submitActivity() {
             </label>
 
             <label class="field">
-              <span>Your Role <b>*</b></span>
+              <span>{{ t.studentExternalActivity.roleLabel }} <b>*</b></span>
               <select v-model="form.role" name="role">
                 <option
                   v-for="role in EXTERNAL_ROLE_OPTIONS"
@@ -302,26 +376,26 @@ async function submitActivity() {
             </label>
 
             <label class="field full">
-              <span>Activity Description / Reflection</span>
+              <span>{{ t.studentExternalActivity.descriptionLabel }}</span>
               <textarea
                 v-model="form.description"
                 name="description"
                 rows="4"
-                placeholder="Describe what you did and what you learned from this activity..."
+                :placeholder="t.studentExternalActivity.descriptionPlaceholder"
               ></textarea>
             </label>
 
             <label class="field">
-              <span>Start Date <b>*</b></span>
-              <DatePicker v-model="form.start_date" placeholder="Select start date" />
+              <span>{{ t.studentExternalActivity.startDateLabel }} <b>*</b></span>
+              <DatePicker v-model="form.start_date" :placeholder="t.studentExternalActivity.startDatePlaceholder" />
             </label>
 
             <label class="field">
-              <span>End Date <b>*</b></span>
+              <span>{{ t.studentExternalActivity.endDateLabel }} <b>*</b></span>
               <DatePicker
                 v-model="form.end_date"
                 :min="form.start_date"
-                placeholder="Select end date"
+                :placeholder="t.studentExternalActivity.endDatePlaceholder"
               />
             </label>
 
@@ -331,13 +405,13 @@ async function submitActivity() {
             </p>
 
             <label class="field full">
-              <span>Location <b>*</b></span>
+              <span>{{ t.studentExternalActivity.locationLabel }} <b>*</b></span>
               <input
                 v-model="form.location"
                 name="location"
                 type="text"
                 maxlength="255"
-                placeholder="Specify place or online link"
+                :placeholder="t.studentExternalActivity.locationPlaceholder"
               />
             </label>
           </div>
@@ -345,7 +419,7 @@ async function submitActivity() {
 
         <div
           class="upload-box"
-          :class="{ dragging: isDragging, 'has-file': evidenceFile }"
+          :class="{ dragging: isDragging, 'has-file': evidenceFile || existingEvidence }"
           @click="!evidenceFile && openFilePicker()"
           @dragover.prevent="isDragging = true"
           @dragleave.prevent="isDragging = false"
@@ -360,14 +434,25 @@ async function submitActivity() {
             @change="handleFileChange"
           />
 
-          <template v-if="!evidenceFile">
+          <template v-if="!evidenceFile && !existingEvidence">
             <span class="upload-icon"><ImagePlus :size="20" /></span>
-            <strong>Upload Evidence <b>*</b></strong>
-            <p>เกียรติบัตร หรือรูปถ่ายขณะเข้าร่วม · Support JPG, PNG, PDF files, max 5MB</p>
+            <strong>{{ t.studentExternalActivity.uploadEvidenceLabel }} <b>*</b></strong>
+            <p>{{ t.studentExternalActivity.uploadEvidenceHint }}</p>
             <button type="button" class="link-button" @click.stop="openFilePicker">
-              Click to choose file
+              {{ t.studentExternalActivity.chooseFileButton }}
             </button>
           </template>
+
+          <div v-else-if="!evidenceFile && existingEvidence" class="selected-file" @click.stop>
+            <span class="upload-icon"><Paperclip :size="18" /></span>
+            <div>
+              <strong>{{ existingEvidence.original_name }}</strong>
+              <small>{{ formatFileSize(existingEvidence.size) }} · {{ t.studentExternalActivity.currentEvidenceLabel }}</small>
+            </div>
+            <button type="button" class="link-button" @click.stop="openFilePicker">
+              {{ t.studentExternalActivity.replaceFileButton }}
+            </button>
+          </div>
 
           <div v-else class="selected-file" @click.stop>
             <span class="upload-icon"><Paperclip :size="18" /></span>
@@ -378,7 +463,7 @@ async function submitActivity() {
             <button
               type="button"
               class="remove-file"
-              aria-label="Remove file"
+              :aria-label="t.studentExternalActivity.removeFileAriaLabel"
               @click="removeEvidenceFile"
             >
               <X :size="15" />
@@ -403,7 +488,7 @@ async function submitActivity() {
               class="status-link"
               :to="{ path: '/student/activities', query: { tab: 'submissions' } }"
             >
-              ดูสถานะที่ My Submissions
+              {{ t.studentExternalActivity.viewStatusLink }}
             </RouterLink>
           </span>
         </div>
@@ -411,7 +496,11 @@ async function submitActivity() {
         <div class="form-actions">
           <button type="submit" class="primary-button" :disabled="submitting">
             <LoaderCircle v-if="submitting" class="spin" :size="15" />
-            {{ submitting ? 'Submitting...' : 'Submit for Approval' }}
+            {{
+              submitting
+                ? (editingId ? t.studentExternalActivity.resubmittingButton : t.studentExternalActivity.submittingButton)
+                : (editingId ? t.studentExternalActivity.resubmitButton : t.studentExternalActivity.submitButton)
+            }}
           </button>
         </div>
       </div>
@@ -420,15 +509,15 @@ async function submitActivity() {
       <aside class="card skills-card">
         <div class="card-heading">
           <span class="heading-icon green"><TrendingUp :size="16" /></span>
-          <h2>Skill Mapping</h2>
+          <h2>{{ t.studentExternalActivity.skillMappingHeading }}</h2>
         </div>
         <p class="card-subtitle">
-          Evaluate the level of the skills you developed (1-5)
+          {{ t.studentExternalActivity.skillMappingSubtitle }}
         </p>
 
         <!-- ชุด Skill ตามบทบาทที่เลือกใน "Your Role" ด้านบน แท็บนี้แสดงผลอย่างเดียว
              ไม่ใช่ตัวเลือก role อีกช่องหนึ่ง จึงปิดแท็บที่ไม่ตรง role ไว้ -->
-        <div class="role-tabs" role="tablist" aria-label="Skill set">
+        <div class="role-tabs" role="tablist" :aria-label="t.studentExternalActivity.skillSetAriaLabel">
           <button
             type="button"
             role="tab"
@@ -437,7 +526,7 @@ async function submitActivity() {
             :class="{ active: form.role === 'participant' }"
             :disabled="form.role !== 'participant'"
           >
-            Participant
+            {{ t.studentExternalActivity.participantTab }}
           </button>
           <button
             type="button"
@@ -447,7 +536,7 @@ async function submitActivity() {
             :class="{ active: form.role === 'organizer' }"
             :disabled="form.role !== 'organizer'"
           >
-            Staff
+            {{ t.studentExternalActivity.staffTab }}
           </button>
         </div>
 
@@ -458,10 +547,10 @@ async function submitActivity() {
         />
 
         <div class="skill-summary" :class="{ empty: relatedSkillCount === 0 }">
-          <strong>{{ relatedSkillCount }} related skill{{ relatedSkillCount === 1 ? '' : 's' }}</strong>
+          <strong>{{ relatedSkillCount }} {{ relatedSkillCount === 1 ? t.studentExternalActivity.relatedSkillSingular : t.studentExternalActivity.relatedSkillPlural }}</strong>
           <span>
-            เลือกอย่างน้อย 1 Skill ที่เกี่ยวข้อง · ชุด Skill เปลี่ยนตามบทบาท
-            ({{ form.role === 'organizer' ? 'Staff' : 'Participant' }})
+            {{ t.studentExternalActivity.skillSummaryHint }}
+            ({{ form.role === 'organizer' ? t.studentExternalActivity.staffTab : t.studentExternalActivity.participantTab }})
           </span>
         </div>
       </aside>

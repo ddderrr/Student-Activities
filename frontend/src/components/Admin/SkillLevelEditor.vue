@@ -1,4 +1,8 @@
 <script setup>
+import { useLanguage } from '../../composables/useLanguage'
+
+const { t } = useLanguage()
+
 const props = defineProps({
   definitions: {
     type: Array,
@@ -67,11 +71,11 @@ function setRelated(key, related) {
               :checked="!isRelated(skill.key)"
               @change="setRelated(skill.key, !$event.target.checked)"
             />
-            ไม่เกี่ยวข้อง
+            {{ t.skillLevelEditor.notRelated }}
           </label>
 
           <span class="level-badge">
-            {{ isRelated(skill.key) ? `LEVEL ${modelValue[skill.key]}` : 'N/A' }}
+            {{ isRelated(skill.key) ? `${t.skillLevelEditor.level} ${modelValue[skill.key]}` : t.skillLevelEditor.notApplicable }}
           </span>
         </div>
       </div>

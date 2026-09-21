@@ -34,6 +34,9 @@ import {
   STAFF_SKILLS,
   skillLevelsFromSaved
 } from '../../constants/activitySkills'
+import { useLanguage } from '../../composables/useLanguage'
+
+const { t } = useLanguage()
 
 const searchText = ref('')
 const quickSearch = ref('')
@@ -41,7 +44,15 @@ const selectedCategory = ref('all')
 const selectedDate = ref('')
 const showFilterCalendar = ref(false)
 const filterCalendarCursor = ref(new Date())
-const filterWeekDays = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา']
+const filterWeekDays = computed(() => [
+  t.value.adminStudentActivities.weekdayMon,
+  t.value.adminStudentActivities.weekdayTue,
+  t.value.adminStudentActivities.weekdayWed,
+  t.value.adminStudentActivities.weekdayThu,
+  t.value.adminStudentActivities.weekdayFri,
+  t.value.adminStudentActivities.weekdaySat,
+  t.value.adminStudentActivities.weekdaySun
+])
 
 const filterCalendarTitle = computed(() =>
   new Intl.DateTimeFormat('th-TH-u-ca-gregory', {
@@ -89,7 +100,7 @@ function parseFilterDate(value) {
 
 function formatFilterDate(value) {
   const date = parseFilterDate(value)
-  if (!date) return 'เลือกวันที่'
+  if (!date) return t.value.adminStudentActivities.filterDatePlaceholder
 
   return new Intl.DateTimeFormat('th-TH-u-ca-gregory', {
     day: '2-digit',
@@ -166,10 +177,10 @@ const majorOptions = [
   'อัญมณีวิทยา'
 ]
 
-const roleOptions = [
-  { value: 'participant', label: 'Participant' },
-  { value: 'organizer', label: 'Organizer' }
-]
+const roleOptions = computed(() => [
+  { value: 'participant', label: t.value.adminStudentActivities.participantLabel },
+  { value: 'organizer', label: t.value.adminStudentActivities.organizerLabel }
+])
 
 const API_BASE = 'http://localhost:8000'
 
@@ -404,9 +415,9 @@ function toDateTimeLocal(value) {
 
 function statusLabel(status) {
   const labels = {
-    active: 'Active',
-    completed: 'Completed',
-    cancelled: 'Cancelled'
+    active: t.value.adminStudentActivities.statusActive,
+    completed: t.value.adminStudentActivities.statusCompleted,
+    cancelled: t.value.adminStudentActivities.statusCancelled
   }
 
   return labels[status || 'active'] || status
@@ -522,7 +533,7 @@ async function patchActivity(activityId, payload) {
   const data = await response.json()
 
   if (!response.ok) {
-    throw new Error(data.detail || 'แก้ไขกิจกรรมไม่สำเร็จ')
+    throw new Error(data.detail || t.value.adminStudentActivities.editActivityFailedDefault)
   }
 
   const index = activities.value.findIndex(
@@ -550,7 +561,7 @@ async function saveActivityEdits() {
     !form.location.trim()
   ) {
     editActivityError.value =
-      'กรุณากรอกชื่อ ประเภท วันเวลา ผู้รับผิดชอบ และสถานที่ให้ครบ'
+      t.value.adminStudentActivities.editActivityValidationError
     return
   }
 
@@ -577,7 +588,7 @@ async function saveActivityEdits() {
     selectedActivity.value = null
   } catch (error) {
     editActivityError.value =
-      error.message || 'ไม่สามารถเชื่อมต่อ Backend ได้'
+      error.message || t.value.adminStudentActivities.backendConnectionError
   } finally {
     editActivityLoading.value = false
   }
@@ -590,7 +601,7 @@ async function setActivityStatus(activity, status) {
   try {
     await patchActivity(activity.id, { status })
   } catch (error) {
-    window.alert(error.message || 'เปลี่ยนสถานะกิจกรรมไม่สำเร็จ')
+    window.alert(error.message || t.value.adminStudentActivities.changeStatusFailedDefault)
   } finally {
     activityActionLoadingId.value = null
   }
@@ -600,7 +611,7 @@ async function deleteActivity(activity) {
   openActivityMenuId.value = null
 
   const confirmed = window.confirm(
-    `ต้องการลบกิจกรรม "${activity.name}" หรือไม่?\nการลบจะลบสมาชิกและ Skill ที่ผูกกับกิจกรรมนี้ด้วย`
+    t.value.adminStudentActivities.deleteActivityConfirm.replace('{name}', activity.name)
   )
 
   if (!confirmed) return
@@ -616,7 +627,7 @@ async function deleteActivity(activity) {
     )
 
     if (!response.ok) {
-      let detail = 'ลบกิจกรรมไม่สำเร็จ'
+      let detail = t.value.adminStudentActivities.deleteActivityFailedDefault
 
       try {
         const data = await response.json()
@@ -632,7 +643,7 @@ async function deleteActivity(activity) {
       (item) => item.id !== activity.id
     )
   } catch (error) {
-    window.alert(error.message || 'ไม่สามารถเชื่อมต่อ Backend ได้')
+    window.alert(error.message || t.value.adminStudentActivities.backendConnectionError)
   } finally {
     activityActionLoadingId.value = null
   }
@@ -682,8 +693,8 @@ function selectRole(role) {
 
 function roleLabel(value) {
   return (
-    roleOptions.find((role) => role.value === value)?.label ||
-    'เลือก Role'
+    roleOptions.value.find((role) => role.value === value)?.label ||
+    t.value.adminStudentActivities.selectRolePlaceholder
   )
 }
 
@@ -708,12 +719,12 @@ async function addStudentManually() {
     !student.role
   ) {
     addStudentError.value =
-      'กรุณากรอกรหัสนักศึกษา ชื่อ นามสกุล อีเมล สาขาวิชา และ Role ให้ครบ'
+      t.value.adminStudentActivities.addStudentValidationError
     return
   }
 
   if (!student.email.includes('@')) {
-    addStudentError.value = 'รูปแบบอีเมลไม่ถูกต้อง'
+    addStudentError.value = t.value.adminStudentActivities.invalidEmailFormat
     return
   }
 
@@ -738,18 +749,18 @@ async function addStudentManually() {
     const data = await response.json()
 
     if (!response.ok) {
-      throw new Error(data.detail || 'เพิ่มนักศึกษาไม่สำเร็จ')
+      throw new Error(data.detail || t.value.adminStudentActivities.addStudentFailedDefault)
     }
 
     selectedActivity.value.participants = data.total_participants
 
     if (data.duplicate_count > 0) {
       addStudentError.value =
-        'นักศึกษาคนนี้มีอยู่ในกิจกรรมแล้ว'
+        t.value.adminStudentActivities.studentAlreadyInActivity
       return
     }
 
-    addStudentSuccess.value = 'เพิ่มนักศึกษาเข้ากิจกรรมสำเร็จ'
+    addStudentSuccess.value = t.value.adminStudentActivities.addStudentSuccessMessage
 
     manualStudent.value = {
       student_id: '',
@@ -761,7 +772,7 @@ async function addStudentManually() {
     }
   } catch (error) {
     addStudentError.value =
-      error.message || 'ไม่สามารถเชื่อมต่อ Backend ได้'
+      error.message || t.value.adminStudentActivities.backendConnectionError
   } finally {
     addStudentLoading.value = false
   }
@@ -838,7 +849,7 @@ function addImportFiles(fileList) {
   resetImportPreviewState()
 
   if (rejectedFiles.length) {
-    importError.value = 'รองรับเฉพาะไฟล์ .csv, .xlsx และ .xls เท่านั้น'
+    importError.value = t.value.adminStudentActivities.unsupportedFileTypeError
   }
 }
 
@@ -890,7 +901,7 @@ async function previewParticipantsImport() {
   if (!selectedActivity.value) return
 
   if (!selectedFiles.value.length) {
-    importError.value = 'กรุณาเลือกไฟล์ CSV หรือ Excel ก่อน'
+    importError.value = t.value.adminStudentActivities.selectFileFirstError
     return
   }
 
@@ -922,7 +933,7 @@ async function previewParticipantsImport() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(`${file.name}: ${data.detail || 'ไม่สามารถอ่านไฟล์ได้'}`)
+        throw new Error(`${file.name}: ${data.detail || t.value.adminStudentActivities.fileReadFailedDefault}`)
       }
 
       const fileStudents = data.students || []
@@ -933,7 +944,7 @@ async function previewParticipantsImport() {
         const localIndex = Math.max(0, Number(issue.row || 2) - 2)
         const errors = Array.isArray(issue.errors)
           ? issue.errors
-          : [String(issue.errors || 'ข้อมูลไม่ถูกต้อง')]
+          : [String(issue.errors || t.value.adminStudentActivities.invalidDataDefault)]
 
         issuesByStudentIndex.set(localIndex, errors)
 
@@ -964,7 +975,7 @@ async function previewParticipantsImport() {
 
     importPreview.value = combinedPreview
   } catch (error) {
-    importError.value = error.message || 'ไม่สามารถเชื่อมต่อ Backend ได้'
+    importError.value = error.message || t.value.adminStudentActivities.backendConnectionError
   } finally {
     importLoading.value = false
   }
@@ -977,7 +988,7 @@ async function confirmParticipantsImport() {
 
   if (!studentsToImport.length) {
     importError.value =
-      'ไม่มีข้อมูลที่พร้อม Import กรุณาตรวจสอบ Issues ก่อน'
+      t.value.adminStudentActivities.noValidImportDataError
     return
   }
 
@@ -1002,26 +1013,49 @@ async function confirmParticipantsImport() {
     const data = await response.json()
 
     if (!response.ok) {
-      throw new Error(data.detail || 'Import ไม่สำเร็จ')
+      throw new Error(data.detail || t.value.adminStudentActivities.importFailedDefault)
     }
 
     selectedActivity.value.participants = data.total_participants
 
     importSuccess.value =
-      `Import สำเร็จ ${data.imported_count} คน` +
+      t.value.adminStudentActivities.importSuccessMessage.replace(
+        '{count}',
+        data.imported_count
+      ) +
       (data.duplicate_count
-        ? ` (ข้ามข้อมูลซ้ำ ${data.duplicate_count} คน)`
+        ? t.value.adminStudentActivities.importSuccessDuplicateSuffix.replace(
+            '{count}',
+            data.duplicate_count
+          )
         : '') +
       (importPreview.value.invalid_count
-        ? ` • ข้ามข้อมูลที่มีปัญหา ${importPreview.value.invalid_count} รายการ`
+        ? t.value.adminStudentActivities.importSuccessIssueSuffix.replace(
+            '{count}',
+            importPreview.value.invalid_count
+          )
         : '')
   } catch (error) {
     importError.value =
-      error.message || 'ไม่สามารถเชื่อมต่อ Backend ได้'
+      error.message || t.value.adminStudentActivities.backendConnectionError
   } finally {
     confirmLoading.value = false
   }
 }
+
+const previewIssueNoteText = computed(() =>
+  t.value.adminStudentActivities.previewIssueNote.replace(
+    '{count}',
+    importPreview.value?.invalid_count ?? 0
+  )
+)
+
+const confirmImportButtonText = computed(() =>
+  t.value.adminStudentActivities.confirmImportButton.replace(
+    '{count}',
+    validPreviewStudents().length
+  )
+)
 </script>
 
 <template>
@@ -1031,7 +1065,7 @@ async function confirmParticipantsImport() {
     <div
       v-if="pageLoading"
       class="page-skeleton"
-      aria-label="Loading activities"
+      :aria-label="t.adminStudentActivities.loadingAriaLabel"
     >
       <!-- top action skeleton -->
       <div class="skeleton-top-action">
@@ -1092,14 +1126,14 @@ async function confirmParticipantsImport() {
           <table>
             <thead>
               <tr>
-                <th>ACTIVITY NAME</th>
-                <th>ORGANIZER</th>
-                <th>START DATE</th>
-                <th>END DATE</th>
-                <th>PARTICIPANTS</th>
-                <th>DETAILS</th>
-                <th>MANAGE PARTICIPANTS</th>
-                <th>MANAGE ACTIVITY</th>
+                <th>{{ t.adminStudentActivities.tableHeaderActivityName }}</th>
+                <th>{{ t.adminStudentActivities.tableHeaderOrganizer }}</th>
+                <th>{{ t.adminStudentActivities.tableHeaderStartDate }}</th>
+                <th>{{ t.adminStudentActivities.tableHeaderEndDate }}</th>
+                <th>{{ t.adminStudentActivities.tableHeaderParticipants }}</th>
+                <th>{{ t.adminStudentActivities.tableHeaderDetails }}</th>
+                <th>{{ t.adminStudentActivities.tableHeaderManageParticipants }}</th>
+                <th>{{ t.adminStudentActivities.tableHeaderManageActivity }}</th>
               </tr>
             </thead>
 
@@ -1163,7 +1197,7 @@ async function confirmParticipantsImport() {
     <div class="top-action">
       <button class="create-button" @click="createActivity">
         <Plus :size="18" />
-        Create New Activity
+        {{ t.adminStudentActivities.createActivityButton }}
       </button>
     </div>
 
@@ -1175,7 +1209,7 @@ async function confirmParticipantsImport() {
         </div>
 
         <div>
-          <span class="summary-label">ACTIVE ACTIVITIES</span>
+          <span class="summary-label">{{ t.adminStudentActivities.summaryActiveActivities }}</span>
           <strong class="summary-value">{{ activeActivities }}</strong>
         </div>
       </article>
@@ -1186,7 +1220,7 @@ async function confirmParticipantsImport() {
         </div>
 
         <div>
-          <span class="summary-label">PARTICIPANTS (MONTH)</span>
+          <span class="summary-label">{{ t.adminStudentActivities.summaryParticipantsMonth }}</span>
           <strong class="summary-value">
             {{ monthlyParticipants.toLocaleString() }}
           </strong>
@@ -1199,7 +1233,7 @@ async function confirmParticipantsImport() {
         </div>
 
         <div>
-          <span class="summary-label">PENDING EVALUATIONS</span>
+          <span class="summary-label">{{ t.adminStudentActivities.summaryPendingEvaluations }}</span>
           <strong class="summary-value">{{ pendingEvaluations ?? '—' }}</strong>
         </div>
       </article>
@@ -1208,27 +1242,27 @@ async function confirmParticipantsImport() {
     <!-- FILTER -->
     <section class="filter-card">
       <div class="filter-field search-activity">
-        <label>SEARCH ACTIVITY</label>
+        <label>{{ t.adminStudentActivities.filterSearchActivityLabel }}</label>
 
         <div class="input-box">
           <Search :size="16" />
           <input
             v-model="searchText"
             type="text"
-            placeholder="Activity name..."
+            :placeholder="t.adminStudentActivities.filterSearchActivityPlaceholder"
             @keyup.enter="applyFilters"
           />
         </div>
       </div>
 
       <div class="filter-field">
-        <label>CATEGORY</label>
+        <label>{{ t.adminStudentActivities.filterCategoryLabel }}</label>
 
         <select
           v-model="selectedCategory"
           @change="applyFilters"
         >
-          <option value="all">All Categories</option>
+          <option value="all">{{ t.adminStudentActivities.filterAllCategoriesOption }}</option>
           <option
             v-for="category in categories"
             :key="category"
@@ -1240,7 +1274,7 @@ async function confirmParticipantsImport() {
       </div>
 
       <div class="filter-field filter-date-field">
-        <label>DATE FROM</label>
+        <label>{{ t.adminStudentActivities.filterDateFromLabel }}</label>
 
         <div class="filter-date-picker" @click.stop>
           <button
@@ -1292,9 +1326,9 @@ async function confirmParticipantsImport() {
 
             <div class="filter-calendar-footer">
               <button type="button" class="clear" @click="clearFilterDate">
-                ล้างวันที่
+                {{ t.adminStudentActivities.filterClearDate }}
               </button>
-              <button type="button" @click="selectFilterToday">วันนี้</button>
+              <button type="button" @click="selectFilterToday">{{ t.adminStudentActivities.filterToday }}</button>
             </div>
           </div>
         </div>
@@ -1302,7 +1336,7 @@ async function confirmParticipantsImport() {
 
       <button class="filter-button" @click="applyFilters">
         <SlidersHorizontal :size="17" />
-        Apply Filters
+        {{ t.adminStudentActivities.applyFiltersButton }}
       </button>
     </section>
 
@@ -1313,7 +1347,7 @@ async function confirmParticipantsImport() {
         <input
           v-model="quickSearch"
           type="text"
-          placeholder="Quick search activities..."
+          :placeholder="t.adminStudentActivities.quickSearchPlaceholder"
           @input="currentPage = 1"
         />
       </div>
@@ -1332,14 +1366,14 @@ async function confirmParticipantsImport() {
         <table>
           <thead>
             <tr>
-              <th>ACTIVITY NAME</th>
-              <th>ORGANIZER</th>
-              <th>START DATE</th>
-              <th>END DATE</th>
-              <th>PARTICIPANTS</th>
-              <th>DETAILS</th>
-              <th>MANAGE PARTICIPANTS</th>
-              <th>MANAGE ACTIVITY</th>
+              <th>{{ t.adminStudentActivities.tableHeaderActivityName }}</th>
+              <th>{{ t.adminStudentActivities.tableHeaderOrganizer }}</th>
+              <th>{{ t.adminStudentActivities.tableHeaderStartDate }}</th>
+              <th>{{ t.adminStudentActivities.tableHeaderEndDate }}</th>
+              <th>{{ t.adminStudentActivities.tableHeaderParticipants }}</th>
+              <th>{{ t.adminStudentActivities.tableHeaderDetails }}</th>
+              <th>{{ t.adminStudentActivities.tableHeaderManageParticipants }}</th>
+              <th>{{ t.adminStudentActivities.tableHeaderManageActivity }}</th>
             </tr>
           </thead>
 
@@ -1415,7 +1449,7 @@ async function confirmParticipantsImport() {
                       :aria-expanded="expandedSkillsId === activity.id"
                       @click="toggleSkillsRow(activity.id)"
                     >
-                      Skills
+                      {{ t.adminStudentActivities.skillsToggleLabel }}
                       <span>S {{ skillCount(activity, 'staff') }} · P {{ skillCount(activity, 'participant') }}</span>
                       <ChevronDown :size="11" />
                     </button>
@@ -1463,7 +1497,7 @@ async function confirmParticipantsImport() {
                   @click="viewActivity(activity)"
                 >
                   <Eye :size="13" />
-                  View Detail
+                  {{ t.adminStudentActivities.viewDetailButton }}
                 </button>
               </td>
 
@@ -1473,7 +1507,7 @@ async function confirmParticipantsImport() {
                     class="manage-button"
                     @click="toggleManageMenu(activity.id)"
                   >
-                    Manage
+                    {{ t.adminStudentActivities.manageButton }}
                     <ChevronDown :size="14" />
                   </button>
 
@@ -1486,7 +1520,7 @@ async function confirmParticipantsImport() {
                       @click="openAddStudent(activity)"
                     >
                       <UserPlus :size="15" />
-                      Add Student
+                      {{ t.adminStudentActivities.addStudentAction }}
                     </button>
 
                     <button
@@ -1494,7 +1528,7 @@ async function confirmParticipantsImport() {
                       @click="openImportParticipants(activity)"
                     >
                       <Upload :size="15" />
-                      Import from File
+                      {{ t.adminStudentActivities.importFromFileMenuItem }}
                     </button>
                   </div>
                 </div>
@@ -1508,7 +1542,7 @@ async function confirmParticipantsImport() {
                     @click="toggleActivityMenu(activity.id)"
                   >
                     <Settings2 :size="14" />
-                    Manage
+                    {{ t.adminStudentActivities.manageButton }}
                     <ChevronDown :size="14" />
                   </button>
 
@@ -1521,7 +1555,7 @@ async function confirmParticipantsImport() {
                       @click="openEditActivity(activity)"
                     >
                       <Pencil :size="15" />
-                      Edit Activity
+                      {{ t.adminStudentActivities.editActivityMenuItem }}
                     </button>
 
                     <button
@@ -1530,7 +1564,7 @@ async function confirmParticipantsImport() {
                       @click="setActivityStatus(activity, 'completed')"
                     >
                       <CircleCheckBig :size="15" />
-                      Mark as Completed
+                      {{ t.adminStudentActivities.markAsCompletedMenuItem }}
                     </button>
 
                     <button
@@ -1539,7 +1573,7 @@ async function confirmParticipantsImport() {
                       @click="setActivityStatus(activity, 'active')"
                     >
                       <RotateCcw :size="15" />
-                      Reopen Activity
+                      {{ t.adminStudentActivities.reopenActivityMenuItem }}
                     </button>
 
                     <button
@@ -1548,7 +1582,7 @@ async function confirmParticipantsImport() {
                       @click="setActivityStatus(activity, 'cancelled')"
                     >
                       <Ban :size="15" />
-                      Cancel Activity
+                      {{ t.adminStudentActivities.cancelActivityMenuItem }}
                     </button>
 
                     <button
@@ -1556,7 +1590,7 @@ async function confirmParticipantsImport() {
                       @click="deleteActivity(activity)"
                     >
                       <Trash2 :size="15" />
-                      Delete Activity
+                      {{ t.adminStudentActivities.deleteActivityMenuItem }}
                     </button>
                   </div>
                 </div>
@@ -1575,7 +1609,7 @@ async function confirmParticipantsImport() {
                     class="skills-detail-group"
                     :data-role="role"
                   >
-                    <h4>{{ role === 'staff' ? 'Staff Skills' : 'Participant Skills' }}</h4>
+                    <h4>{{ role === 'staff' ? t.adminStudentActivities.staffSkillsHeading : t.adminStudentActivities.participantSkillsHeading }}</h4>
 
                     <ul v-if="activitySkillList(activity, role).length">
                       <li
@@ -1584,11 +1618,11 @@ async function confirmParticipantsImport() {
                         :data-skill="skill.key"
                       >
                         <span>{{ skill.label }}</span>
-                        <strong>Level {{ skill.level }}</strong>
+                        <strong>{{ t.adminStudentActivities.skillLevelLabel }} {{ skill.level }}</strong>
                       </li>
                     </ul>
 
-                    <p v-else class="skills-empty">ไม่มี Skill ที่เกี่ยวข้อง</p>
+                    <p v-else class="skills-empty">{{ t.adminStudentActivities.noRelatedSkillsText }}</p>
                   </section>
                 </div>
               </td>
@@ -1598,7 +1632,7 @@ async function confirmParticipantsImport() {
             <tr v-if="!paginatedActivities.length">
               <td colspan="8">
                 <div class="empty-table">
-                  ยังไม่มีกิจกรรม หรือไม่พบกิจกรรมที่ตรงกับเงื่อนไข
+                  {{ t.adminStudentActivities.emptyActivitiesTableText }}
                 </div>
               </td>
             </tr>
@@ -1610,13 +1644,13 @@ async function confirmParticipantsImport() {
       <!-- PAGINATION -->
       <footer class="table-footer">
         <span v-if="!tableLoading" class="rows-info">
-          Showing
+          {{ t.adminStudentActivities.paginationShowing }}
           {{ filteredActivities.length ? (currentPage - 1) * rowsPerPage + 1 : 0 }}
           -
           {{
             Math.min(currentPage * rowsPerPage, filteredActivities.length)
           }}
-          of {{ filteredActivities.length }}
+          {{ t.adminStudentActivities.paginationOf }} {{ filteredActivities.length }}
         </span>
 
         <div v-if="!tableLoading" class="pagination">
@@ -1660,8 +1694,8 @@ async function confirmParticipantsImport() {
       <div class="import-modal add-student-modal">
         <div class="modal-header">
           <div>
-            <p class="modal-eyebrow">ADD STUDENT</p>
-            <h2>Add Student Manually</h2>
+            <p class="modal-eyebrow">{{ t.adminStudentActivities.addStudentModalEyebrow }}</p>
+            <h2>{{ t.adminStudentActivities.addStudentModalTitle }}</h2>
             <p v-if="selectedActivity" class="selected-activity">
               {{ selectedActivity.name }}
             </p>
@@ -1677,45 +1711,45 @@ async function confirmParticipantsImport() {
 
         <div class="manual-form">
           <label>
-            <span>Student ID *</span>
+            <span>{{ t.adminStudentActivities.studentIdLabel }}</span>
             <input
               v-model="manualStudent.student_id"
               type="text"
-              placeholder="เช่น 670510001"
+              :placeholder="t.adminStudentActivities.studentIdPlaceholder"
             />
           </label>
 
           <div class="form-row">
             <label>
-              <span>First Name *</span>
+              <span>{{ t.adminStudentActivities.firstNameLabel }}</span>
               <input
                 v-model="manualStudent.first_name"
                 type="text"
-                placeholder="ชื่อ"
+                :placeholder="t.adminStudentActivities.firstNamePlaceholder"
               />
             </label>
 
             <label>
-              <span>Last Name *</span>
+              <span>{{ t.adminStudentActivities.lastNameLabel }}</span>
               <input
                 v-model="manualStudent.last_name"
                 type="text"
-                placeholder="นามสกุล"
+                :placeholder="t.adminStudentActivities.lastNamePlaceholder"
               />
             </label>
           </div>
 
           <label>
-            <span>Email *</span>
+            <span>{{ t.adminStudentActivities.emailLabel }}</span>
             <input
               v-model="manualStudent.email"
               type="email"
-              placeholder="student@cmu.ac.th"
+              :placeholder="t.adminStudentActivities.emailPlaceholder"
             />
           </label>
 
           <label>
-            <span>Major *</span>
+            <span>{{ t.adminStudentActivities.majorLabel }}</span>
 
             <div class="major-select">
               <button
@@ -1728,7 +1762,7 @@ async function confirmParticipantsImport() {
                 >
                   {{
                     manualStudent.major ||
-                    'เลือกสาขาวิชา'
+                    t.adminStudentActivities.selectMajorPlaceholder
                   }}
                 </span>
 
@@ -1756,7 +1790,7 @@ async function confirmParticipantsImport() {
           </label>
 
           <label>
-            <span>Role *</span>
+            <span>{{ t.adminStudentActivities.roleFieldLabel }}</span>
 
             <div class="role-select">
               <button
@@ -1813,7 +1847,7 @@ async function confirmParticipantsImport() {
             :disabled="addStudentLoading"
             @click="closeAddStudentModal"
           >
-            Cancel
+            {{ t.adminStudentActivities.cancelButton }}
           </button>
 
           <button
@@ -1830,8 +1864,8 @@ async function confirmParticipantsImport() {
 
             {{
               addStudentLoading
-                ? 'Adding...'
-                : 'Add Student'
+                ? t.adminStudentActivities.addingStudentLoading
+                : t.adminStudentActivities.addStudentAction
             }}
           </button>
         </div>
@@ -1851,10 +1885,10 @@ async function confirmParticipantsImport() {
         <div class="modal-header">
           <div>
             <p class="modal-eyebrow">
-              {{ importPreview ? 'IMPORT PREVIEW' : 'IMPORT FROM FILE' }}
+              {{ importPreview ? t.adminStudentActivities.importPreviewEyebrow : t.adminStudentActivities.importFromFileEyebrow }}
             </p>
             <h2>
-              {{ importPreview ? 'Review Participants' : 'Import Student List' }}
+              {{ importPreview ? t.adminStudentActivities.reviewParticipantsTitle : t.adminStudentActivities.importStudentListTitle }}
             </h2>
             <p v-if="selectedActivity" class="selected-activity">
               {{ selectedActivity.name }}
@@ -1888,8 +1922,8 @@ async function confirmParticipantsImport() {
               <FileSpreadsheet :size="34" />
 
               <div>
-                <strong>ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์</strong>
-                <span>รองรับไฟล์ .csv, .xlsx และ .xls</span>
+                <strong>{{ t.adminStudentActivities.dropzoneHeading }}</strong>
+                <span>{{ t.adminStudentActivities.dropzoneSubtext }}</span>
               </div>
             </button>
 
@@ -1916,7 +1950,7 @@ async function confirmParticipantsImport() {
                 <button
                   type="button"
                   class="remove-file-button"
-                  title="ลบไฟล์"
+                  :title="t.adminStudentActivities.removeFileTooltip"
                   @click="removeImportFile(index)"
                 >
                   <X :size="16" />
@@ -1958,12 +1992,12 @@ async function confirmParticipantsImport() {
         >
           <div class="preview-summary">
             <div class="preview-summary-item">
-              <span>FOUND</span>
+              <span>{{ t.adminStudentActivities.previewFoundLabel }}</span>
               <strong>{{ importPreview.total }}</strong>
             </div>
 
             <div class="preview-summary-item">
-              <span>READY</span>
+              <span>{{ t.adminStudentActivities.previewReadyLabel }}</span>
               <strong>
                 {{
                   importPreview.total -
@@ -1979,10 +2013,10 @@ async function confirmParticipantsImport() {
               :disabled="!importPreview.invalid_count"
               @click="toggleImportIssues"
             >
-              <span>ISSUES</span>
+              <span>{{ t.adminStudentActivities.previewIssuesLabel }}</span>
               <strong>{{ importPreview.invalid_count }}</strong>
               <small v-if="importPreview.invalid_count">
-                {{ showImportIssues ? 'ซ่อนรายละเอียด' : 'กดดูรายละเอียด' }}
+                {{ showImportIssues ? t.adminStudentActivities.hideDetailsText : t.adminStudentActivities.showDetailsText }}
               </small>
             </button>
           </div>
@@ -1994,8 +2028,8 @@ async function confirmParticipantsImport() {
             <div class="issues-panel-heading">
               <TriangleAlert :size="17" />
               <div>
-                <strong>Import Issues</strong>
-                <span>รายการเหล่านี้จะถูกข้ามตอน Confirm Import</span>
+                <strong>{{ t.adminStudentActivities.importIssuesHeading }}</strong>
+                <span>{{ t.adminStudentActivities.importIssuesSubtext }}</span>
               </div>
             </div>
 
@@ -2009,10 +2043,10 @@ async function confirmParticipantsImport() {
                   <strong>
                     {{
                       importPreview.students[issue.student_index]?.student_id ||
-                      'Unknown student'
+                      t.adminStudentActivities.unknownStudentFallback
                     }}
                   </strong>
-                  <span>{{ issue.file_name }} • row {{ issue.row }}</span>
+                  <span>{{ issue.file_name }} • {{ t.adminStudentActivities.previewIssueRowLabel }} {{ issue.row }}</span>
                 </div>
 
                 <ul>
@@ -2031,11 +2065,11 @@ async function confirmParticipantsImport() {
             <table class="preview-table participants-preview-table">
               <thead>
                 <tr>
-                  <th>STUDENT ID</th>
-                  <th>NAME</th>
-                  <th>EMAIL</th>
-                  <th>ROLE</th>
-                  <th>STATUS</th>
+                  <th>{{ t.adminStudentActivities.previewTableStudentId }}</th>
+                  <th>{{ t.adminStudentActivities.previewTableName }}</th>
+                  <th>{{ t.adminStudentActivities.previewTableEmail }}</th>
+                  <th>{{ t.adminStudentActivities.previewTableRole }}</th>
+                  <th>{{ t.adminStudentActivities.previewTableStatus }}</th>
                 </tr>
               </thead>
 
@@ -2060,8 +2094,8 @@ async function confirmParticipantsImport() {
                       class="preview-role-select"
                       :disabled="confirmLoading"
                     >
-                      <option value="participant">Participant</option>
-                      <option value="organizer">Organizer</option>
+                      <option value="participant">{{ t.adminStudentActivities.participantLabel }}</option>
+                      <option value="organizer">{{ t.adminStudentActivities.organizerLabel }}</option>
                     </select>
                   </td>
 
@@ -2074,14 +2108,14 @@ async function confirmParticipantsImport() {
                         showImportIssues = true
                       "
                     >
-                      Issue
+                      {{ t.adminStudentActivities.issueStatusLabel }}
                     </button>
 
                     <span
                       v-else
                       class="preview-status ready"
                     >
-                      Ready
+                      {{ t.adminStudentActivities.readyStatusLabel }}
                     </span>
                   </td>
                 </tr>
@@ -2093,8 +2127,7 @@ async function confirmParticipantsImport() {
             v-if="importPreview.invalid_count"
             class="preview-note preview-issue-note"
           >
-            {{ importPreview.invalid_count }} รายการมีปัญหาและจะไม่ถูกนำเข้า
-            ส่วนรายการที่เป็น Ready ยังสามารถ Confirm Import ได้ตามปกติ
+            {{ previewIssueNoteText }}
           </p>
         </div>
 
@@ -2104,7 +2137,7 @@ async function confirmParticipantsImport() {
             :disabled="importLoading || confirmLoading"
             @click="closeImportModal"
           >
-            Cancel
+            {{ t.adminStudentActivities.cancelButton }}
           </button>
 
           <button
@@ -2114,7 +2147,7 @@ async function confirmParticipantsImport() {
             @click="backToImportFiles"
           >
             <ChevronLeft :size="17" />
-            Back
+            {{ t.adminStudentActivities.backButton }}
           </button>
 
           <button
@@ -2136,8 +2169,8 @@ async function confirmParticipantsImport() {
 
             {{
               importLoading
-                ? 'Reading...'
-                : 'Preview Import'
+                ? t.adminStudentActivities.readingLoadingText
+                : t.adminStudentActivities.previewImportButton
             }}
           </button>
 
@@ -2159,8 +2192,8 @@ async function confirmParticipantsImport() {
 
             {{
               confirmLoading
-                ? 'Importing...'
-                : `Confirm Import (${validPreviewStudents().length})`
+                ? t.adminStudentActivities.importingLoadingText
+                : confirmImportButtonText
             }}
           </button>
         </div>
@@ -2176,8 +2209,8 @@ async function confirmParticipantsImport() {
       <div class="import-modal edit-activity-modal">
         <div class="modal-header">
           <div>
-            <p class="modal-eyebrow">MANAGE ACTIVITY</p>
-            <h2>Edit Activity</h2>
+            <p class="modal-eyebrow">{{ t.adminStudentActivities.manageActivityEyebrow }}</p>
+            <h2>{{ t.adminStudentActivities.editActivityTitle }}</h2>
             <p v-if="selectedActivity" class="selected-activity">
               {{ selectedActivity.name }}
             </p>
@@ -2194,34 +2227,34 @@ async function confirmParticipantsImport() {
 
         <div class="activity-edit-grid">
           <label class="edit-field full">
-            <span>Activity Name *</span>
+            <span>{{ t.adminStudentActivities.activityNameLabel }}</span>
             <input
               v-model="editActivityForm.name"
               type="text"
-              placeholder="ชื่อกิจกรรม"
+              :placeholder="t.adminStudentActivities.activityNamePlaceholder"
             />
           </label>
 
           <label class="edit-field">
-            <span>Activity Type *</span>
+            <span>{{ t.adminStudentActivities.activityTypeLabel }}</span>
             <input
               v-model="editActivityForm.activity_type"
               type="text"
-              placeholder="ประเภทกิจกรรม"
+              :placeholder="t.adminStudentActivities.activityTypePlaceholder"
             />
           </label>
 
           <label class="edit-field">
-            <span>Status</span>
+            <span>{{ t.adminStudentActivities.statusFieldLabel }}</span>
             <select v-model="editActivityForm.status">
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
+              <option value="active">{{ t.adminStudentActivities.statusActive }}</option>
+              <option value="completed">{{ t.adminStudentActivities.statusCompleted }}</option>
+              <option value="cancelled">{{ t.adminStudentActivities.statusCancelled }}</option>
             </select>
           </label>
 
           <label class="edit-field">
-            <span>Start Date / Time *</span>
+            <span>{{ t.adminStudentActivities.startDateTimeLabel }}</span>
             <input
               v-model="editActivityForm.start_at"
               type="datetime-local"
@@ -2229,7 +2262,7 @@ async function confirmParticipantsImport() {
           </label>
 
           <label class="edit-field">
-            <span>End Date / Time *</span>
+            <span>{{ t.adminStudentActivities.endDateTimeLabel }}</span>
             <input
               v-model="editActivityForm.end_at"
               type="datetime-local"
@@ -2237,7 +2270,7 @@ async function confirmParticipantsImport() {
           </label>
 
           <label class="edit-field">
-            <span>Department</span>
+            <span>{{ t.adminStudentActivities.departmentLabel }}</span>
             <input
               v-model="editActivityForm.department"
               type="text"
@@ -2245,7 +2278,7 @@ async function confirmParticipantsImport() {
           </label>
 
           <label class="edit-field">
-            <span>Responsible Person *</span>
+            <span>{{ t.adminStudentActivities.responsiblePersonLabel }}</span>
             <input
               v-model="editActivityForm.responsible_person"
               type="text"
@@ -2253,7 +2286,7 @@ async function confirmParticipantsImport() {
           </label>
 
           <label class="edit-field">
-            <span>Advisor</span>
+            <span>{{ t.adminStudentActivities.advisorLabel }}</span>
             <input
               v-model="editActivityForm.advisor"
               type="text"
@@ -2261,7 +2294,7 @@ async function confirmParticipantsImport() {
           </label>
 
           <label class="edit-field">
-            <span>Location *</span>
+            <span>{{ t.adminStudentActivities.locationLabel }}</span>
             <input
               v-model="editActivityForm.location"
               type="text"
@@ -2269,7 +2302,7 @@ async function confirmParticipantsImport() {
           </label>
 
           <label class="edit-field full">
-            <span>Description</span>
+            <span>{{ t.adminStudentActivities.descriptionLabel }}</span>
             <textarea
               v-model="editActivityForm.description"
               rows="4"
@@ -2278,7 +2311,7 @@ async function confirmParticipantsImport() {
 
           <div class="edit-field full edit-skills">
             <div class="edit-skills-heading">
-              <span>Skills</span>
+              <span>{{ t.adminStudentActivities.skillsLabel }}</span>
 
               <div class="edit-skill-tabs">
                 <button
@@ -2286,14 +2319,14 @@ async function confirmParticipantsImport() {
                   :class="{ active: editSkillTarget === 'staff' }"
                   @click="editSkillTarget = 'staff'"
                 >
-                  Staff
+                  {{ t.adminStudentActivities.staffLabel }}
                 </button>
                 <button
                   type="button"
                   :class="{ active: editSkillTarget === 'participant' }"
                   @click="editSkillTarget = 'participant'"
                 >
-                  Participant
+                  {{ t.adminStudentActivities.participantLabel }}
                 </button>
               </div>
             </div>
@@ -2327,7 +2360,7 @@ async function confirmParticipantsImport() {
             :disabled="editActivityLoading"
             @click="closeEditActivityModal"
           >
-            Cancel
+            {{ t.adminStudentActivities.cancelButton }}
           </button>
 
           <button
@@ -2344,8 +2377,8 @@ async function confirmParticipantsImport() {
 
             {{
               editActivityLoading
-                ? 'Saving...'
-                : 'Save Changes'
+                ? t.adminStudentActivities.savingLoadingText
+                : t.adminStudentActivities.saveChangesButton
             }}
           </button>
         </div>

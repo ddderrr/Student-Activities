@@ -35,8 +35,11 @@ import StudentSideBar
   from '../components/Student/StudentSideBar.vue'
 
 import { API_BASE, studentHeaders } from '../constants/currentStudent'
+import { useLanguage } from '../composables/useLanguage'
 
 const router = useRouter()
+
+const { t } = useLanguage()
 
 
 
@@ -150,7 +153,7 @@ const fetchNotifications = async () => {
     if (!response.ok) {
 
       throw new Error(
-        'Cannot load notifications'
+        t.value.studentLayout.cannotLoadNotifications
       )
 
     }
@@ -451,7 +454,7 @@ onBeforeUnmount(() => {
 
             type="text"
 
-            placeholder="Search my activities..."
+            :placeholder="t.studentLayout.searchPlaceholder"
 
           />
 
@@ -463,7 +466,7 @@ onBeforeUnmount(() => {
 
             type="button"
 
-            aria-label="Clear search"
+            :aria-label="t.studentLayout.clearSearch"
 
             @click="clearSearch"
 
@@ -505,9 +508,9 @@ onBeforeUnmount(() => {
 
               type="button"
 
-              title="Notifications"
+              :title="t.studentLayout.notifications"
 
-              aria-label="Notifications"
+              :aria-label="t.studentLayout.notifications"
 
               @click.stop="toggleNotifications"
 
@@ -547,13 +550,13 @@ onBeforeUnmount(() => {
 
                   <strong>
 
-                    Notifications
+                    {{ t.studentLayout.notifications }}
 
                   </strong>
 
                   <span>
 
-                    {{ unreadCount }} unread
+                    {{ unreadCount }} {{ t.studentLayout.unread }}
 
                   </span>
 
@@ -571,7 +574,7 @@ onBeforeUnmount(() => {
 
                 >
 
-                  Mark all read
+                  {{ t.studentLayout.markAllRead }}
 
                 </button>
 
@@ -651,7 +654,7 @@ onBeforeUnmount(() => {
 
               >
 
-                No notifications.
+                {{ t.studentLayout.noNotifications }}
 
               </div>
 
@@ -673,9 +676,9 @@ onBeforeUnmount(() => {
 
             type="button"
 
-            title="Toggle sidebar"
+            :title="t.studentLayout.toggleSidebar"
 
-            aria-label="Toggle sidebar"
+            :aria-label="t.studentLayout.toggleSidebar"
 
             @click="toggleSidebar"
 
@@ -707,9 +710,9 @@ onBeforeUnmount(() => {
 
               type="button"
 
-              title="My Profile"
+              :title="t.studentLayout.myProfile"
 
-              aria-label="My Profile"
+              :aria-label="t.studentLayout.myProfile"
 
               @click.stop="toggleProfile"
 
@@ -721,7 +724,7 @@ onBeforeUnmount(() => {
 
                 :src="currentStudent.avatar"
 
-                alt="Student profile"
+                :alt="t.studentLayout.studentProfileAlt"
 
               />
 
@@ -757,7 +760,7 @@ onBeforeUnmount(() => {
 
                   :src="currentStudent.avatar"
 
-                  alt="Student profile"
+                  :alt="t.studentLayout.studentProfileAlt"
 
                 />
 
@@ -781,7 +784,7 @@ onBeforeUnmount(() => {
 
               <span class="profile-id">
 
-                ID: {{ currentStudent.id }}
+                {{ t.studentLayout.idLabel }}: {{ currentStudent.id }}
 
               </span>
 
@@ -791,7 +794,7 @@ onBeforeUnmount(() => {
 
                 <div>
 
-                  <span>Faculty</span>
+                  <span>{{ t.studentLayout.faculty }}</span>
 
                   <strong>
 
@@ -805,7 +808,7 @@ onBeforeUnmount(() => {
 
                 <div>
 
-                  <span>Major</span>
+                  <span>{{ t.studentLayout.major }}</span>
 
                   <strong>
 
@@ -819,7 +822,7 @@ onBeforeUnmount(() => {
 
                 <div>
 
-                  <span>Email</span>
+                  <span>{{ t.studentLayout.email }}</span>
 
                   <strong>
 

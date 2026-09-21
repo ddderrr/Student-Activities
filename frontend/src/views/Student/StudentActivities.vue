@@ -35,9 +35,13 @@ import {
   useRouter
 } from 'vue-router'
 
+import { useLanguage } from '../../composables/useLanguage'
+
 
 const route = useRoute()
 const router = useRouter()
+
+const { t } = useLanguage()
 
 
 /* =====================================================
@@ -126,12 +130,12 @@ const SKILL_LABELS = Object.fromEntries(
   )
 )
 
-const STATUS_LABELS = {
-  active: 'Active',
-  completed: 'Completed',
-  cancelled: 'Cancelled',
-  approved: 'Approved'
-}
+const STATUS_LABELS = computed(() => ({
+  active: t.value.studentActivities.statusActive,
+  completed: t.value.studentActivities.statusCompleted,
+  cancelled: t.value.studentActivities.statusCancelled,
+  approved: t.value.studentActivities.statusApproved
+}))
 
 const toActivityView = (item, student) => {
 
@@ -143,8 +147,8 @@ const toActivityView = (item, student) => {
     id: item.id,
     source: item.source,
     sourceLabel: isExternal
-      ? 'External Activity'
-      : 'Faculty Activity',
+      ? t.value.studentActivities.externalActivityLabel
+      : t.value.studentActivities.facultyActivityLabel,
     title: item.title,
     description: item.description || '',
     studentName:
@@ -152,15 +156,15 @@ const toActivityView = (item, student) => {
     studentId: student.student_id,
     status: item.status,
     statusLabel:
-      STATUS_LABELS[item.status] || item.status,
+      STATUS_LABELS.value[item.status] || item.status,
     date: String(item.start_at).slice(0, 10),
     endDate: String(item.end_at).slice(0, 10),
     category: item.activity_type,
     organizer: item.organizer,
     location: item.location,
     role: item.role === 'organizer'
-      ? 'Organizer'
-      : 'Participant',
+      ? t.value.studentActivities.roleOrganizer
+      : t.value.studentActivities.roleParticipant,
     skills: Object.entries(item.skills || {}).map(
       ([key, level]) => ({
         key,
@@ -175,33 +179,33 @@ const toActivityView = (item, student) => {
 
 }
 
-const SUBMISSION_STATUS_LABELS = {
-  pending: 'Pending',
-  approved: 'Approved',
-  rejected: 'Rejected'
-}
+const SUBMISSION_STATUS_LABELS = computed(() => ({
+  pending: t.value.studentActivities.statusPending,
+  approved: t.value.studentActivities.statusApproved,
+  rejected: t.value.studentActivities.statusRejected
+}))
 
 // GET /api/student/me/external-activities (ทุกสถานะ)
 const toSubmissionView = (item) => ({
   key: `submission-${item.id}`,
   id: item.id,
   source: 'submission',
-  sourceLabel: 'External Activity',
+  sourceLabel: t.value.studentActivities.externalActivityLabel,
   title: item.title,
   description: item.description || '',
   studentName:
     `${item.student.first_name} ${item.student.last_name}`,
   studentId: item.student_id,
   status: item.status,
-  statusLabel: SUBMISSION_STATUS_LABELS[item.status] || item.status,
+  statusLabel: SUBMISSION_STATUS_LABELS.value[item.status] || item.status,
   date: item.start_date,
   endDate: item.end_date,
   category: item.activity_type,
   organizer: item.organization,
   location: item.location,
   role: item.role === 'organizer'
-    ? 'Organizer'
-    : 'Participant',
+    ? t.value.studentActivities.roleOrganizer
+    : t.value.studentActivities.roleParticipant,
   skills: Object.entries(item.skills || {}).map(
     ([key, level]) => ({
       key,
@@ -230,12 +234,12 @@ const dateRangeText = (activity) => {
 
 const sourceFilter = ref('all')
 
-const SOURCE_TABS = [
-  { value: 'all', label: 'All' },
-  { value: 'activity', label: 'Faculty Activities' },
-  { value: 'external_activity', label: 'External Activities' },
-  { value: 'submissions', label: 'My Submissions' }
-]
+const SOURCE_TABS = computed(() => [
+  { value: 'all', label: t.value.studentActivities.allTab },
+  { value: 'activity', label: t.value.studentActivities.facultyActivitiesTab },
+  { value: 'external_activity', label: t.value.studentActivities.externalActivitiesTab },
+  { value: 'submissions', label: t.value.studentActivities.mySubmissionsTab }
+])
 
 
 /* =====================================================
@@ -244,12 +248,12 @@ const SOURCE_TABS = [
 
 const submissionStatus = ref('all')
 
-const SUBMISSION_STATUS_TABS = [
-  { value: 'all', label: 'All' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Rejected' }
-]
+const SUBMISSION_STATUS_TABS = computed(() => [
+  { value: 'all', label: t.value.studentActivities.allTab },
+  { value: 'pending', label: t.value.studentActivities.statusPending },
+  { value: 'approved', label: t.value.studentActivities.statusApproved },
+  { value: 'rejected', label: t.value.studentActivities.statusRejected }
+])
 
 const submissionStatusCounts = computed(() => {
 
@@ -394,6 +398,17 @@ const viewDetails = (activity) => {
 }
 
 
+// แก้ไข + ส่งใหม่กิจกรรมภายนอกที่ถูกไม่อนุมัติ
+const editSubmission = (activity) => {
+
+  router.push({
+    path: '/student/external-activity',
+    query: { edit: activity.id }
+  })
+
+}
+
+
 const closeDetails = () => {
 
   selectedActivity.value =
@@ -486,7 +501,7 @@ watch(
 
   (tab) => {
     sourceFilter.value =
-      SOURCE_TABS.some(item => item.value === tab)
+      SOURCE_TABS.value.some(item => item.value === tab)
         ? tab
         : 'all'
   },
@@ -547,7 +562,7 @@ const fetchActivities = async () => {
     if (!response.ok || !submissionsResponse.ok) {
 
       throw new Error(
-        'Cannot load activities'
+        t.value.studentActivities.loadActivitiesErrorLabel
       )
 
     }
@@ -647,11 +662,11 @@ onBeforeUnmount(() => {
         <div>
 
           <h1>
-            My Activities
+            {{ t.studentActivities.pageTitle }}
           </h1>
 
           <p>
-            Faculty activities you joined and approved external activities.
+            {{ t.studentActivities.pageSubtitle }}
           </p>
 
         </div>
@@ -667,7 +682,7 @@ onBeforeUnmount(() => {
           </strong>
 
           <span>
-            TOTAL ACTIVITIES
+            {{ t.studentActivities.totalActivitiesLabel }}
           </span>
 
         </div>
@@ -719,7 +734,7 @@ onBeforeUnmount(() => {
               :size="15"
             />
 
-            Filter By Date
+            {{ t.studentActivities.filterByDateLabel }}
 
           </button>
 
@@ -743,7 +758,7 @@ onBeforeUnmount(() => {
               type="button"
               @click="clearDateFilter"
             >
-              Clear
+              {{ t.studentActivities.clearLabel }}
             </button>
 
           </div>
@@ -788,7 +803,7 @@ onBeforeUnmount(() => {
         v-if="loading"
         class="message"
       >
-        Loading activities...
+        {{ t.studentActivities.loadingLabel }}
       </div>
 
 
@@ -880,7 +895,7 @@ onBeforeUnmount(() => {
               v-if="activity.status === 'rejected' && activity.rejectReason"
               class="reject-line"
             >
-              เหตุผลที่ไม่อนุมัติ: {{ activity.rejectReason }}
+              {{ t.studentActivities.rejectReasonPrefix }} {{ activity.rejectReason }}
             </small>
 
           </div>
@@ -904,20 +919,30 @@ onBeforeUnmount(() => {
 
 
             <button
+              v-if="activity.source === 'submission' && activity.status === 'rejected'"
+              class="edit-submission-btn"
+              type="button"
+              @click="editSubmission(activity)"
+            >
+              {{ t.studentActivities.editLabel }}
+            </button>
+
+
+            <button
               class="details-btn"
               type="button"
               @click="
                 viewDetails(activity)
               "
             >
-              DETAILS
+              {{ t.studentActivities.detailsButtonLabel }}
             </button>
 
 
             <button
               class="arrow-btn"
               type="button"
-              aria-label="View activity details"
+              :aria-label="t.studentActivities.viewActivityDetailsAriaLabel"
               @click="
                 viewDetails(activity)
               "
@@ -945,16 +970,16 @@ onBeforeUnmount(() => {
           <Search :size="28" />
 
           <h3>
-            No activities found
+            {{ t.studentActivities.noActivitiesFoundTitle }}
           </h3>
 
           <p>
             {{
               activities.length
-                ? 'Try another activity name or date.'
+                ? t.studentActivities.tryAnotherLabel
                 : sourceFilter === 'submissions'
-                  ? 'No external activity submissions yet.'
-                  : 'No faculty or approved external activities yet.'
+                  ? t.studentActivities.noSubmissionsYetLabel
+                  : t.studentActivities.noApprovedActivitiesYetLabel
             }}
           </p>
 
@@ -977,7 +1002,7 @@ onBeforeUnmount(() => {
           @click="loadMore"
         >
 
-          Load More Activities
+          {{ t.studentActivities.loadMoreLabel }}
 
           <ChevronDown :size="16" />
 
@@ -1014,7 +1039,7 @@ onBeforeUnmount(() => {
             <p>
               {{ selectedActivity.studentName }}
 
-              (ID:
+              ({{ t.studentActivities.idLabel }}
               {{ selectedActivity.studentId }})
             </p>
 
@@ -1024,7 +1049,7 @@ onBeforeUnmount(() => {
           <button
             class="close-btn"
             type="button"
-            aria-label="Close details"
+            :aria-label="t.studentActivities.closeDetailsAriaLabel"
             @click="closeDetails"
           >
             ×
@@ -1050,7 +1075,7 @@ onBeforeUnmount(() => {
             <section class="detail-card">
 
               <h3>
-                Activity Details
+                {{ t.studentActivities.activityDetailsHeading }}
               </h3>
 
               <div class="detail-divider">
@@ -1062,7 +1087,7 @@ onBeforeUnmount(() => {
                 <div>
 
                   <span class="detail-label">
-                    CATEGORY
+                    {{ t.studentActivities.categoryLabel }}
                   </span>
 
                   <p>
@@ -1078,7 +1103,7 @@ onBeforeUnmount(() => {
                 <div>
 
                   <span class="detail-label">
-                    DATE
+                    {{ t.studentActivities.dateLabel }}
                   </span>
 
                   <p>
@@ -1091,7 +1116,7 @@ onBeforeUnmount(() => {
                 <div>
 
                   <span class="detail-label">
-                    SOURCE
+                    {{ t.studentActivities.sourceDetailLabel }}
                   </span>
 
                   <p>
@@ -1104,7 +1129,7 @@ onBeforeUnmount(() => {
                 <div>
 
                   <span class="detail-label">
-                    ROLE
+                    {{ t.studentActivities.roleLabel }}
                   </span>
 
                   <p>
@@ -1117,7 +1142,7 @@ onBeforeUnmount(() => {
                 <div>
 
                   <span class="detail-label">
-                    LOCATION
+                    {{ t.studentActivities.locationLabel }}
                   </span>
 
                   <p>
@@ -1130,7 +1155,7 @@ onBeforeUnmount(() => {
                 <div>
 
                   <span class="detail-label">
-                    ORGANIZER
+                    {{ t.studentActivities.organizerLabel }}
                   </span>
 
                   <p>
@@ -1154,8 +1179,8 @@ onBeforeUnmount(() => {
               <h3>
                 {{
                   selectedActivity.source === 'activity'
-                    ? 'Activity Description'
-                    : 'Student Reflection'
+                    ? t.studentActivities.activityDescriptionHeading
+                    : t.studentActivities.studentReflectionHeading
                 }}
               </h3>
 
@@ -1164,7 +1189,7 @@ onBeforeUnmount(() => {
 
                 {{
                   selectedActivity.description
-                  || 'No description provided.'
+                  || t.studentActivities.noDescriptionProvided
                 }}
 
               </div>
@@ -1178,7 +1203,7 @@ onBeforeUnmount(() => {
                 rel="noopener"
               >
                 <FileText :size="13" />
-                View evidence
+                {{ t.studentActivities.viewEvidenceLabel }}
                 <ExternalLink :size="11" />
               </a>
 
@@ -1192,8 +1217,8 @@ onBeforeUnmount(() => {
               <h3>
                 {{
                   selectedActivity.source === 'activity'
-                    ? 'Skills'
-                    : 'Skill Mapping'
+                    ? t.studentActivities.skillsHeading
+                    : t.studentActivities.skillMappingHeading
                 }}
               </h3>
 
@@ -1215,7 +1240,7 @@ onBeforeUnmount(() => {
                   :key="skill.key"
                   class="skill"
                 >
-                  {{ skill.label }} · Level {{ skill.level }}
+                  {{ skill.label }} · {{ t.studentActivities.levelLabel }} {{ skill.level }}
                 </span>
 
               </div>
@@ -1225,7 +1250,7 @@ onBeforeUnmount(() => {
                 v-else
                 class="no-data"
               >
-                No related skills.
+                {{ t.studentActivities.noRelatedSkillsLabel }}
               </p>
 
             </section>
@@ -1249,7 +1274,7 @@ onBeforeUnmount(() => {
             >
 
               <span class="detail-label">
-                CURRENT STATUS
+                {{ t.studentActivities.currentStatusLabel }}
               </span>
 
               <div class="big-status">
@@ -1290,11 +1315,10 @@ onBeforeUnmount(() => {
                 "
               >
                 <strong>
-                  Waiting for Review
+                  {{ t.studentActivities.waitingForReviewTitle }}
                 </strong>
                 <p>
-                  This submission is waiting for
-                  administrator review.
+                  {{ t.studentActivities.waitingForReviewText }}
                 </p>
               </div>
 
@@ -1307,12 +1331,12 @@ onBeforeUnmount(() => {
                 "
               >
                 <strong>
-                  Activity Not Approved
+                  {{ t.studentActivities.activityNotApprovedTitle }}
                 </strong>
                 <p data-testid="reject-reason">
                   {{
                     selectedActivity.rejectReason
-                    || 'This activity was not approved.'
+                    || t.studentActivities.activityNotApprovedFallbackText
                   }}
                 </p>
               </div>
@@ -1326,11 +1350,10 @@ onBeforeUnmount(() => {
                 "
               >
                 <strong>
-                  Approved by Administrator
+                  {{ t.studentActivities.approvedByAdminTitle }}
                 </strong>
                 <p>
-                  This external activity and your
-                  Skill Mapping were reviewed and approved.
+                  {{ t.studentActivities.approvedByAdminText }}
                 </p>
               </div>
 
@@ -1343,10 +1366,10 @@ onBeforeUnmount(() => {
                 "
               >
                 <strong>
-                  Activity Cancelled
+                  {{ t.studentActivities.activityCancelledTitle }}
                 </strong>
                 <p>
-                  This faculty activity has been cancelled.
+                  {{ t.studentActivities.activityCancelledText }}
                 </p>
               </div>
 
@@ -1361,14 +1384,14 @@ onBeforeUnmount(() => {
                 <strong>
                   {{
                     selectedActivity.status === 'completed'
-                      ? 'Activity Completed'
-                      : 'Registered'
+                      ? t.studentActivities.activityCompletedTitle
+                      : t.studentActivities.registeredTitle
                   }}
                 </strong>
                 <p>
-                  You are listed as a
+                  {{ t.studentActivities.listedAsRolePrefix }}
                   {{ selectedActivity.role.toLowerCase() }}
-                  in this faculty activity.
+                  {{ t.studentActivities.listedAsRoleSuffix }}
                 </p>
               </div>
 
@@ -1949,6 +1972,31 @@ onBeforeUnmount(() => {
 
 
 .details-btn:hover {
+  opacity: 0.85;
+}
+
+
+.edit-submission-btn {
+  min-width: 70px;
+
+  padding: 8px 15px;
+
+  border: none;
+
+  border-radius: 7px;
+
+  background: #f0631f;
+
+  color: white;
+
+  font-size: 10px;
+  font-weight: 700;
+
+  cursor: pointer;
+}
+
+
+.edit-submission-btn:hover {
   opacity: 0.85;
 }
 

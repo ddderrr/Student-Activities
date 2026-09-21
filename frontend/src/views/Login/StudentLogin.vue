@@ -9,6 +9,9 @@ import {
   EyeOff,
   ArrowRight
 } from 'lucide-vue-next'
+import { useLanguage } from '../../composables/useLanguage'
+
+const { t } = useLanguage()
 
 const router = useRouter()
 
@@ -43,8 +46,8 @@ const goAdminLogin = () => {
           </div>
 
           <div>
-            <h1>Chiang Mai University</h1>
-            <p>Faculty of Science</p>
+            <h1>{{ t.studentLogin.universityName }}</h1>
+            <p>{{ t.studentLogin.facultyName }}</p>
           </div>
         </div>
 
@@ -54,7 +57,7 @@ const goAdminLogin = () => {
           @click="goAdminLogin"
         >
           <BriefcaseBusiness :size="15" />
-          Admin Login
+          {{ t.studentLogin.adminLogin }}
         </button>
       </div>
 
@@ -63,7 +66,7 @@ const goAdminLogin = () => {
       <form @submit.prevent="loginStudent">
 
         <div class="form-group">
-          <label>University ID or Email</label>
+          <label>{{ t.studentLogin.usernameLabel }}</label>
 
           <div class="input-wrapper">
             <BriefcaseBusiness
@@ -80,7 +83,7 @@ const goAdminLogin = () => {
 
 
         <div class="form-group">
-          <label>Password</label>
+          <label>{{ t.studentLogin.passwordLabel }}</label>
 
           <div class="input-wrapper">
             <LockKeyhole
@@ -121,14 +124,14 @@ const goAdminLogin = () => {
               type="checkbox"
             />
 
-            <span>Remember Me</span>
+            <span>{{ t.studentLogin.rememberMe }}</span>
           </label>
 
           <a
             href="#"
             @click.prevent
           >
-            Forgot Password?
+            {{ t.studentLogin.forgotPassword }}
           </a>
 
         </div>
@@ -139,17 +142,17 @@ const goAdminLogin = () => {
           class="sign-in-btn"
           type="submit"
         >
-          Sign In
+          {{ t.studentLogin.signInButton }}
           <ArrowRight :size="19" />
         </button>
 
 
         <p class="support-text">
-          New to the portal?
+          {{ t.studentLogin.newToPortal }}
           <a href="#" @click.prevent>
-            Contact IT Support
+            {{ t.studentLogin.contactItSupport }}
           </a>
-          for access.
+          {{ t.studentLogin.forAccess }}
         </p>
 
       </form>

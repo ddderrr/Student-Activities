@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useLanguage } from '../../composables/useLanguage'
 
 import {
   GraduationCap,
@@ -13,6 +14,7 @@ import {
 } from 'lucide-vue-next'
 
 const router = useRouter()
+const { t } = useLanguage()
 
 const username = ref('')
 const password = ref('')
@@ -65,8 +67,8 @@ const goBack = () => {
           </div>
 
           <div>
-            <h1>Admin Login</h1>
-            <p>Faculty of Science</p>
+            <h1>{{ t.adminLogin.title }}</h1>
+            <p>{{ t.adminLogin.subtitle }}</p>
           </div>
 
         </div>
@@ -78,7 +80,7 @@ const goBack = () => {
           <div class="form-group">
 
             <label>
-              University ID or Email
+              {{ t.adminLogin.usernameLabel }}
             </label>
 
             <div class="input-wrapper">
@@ -100,7 +102,7 @@ const goBack = () => {
 
           <div class="form-group">
 
-            <label>Password</label>
+            <label>{{ t.adminLogin.passwordLabel }}</label>
 
             <div class="input-wrapper">
 
@@ -147,7 +149,7 @@ const goBack = () => {
               />
 
               <span>
-                Remember Me
+                {{ t.adminLogin.rememberMe }}
               </span>
 
             </label>
@@ -157,7 +159,7 @@ const goBack = () => {
               href="#"
               @click.prevent
             >
-              Forgot Password?
+              {{ t.adminLogin.forgotPassword }}
             </a>
 
           </div>
@@ -169,7 +171,7 @@ const goBack = () => {
             type="submit"
           >
 
-            Sign In
+            {{ t.adminLogin.signInButton }}
 
             <ArrowRight :size="20" />
 
@@ -178,16 +180,16 @@ const goBack = () => {
 
           <p class="support-text">
 
-            New to the portal?
+            {{ t.adminLogin.newToPortal }}
 
             <a
               href="#"
               @click.prevent
             >
-              Contact IT Support
+              {{ t.adminLogin.contactSupport }}
             </a>
 
-            for access.
+            {{ t.adminLogin.forAccess }}
 
           </p>
 

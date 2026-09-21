@@ -39,7 +39,13 @@ const skillDisplay = (label) => {
     Communication: 'communication',
     Teamwork: 'teamwork',
     Creativity: 'creativity',
-    'Digital Literacy': 'digitalLiteracy'
+    'Digital Literacy': 'digitalLiteracy',
+    'Arts, Culture, and Traditions': 'skillArtsCultureTraditions',
+    Volunteerism: 'skillVolunteerism',
+    Academics: 'skillAcademics',
+    Internationalization: 'skillInternationalization',
+    'Health Promotion': 'skillHealthPromotion',
+    'Nature & Environmental Conservation': 'skillNatureEnvironmentalConservation'
   }
 
   const key = keyMap[label]
@@ -114,14 +120,15 @@ const selectedPeriod = ref('ALL')
 const yearOpen = ref(false)
 const periodOpen = ref(false)
 
-const periodOptions = [
-  { value: 'ALL', label: 'ทั้งปี' },
-  { value: 'SEMESTER_1', label: 'Semester 1 (ม.ค.–มิ.ย.)' },
-  { value: 'SEMESTER_2', label: 'Semester 2 (ก.ค.–ธ.ค.)' }
-]
+const periodOptions = computed(() => [
+  { value: 'ALL', label: t.value.adminStudentSkills.periodAll },
+  { value: 'SEMESTER_1', label: t.value.adminStudentSkills.periodSemester1 },
+  { value: 'SEMESTER_2', label: t.value.adminStudentSkills.periodSemester2 }
+])
 
 const selectedPeriodLabel = computed(() =>
-  periodOptions.find(option => option.value === selectedPeriod.value)?.label || 'ทั้งปี'
+  periodOptions.value.find(option => option.value === selectedPeriod.value)?.label ||
+  t.value.adminStudentSkills.periodAll
 )
 
 const selectYear = async (year) => {
@@ -178,7 +185,7 @@ const loadStudentSkills = async () => {
     const data = await response.json()
 
     if (!response.ok) {
-      throw new Error(data.detail || 'Cannot load student skill data')
+      throw new Error(data.detail || t.value.adminStudentSkills.loadErrorFallback)
     }
 
     students.value = Array.isArray(data.students) ? data.students : []
@@ -196,7 +203,7 @@ const loadStudentSkills = async () => {
     }
   } catch (err) {
     console.error('Student Skills API Error:', err)
-    error.value = err.message || 'Cannot load student skill data'
+    error.value = err.message || t.value.adminStudentSkills.loadErrorFallback
     students.value = []
   } finally {
     loading.value = false
@@ -328,7 +335,7 @@ const openBenchmarkSettings = () => {
 const saveBenchmarkSettings = async () => {
   const values = benchmarkDraft.value.map(value => Number(value))
   if (values.some(value => !Number.isFinite(value) || value < 1 || value > 5)) {
-    benchmarkError.value = 'Benchmark ทุกทักษะต้องอยู่ระหว่าง 1.0 - 5.0'
+    benchmarkError.value = t.value.adminStudentSkills.benchmarkRangeError
     return
   }
 
@@ -342,13 +349,13 @@ const saveBenchmarkSettings = async () => {
       body: JSON.stringify({ scores })
     })
     const data = await response.json()
-    if (!response.ok) throw new Error(data.detail || 'Cannot save benchmark')
+    if (!response.ok) throw new Error(data.detail || t.value.adminStudentSkills.saveBenchmarkErrorFallback)
 
     benchmarkScores.value = data.benchmarkScores.map(Number)
     benchmarkDraft.value = [...benchmarkScores.value]
     benchmarkModalOpen.value = false
   } catch (err) {
-    benchmarkError.value = err.message || 'Cannot save benchmark'
+    benchmarkError.value = err.message || t.value.adminStudentSkills.saveBenchmarkErrorFallback
   } finally {
     benchmarkSaving.value = false
   }
@@ -375,12 +382,12 @@ const growthActionPlan = computed(() => {
   const area = growthArea.value?.key
 
   const plans = {
-    arts_culture_traditions: 'เพิ่มกิจกรรมด้านศิลปะ วัฒนธรรม และประเพณีที่ให้นักศึกษามีส่วนร่วมจริง',
-    volunteerism: 'เพิ่มกิจกรรมอาสาสมัครและกิจกรรมบริการชุมชนที่มีบทบาทชัดเจน',
-    academics: 'เพิ่มกิจกรรมวิชาการ เวิร์กช็อป และโจทย์ประยุกต์ที่เชื่อมกับการเรียน',
-    internationalization: 'เพิ่มกิจกรรมที่ส่งเสริมการทำงานข้ามวัฒนธรรมและการใช้ภาษาต่างประเทศ',
-    health_promotion: 'เพิ่มกิจกรรมส่งเสริมสุขภาพและการดูแลสุขภาวะของนักศึกษา',
-    nature_environmental_conservation: 'เพิ่มกิจกรรมด้านธรรมชาติ สิ่งแวดล้อม และการอนุรักษ์อย่างต่อเนื่อง'
+    arts_culture_traditions: t.value.adminStudentSkills.growthPlanArtsCultureTraditions,
+    volunteerism: t.value.adminStudentSkills.growthPlanVolunteerism,
+    academics: t.value.adminStudentSkills.growthPlanAcademics,
+    internationalization: t.value.adminStudentSkills.growthPlanInternationalization,
+    health_promotion: t.value.adminStudentSkills.growthPlanHealthPromotion,
+    nature_environmental_conservation: t.value.adminStudentSkills.growthPlanNatureEnvironmentalConservation
   }
 
   return plans[area] ?? '—'
@@ -451,14 +458,14 @@ const selectedStrongestSkill = computed(() => {
     .sort((a, b) => b.score - a.score)[0] ?? null
 })
 
-const recommendationBySkill = {
-  arts_culture_traditions: 'Join activities involving arts, culture, traditions, and community identity.',
-  volunteerism: 'Join volunteer projects with clear responsibilities and community impact.',
-  academics: 'Join academic workshops, competitions, or project-based learning activities.',
-  internationalization: 'Join cross-cultural or international activities and practice global collaboration.',
-  health_promotion: 'Join health-promotion activities and build sustainable wellness habits.',
-  nature_environmental_conservation: 'Join environmental conservation and sustainability activities.'
-}
+const recommendationBySkill = computed(() => ({
+  arts_culture_traditions: t.value.adminStudentSkills.recommendationArtsCultureTraditions,
+  volunteerism: t.value.adminStudentSkills.recommendationVolunteerism,
+  academics: t.value.adminStudentSkills.recommendationAcademics,
+  internationalization: t.value.adminStudentSkills.recommendationInternationalization,
+  health_promotion: t.value.adminStudentSkills.recommendationHealthPromotion,
+  nature_environmental_conservation: t.value.adminStudentSkills.recommendationNatureEnvironmentalConservation
+}))
 
 const selectedSkillGaps = computed(() => {
   if (!selectedStudent.value) return []
@@ -480,7 +487,7 @@ const selectedSkillGaps = computed(() => {
         facultyScore,
         difference,
         percentDifference,
-        recommendation: recommendationBySkill[skill.key]
+        recommendation: recommendationBySkill.value[skill.key]
       }
     })
     .filter(skill => skill && skill.difference < -0.05)
@@ -599,7 +606,7 @@ onBeforeUnmount(() => {
           </strong>
 
           <span class="summary-sub">
-            {{ selectedPeriod === 'ALL' ? `ปี ${selectedYear}` : `${selectedPeriodLabel} / ${selectedYear}` }}
+            {{ selectedPeriod === 'ALL' ? `${t.adminStudentSkills.yearLabel} ${selectedYear}` : `${selectedPeriodLabel} / ${selectedYear}` }}
           </span>
 
         </div>
@@ -658,7 +665,7 @@ onBeforeUnmount(() => {
           <div class="report-controls">
             <div class="semester-dropdown">
               <button class="semester-select" @click="yearOpen = !yearOpen; periodOpen = false">
-                ปี {{ selectedYear }}
+                {{ t.adminStudentSkills.yearLabel }} {{ selectedYear }}
                 <ChevronDown :size="14" />
               </button>
               <div v-if="yearOpen" class="semester-menu">
@@ -693,7 +700,7 @@ onBeforeUnmount(() => {
             </div>
 
             <button class="benchmark-settings-button" type="button" @click="openBenchmarkSettings">
-              <Settings :size="14" /> Benchmark
+              <Settings :size="14" /> {{ t.adminStudentSkills.benchmarkButton }}
             </button>
           </div>
 
@@ -890,13 +897,13 @@ onBeforeUnmount(() => {
             <CheckCircle :size="18" />
 
             <span>
-              {{ t.adminStudentSkills.topArea }}: {{ topArea ? skillDisplay(topArea.label).toUpperCase() : 'N/A' }}
+              {{ t.adminStudentSkills.topArea }}: {{ topArea ? skillDisplay(topArea.label).toUpperCase() : t.adminStudentSkills.notAvailable }}
             </span>
 
           </div>
 
           <p>
-            {{ t.adminStudentSkills.facultyAverage }}: {{ topArea ? topArea.score.toFixed(2) : 'N/A' }}<template v-if="topArea"> / 5.0</template>
+            {{ t.adminStudentSkills.facultyAverage }}: {{ topArea ? topArea.score.toFixed(2) : t.adminStudentSkills.notAvailable }}<template v-if="topArea"> / 5.0</template>
           </p>
 
 
@@ -905,7 +912,7 @@ onBeforeUnmount(() => {
             <CheckCircle :size="13" />
 
             <span>
-              {{ t.adminStudentSkills.highestScore }}: {{ topArea ? topArea.score.toFixed(2) : 'N/A' }}
+              {{ t.adminStudentSkills.highestScore }}: {{ topArea ? topArea.score.toFixed(2) : t.adminStudentSkills.notAvailable }}
             </span>
 
           </div>
@@ -939,7 +946,7 @@ onBeforeUnmount(() => {
           </div>
 
           <p>
-            {{ growthArea ? skillDisplay(growthArea.label) : 'N/A' }}
+            {{ growthArea ? skillDisplay(growthArea.label) : t.adminStudentSkills.notAvailable }}
             <span v-if="growthArea"> — {{ growthArea.score.toFixed(2) }} / 5.0</span>
           </p>
 
@@ -1024,8 +1031,9 @@ onBeforeUnmount(() => {
                     <option
                     v-for="skill in skillOptions"
                     :key="skill"
+                    :value="skill"
                     >
-                    {{ skill }}
+                    {{ skill === 'All Skills' ? t.adminStudentSkills.allSkills : skillDisplay(skill) }}
                     </option>
 
                </select>
@@ -1040,8 +1048,9 @@ onBeforeUnmount(() => {
                     <option
                     v-for="score in scoreOptions"
                     :key="score"
+                    :value="score"
                     >
-                    {{ score }}
+                    {{ score === 'All Scores' ? t.adminStudentSkills.allScores : score === 'Below 3.0' ? t.adminStudentSkills.belowScore3 : score }}
                     </option>
 
                </select>
@@ -1082,7 +1091,7 @@ onBeforeUnmount(() => {
               </th>
 
               <th>
-                กิจกรรมที่เข้าร่วม
+                {{ t.adminStudentSkills.activitiesAttended }}
               </th>
 
               <th>
@@ -1122,15 +1131,15 @@ onBeforeUnmount(() => {
               </td>
 
               <td>
-                {{ student.primarySkill ? skillDisplay(student.primarySkill) : 'N/A' }}
+                {{ student.primarySkill ? skillDisplay(student.primarySkill) : t.adminStudentSkills.notAvailable }}
               </td>
 
               <td>
-                {{ student.score !== null ? student.score.toFixed(2) : 'N/A' }}
+                {{ student.score !== null ? student.score.toFixed(2) : t.adminStudentSkills.notAvailable }}
               </td>
 
               <td>
-                <strong>{{ student.activityCount ?? 0 }}</strong> กิจกรรม
+                <strong>{{ student.activityCount ?? 0 }}</strong> {{ t.adminStudentSkills.activitiesUnit }}
               </td>
 
               <td>
@@ -1159,8 +1168,8 @@ onBeforeUnmount(() => {
       <div class="benchmark-modal">
         <div class="benchmark-modal-header">
           <div>
-            <h3>ตั้งค่า Benchmark Level</h3>
-            <p>กำหนดเป้าหมายของแต่ละทักษะได้ตั้งแต่ 1.0 ถึง 5.0 และบันทึกลงฐานข้อมูล</p>
+            <h3>{{ t.adminStudentSkills.benchmarkModalTitle }}</h3>
+            <p>{{ t.adminStudentSkills.benchmarkModalSubtitle }}</p>
           </div>
           <button class="detail-close" type="button" @click="benchmarkModalOpen = false"><X :size="20" /></button>
         </div>
@@ -1177,9 +1186,9 @@ onBeforeUnmount(() => {
 
         <div v-if="benchmarkError" class="benchmark-error">{{ benchmarkError }}</div>
         <div class="benchmark-actions">
-          <button class="benchmark-cancel" type="button" @click="benchmarkModalOpen = false">ยกเลิก</button>
+          <button class="benchmark-cancel" type="button" @click="benchmarkModalOpen = false">{{ t.adminStudentSkills.cancel }}</button>
           <button class="benchmark-save" type="button" :disabled="benchmarkSaving" @click="saveBenchmarkSettings">
-            <Save :size="15" /> {{ benchmarkSaving ? 'กำลังบันทึก...' : 'บันทึก Benchmark' }}
+            <Save :size="15" /> {{ benchmarkSaving ? t.adminStudentSkills.savingBenchmark : t.adminStudentSkills.saveBenchmark }}
           </button>
         </div>
       </div>
@@ -1193,7 +1202,7 @@ onBeforeUnmount(() => {
       class="modal-backdrop"
       role="dialog"
       aria-modal="true"
-      :aria-label="`Student skill details for ${selectedStudent.name}`"
+      :aria-label="`${t.adminStudentSkills.studentDetailAriaLabel} ${selectedStudent.name}`"
       @click.self="closeStudentRadar"
     >
       <div class="student-detail-modal">
@@ -1214,10 +1223,10 @@ onBeforeUnmount(() => {
             <div class="student-identity-text">
               <h3>{{ selectedStudent.name }}</h3>
               <div class="student-meta-row">
-                <span class="student-meta-chip">ID: {{ selectedStudent.id }}</span>
+                <span class="student-meta-chip">{{ t.adminStudentSkills.idLabel }}: {{ selectedStudent.id }}</span>
                 <span class="student-meta-chip">{{ t.adminStudentSkills.major }}: {{ selectedStudent.major ?? '—' }}</span>
                 <span class="student-meta-chip">{{ selectedStudent.periodLabel || selectedStudent.semester }}</span>
-                <span class="student-meta-chip">เข้าร่วม {{ selectedStudent.activityCount ?? 0 }} กิจกรรม</span>
+                <span class="student-meta-chip">{{ t.adminStudentSkills.joinedPrefix }} {{ selectedStudent.activityCount ?? 0 }} {{ t.adminStudentSkills.activitiesUnit }}</span>
               </div>
             </div>
           </div>
@@ -1225,7 +1234,7 @@ onBeforeUnmount(() => {
           <button
             class="detail-close"
             type="button"
-            aria-label="Close student details"
+            :aria-label="t.adminStudentSkills.closeStudentDetails"
             @click="closeStudentRadar"
           >
             <X :size="20" />
@@ -1289,7 +1298,7 @@ onBeforeUnmount(() => {
                 class="student-score-item"
               >
                 <span>{{ skillDisplay(skill.label) }}</span>
-                <strong>{{ skillValueOf(selectedStudent, skill.key) !== null ? skillValueOf(selectedStudent, skill.key).toFixed(1) : 'N/A' }}</strong>
+                <strong>{{ skillValueOf(selectedStudent, skill.key) !== null ? skillValueOf(selectedStudent, skill.key).toFixed(1) : t.adminStudentSkills.notAvailable }}</strong>
               </div>
             </div>
           </section>
@@ -1305,7 +1314,7 @@ onBeforeUnmount(() => {
                 / 5.0
               </p>
               <p class="average-caption">
-                {{ t.adminStudentSkills.overallAverage }}: {{ selectedStudentAverage !== null ? selectedStudentAverage.toFixed(2) : 'N/A' }}<template v-if="selectedStudentAverage !== null"> / 5.0</template>
+                {{ t.adminStudentSkills.overallAverage }}: {{ selectedStudentAverage !== null ? selectedStudentAverage.toFixed(2) : t.adminStudentSkills.notAvailable }}<template v-if="selectedStudentAverage !== null"> / 5.0</template>
               </p>
             </section>
 

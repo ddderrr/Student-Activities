@@ -19,18 +19,21 @@ import {
   PARTICIPANT_SKILLS,
   STAFF_SKILLS
 } from '../../constants/activitySkills'
+import { useLanguage } from '../../composables/useLanguage'
+
+const { t } = useLanguage()
 
 const API_BASE = 'http://127.0.0.1:8000'
 const PAGE_SIZE = 10
 
 const AVATAR_COLORS = ['#2f5fdb', '#1c2b4a', '#8ea0ba', '#7c5cd6']
 
-const REQUEST_TYPE_OPTIONS = [
-  { value: '', label: 'All Types' },
-  { value: 'skill_validation', label: 'Skill Validation' },
-  { value: 'special_request', label: 'Special Request' },
-  { value: 'external_activity', label: 'External Activity' }
-]
+const REQUEST_TYPE_OPTIONS = computed(() => [
+  { value: '', label: t.value.adminApproval.filterAllTypes },
+  { value: 'skill_validation', label: t.value.adminApproval.filterSkillValidation },
+  { value: 'special_request', label: t.value.adminApproval.filterSpecialRequest },
+  { value: 'external_activity', label: t.value.adminApproval.filterExternalActivity }
+])
 
 const REQUEST_TYPE_ICONS = {
   skill_validation: ShieldCheck,
@@ -51,6 +54,12 @@ const actionError = ref('')
 const filterType = ref('')
 const sortOrder = ref('date_desc')
 const showFilterMenu = ref(false)
+
+const STATUS_TABS = computed(() => [
+  { value: 'pending', label: t.value.adminApproval.pendingTab },
+  { value: 'rejected', label: t.value.adminApproval.rejectedTab }
+])
+const statusFilter = ref('pending')
 
 const detailRequest = ref(null)
 const successMessage = ref('')
@@ -104,11 +113,11 @@ async function openReview(request) {
     const response = await fetch(`${API_BASE}/api/external-activities/${request.id}`)
     const data = await response.json().catch(() => null)
 
-    if (!response.ok) throw new Error(data?.detail || 'โหลดรายละเอียดไม่สำเร็จ')
+    if (!response.ok) throw new Error(data?.detail || t.value.adminApproval.loadDetailError)
 
     reviewItem.value = data
   } catch (error) {
-    reviewError.value = error.message || 'โหลดรายละเอียดไม่สำเร็จ'
+    reviewError.value = error.message || t.value.adminApproval.loadDetailError
   } finally {
     reviewLoading.value = false
   }
@@ -184,7 +193,7 @@ async function confirmDecision() {
   decisionError.value = ''
 
   if (status === 'rejected' && !comment) {
-    decisionError.value = 'กรุณาระบุเหตุผลที่ไม่อนุมัติ หรือสิ่งที่นักศึกษาต้องแก้ไข'
+    decisionError.value = t.value.adminApproval.rejectReasonRequired
     return
   }
 
@@ -209,27 +218,27 @@ async function confirmDecision() {
 
     const data = await response.json().catch(() => null)
 
-    if (!response.ok) throw new Error(data?.detail || 'บันทึกไม่สำเร็จ')
+    if (!response.ok) throw new Error(data?.detail || t.value.adminApproval.saveFailed)
 
     const label = request.detail || request.requester_name
 
     successMessage.value =
       status === 'approved'
-        ? `อนุมัติ "${label}" แล้ว`
-        : `ไม่อนุมัติ "${label}" แล้ว`
+        ? `${t.value.adminApproval.approvedMessagePrefix}"${label}"${t.value.adminApproval.approvedMessageSuffix}`
+        : `${t.value.adminApproval.rejectedMessagePrefix}"${label}"${t.value.adminApproval.rejectedMessageSuffix}`
 
     deciding.value = false
     closeDecision()
     refreshAll()
   } catch (error) {
-    decisionError.value = error.message || 'บันทึกไม่สำเร็จ'
+    decisionError.value = error.message || t.value.adminApproval.saveFailed
   } finally {
     deciding.value = false
   }
 }
 
 function formatDay(value) {
-  if (!value) return '-'
+  if (!value) return t.value.adminApproval.emptyPlaceholder
 
   const [year, month, day] = value.split('-').map(Number)
 
@@ -278,7 +287,7 @@ function avatarColor(id) {
 }
 
 function formatDate(value) {
-  if (!value) return '-'
+  if (!value) return t.value.adminApproval.emptyPlaceholder
 
   const date = new Date(value)
 
@@ -299,7 +308,7 @@ function formatDate(value) {
 
 // External activity ไม่เก็บเวลาจากฟอร์ม (มีแค่วันที่) จึงโชว์วันที่สั้น ๆ พอ ไม่โชว์เวลา
 function formatDateOnly(value) {
-  if (!value) return '-'
+  if (!value) return t.value.adminApproval.emptyPlaceholder
 
   return new Date(value).toLocaleDateString('en-US', {
     month: 'short',
@@ -324,7 +333,7 @@ async function fetchRequests() {
 
   try {
     const params = new URLSearchParams({
-      status: 'pending',
+      status: statusFilter.value,
       sort: sortOrder.value,
       page: String(page.value),
       page_size: String(PAGE_SIZE)
@@ -334,13 +343,13 @@ async function fetchRequests() {
 
     const response = await fetch(`${API_BASE}/api/requests?${params}`)
 
-    if (!response.ok) throw new Error('โหลดข้อมูลไม่สำเร็จ')
+    if (!response.ok) throw new Error(t.value.adminApproval.loadRequestsError)
 
     const data = await response.json()
     requests.value = data.requests
     total.value = data.total
   } catch (error) {
-    loadError.value = error.message || 'โหลดข้อมูลไม่สำเร็จ'
+    loadError.value = error.message || t.value.adminApproval.loadRequestsError
   } finally {
     pageLoading.value = false
   }
@@ -353,7 +362,7 @@ function refreshAll() {
 
 onMounted(refreshAll)
 
-watch([filterType, sortOrder], () => {
+watch([filterType, sortOrder, statusFilter], () => {
   page.value = 1
   fetchRequests()
 })
@@ -381,12 +390,12 @@ async function decideRequest(request, status) {
 
     if (!response.ok) {
       const errorBody = await response.json().catch(() => null)
-      throw new Error(errorBody?.detail || 'บันทึกไม่สำเร็จ')
+      throw new Error(errorBody?.detail || t.value.adminApproval.saveFailed)
     }
 
     refreshAll()
   } catch (error) {
-    actionError.value = error.message || 'บันทึกไม่สำเร็จ'
+    actionError.value = error.message || t.value.adminApproval.saveFailed
   } finally {
     actionLoadingId.value = null
   }
@@ -397,37 +406,57 @@ async function decideRequest(request, status) {
   <section class="approval-page">
     <header class="page-header">
       <div>
-        <h1>การอนุมัติ (Approvals)</h1>
-        <p class="subtitle">จัดการคำขอที่รอการตรวจสอบและอนุมัติจากระบบ</p>
+        <h1>{{ t.adminApproval.pageTitle }}</h1>
+        <p class="subtitle">{{ t.adminApproval.pageSubtitle }}</p>
       </div>
     </header>
 
     <div class="stat-grid">
       <div class="stat-card">
-        <span class="stat-label">Total Pending</span>
+        <span class="stat-label">{{ t.adminApproval.statTotalPending }}</span>
         <strong class="stat-value">{{ stats.total_pending }}</strong>
       </div>
 
       <div class="stat-card">
-        <span class="stat-label">Approved Today</span>
+        <span class="stat-label">{{ t.adminApproval.statApprovedToday }}</span>
         <strong class="stat-value stat-approved">{{ stats.approved_today }}</strong>
       </div>
 
       <div class="stat-card">
-        <span class="stat-label">Rejected Today</span>
+        <span class="stat-label">{{ t.adminApproval.statRejectedToday }}</span>
         <strong class="stat-value stat-rejected">{{ stats.rejected_today }}</strong>
       </div>
     </div>
 
+    <div class="status-tabs" role="tablist" :aria-label="t.adminApproval.statusTabsAriaLabel">
+      <button
+        v-for="tab in STATUS_TABS"
+        :key="tab.value"
+        type="button"
+        role="tab"
+        :aria-selected="statusFilter === tab.value"
+        :class="{ active: statusFilter === tab.value }"
+        @click="statusFilter = tab.value"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
+
     <section class="table-card">
       <div class="table-heading">
-        <h2>รายการที่รอดำเนินการ (Pending Requests)</h2>
+        <h2>
+          {{
+            statusFilter === 'rejected'
+              ? t.adminApproval.rejectedRequestsHeading
+              : t.adminApproval.pendingRequestsHeading
+          }}
+        </h2>
 
         <div class="heading-actions">
           <div class="filter-wrapper">
             <button class="tool-button" @click="showFilterMenu = !showFilterMenu">
               <SlidersHorizontal :size="14" />
-              Filter
+              {{ t.adminApproval.filterButton }}
             </button>
 
             <div v-if="showFilterMenu" class="filter-menu">
@@ -445,24 +474,26 @@ async function decideRequest(request, status) {
 
           <button class="tool-button" @click="toggleSort">
             <ArrowUpDown :size="14" />
-            Sort
+            {{ t.adminApproval.sortButton }}
           </button>
         </div>
       </div>
 
-      <p v-if="pageLoading" class="load-status">กำลังโหลดข้อมูล...</p>
+      <p v-if="pageLoading" class="load-status">{{ t.adminApproval.loadingRequests }}</p>
       <p v-else-if="loadError" class="load-status load-status-error">{{ loadError }}</p>
-      <p v-else-if="requests.length === 0" class="load-status">ไม่มีคำขอที่รอดำเนินการ</p>
+      <p v-else-if="requests.length === 0" class="load-status">
+        {{ statusFilter === 'rejected' ? t.adminApproval.noRejectedRequests : t.adminApproval.noPendingRequests }}
+      </p>
 
       <div v-else class="table-scroll">
         <table>
           <thead>
             <tr>
-              <th>REQUESTER NAME</th>
-              <th>REQUEST TYPE</th>
-              <th>DATE SUBMITTED</th>
-              <th>DETAILS</th>
-              <th>ACTIONS</th>
+              <th>{{ t.adminApproval.tableHeaderRequesterName }}</th>
+              <th>{{ t.adminApproval.tableHeaderRequestType }}</th>
+              <th>{{ t.adminApproval.tableHeaderDateSubmitted }}</th>
+              <th>{{ t.adminApproval.tableHeaderDetails }}</th>
+              <th>{{ t.adminApproval.tableHeaderActions }}</th>
             </tr>
           </thead>
 
@@ -484,7 +515,7 @@ async function decideRequest(request, status) {
 
                   <div>
                     <div class="requester-name">{{ request.requester_name }}</div>
-                    <small>ID: {{ request.requester_student_id }}</small>
+                    <small>{{ t.adminApproval.idLabel }} {{ request.requester_student_id }}</small>
                   </div>
                 </div>
               </td>
@@ -513,18 +544,22 @@ async function decideRequest(request, status) {
                   class="detail-button"
                   @click="isExternal(request) ? openReview(request) : (detailRequest = request)"
                 >
-                  View Detail
+                  {{ t.adminApproval.viewDetailButton }}
                 </button>
               </td>
 
               <td>
-                <div v-if="isExternal(request)" class="row-actions">
+                <template v-if="statusFilter !== 'pending'">
+                  <span class="no-actions">{{ t.adminApproval.emptyPlaceholder }}</span>
+                </template>
+
+                <div v-else-if="isExternal(request)" class="row-actions">
                   <button
                     class="approve-button"
                     :disabled="deciding"
                     @click="openDecision(request, 'approved')"
                   >
-                    อนุมัติ
+                    {{ t.adminApproval.approveButton }}
                   </button>
 
                   <button
@@ -532,7 +567,7 @@ async function decideRequest(request, status) {
                     :disabled="deciding"
                     @click="openDecision(request, 'rejected')"
                   >
-                    ไม่อนุมัติ
+                    {{ t.adminApproval.rejectButton }}
                   </button>
                 </div>
 
@@ -542,7 +577,7 @@ async function decideRequest(request, status) {
                     :disabled="actionLoadingId === rowKey(request)"
                     @click="decideRequest(request, 'approved')"
                   >
-                    อนุมัติ
+                    {{ t.adminApproval.approveButton }}
                   </button>
 
                   <button
@@ -550,7 +585,7 @@ async function decideRequest(request, status) {
                     :disabled="actionLoadingId === rowKey(request)"
                     @click="openDecision(request, 'rejected')"
                   >
-                    ยกเลิก
+                    {{ t.adminApproval.cancelButton }}
                   </button>
                 </div>
               </td>
@@ -560,7 +595,7 @@ async function decideRequest(request, status) {
       </div>
 
       <div v-if="!pageLoading && total > 0" class="pagination">
-        <span>Showing {{ rangeStart }}-{{ rangeEnd }} of {{ total }} pending requests</span>
+        <span>{{ t.adminApproval.paginationShowing }} {{ rangeStart }}-{{ rangeEnd }} {{ t.adminApproval.paginationOf }} {{ total }} {{ t.adminApproval.paginationPendingRequests }}</span>
 
         <div class="pagination-controls">
           <button
@@ -601,75 +636,80 @@ async function decideRequest(request, status) {
     <div v-if="detailRequest" class="modal-backdrop" @click.self="detailRequest = null">
       <div class="modal">
         <div class="modal-header">
-          <h3>รายละเอียดคำขอ</h3>
+          <h3>{{ t.adminApproval.detailModalTitle }}</h3>
           <button class="modal-close" @click="detailRequest = null">
             <X :size="16" />
           </button>
         </div>
 
         <dl>
-          <dt>Requester</dt>
-          <dd>{{ detailRequest.requester_name }} (ID: {{ detailRequest.requester_student_id }})</dd>
+          <dt>{{ t.adminApproval.detailRequesterLabel }}</dt>
+          <dd>{{ detailRequest.requester_name }} ({{ t.adminApproval.idLabel }} {{ detailRequest.requester_student_id }})</dd>
 
-          <dt>Request Type</dt>
+          <dt>{{ t.adminApproval.detailRequestTypeLabel }}</dt>
           <dd>{{ detailRequest.request_type_label }}</dd>
 
-          <dt>Detail</dt>
-          <dd>{{ detailRequest.detail || '-' }}</dd>
+          <dt>{{ t.adminApproval.detailFieldLabel }}</dt>
+          <dd>{{ detailRequest.detail || t.adminApproval.emptyPlaceholder }}</dd>
 
-          <dt>Submitted</dt>
+          <dt>{{ t.adminApproval.submittedLabel }}</dt>
           <dd>{{ formatDate(detailRequest.submitted_at) }}</dd>
         </dl>
       </div>
     </div>
 
     <div v-if="reviewOpen" class="modal-backdrop" @click.self="closeReview">
-      <div class="modal review-modal" role="dialog" aria-label="External activity detail">
+      <div class="modal review-modal" role="dialog" :aria-label="t.adminApproval.reviewModalAriaLabel">
         <div class="modal-header">
           <div>
-            <p class="review-eyebrow">EXTERNAL ACTIVITY</p>
-            <h3>{{ reviewItem ? reviewItem.title : 'กำลังโหลด...' }}</h3>
+            <p class="review-eyebrow">{{ t.adminApproval.reviewEyebrow }}</p>
+            <h3>{{ reviewItem ? reviewItem.title : t.adminApproval.loadingShort }}</h3>
           </div>
           <button class="modal-close" @click="closeReview">
             <X :size="16" />
           </button>
         </div>
 
-        <p v-if="reviewLoading" class="load-status">กำลังโหลดรายละเอียด...</p>
+        <p v-if="reviewLoading" class="load-status">{{ t.adminApproval.loadingReviewDetail }}</p>
 
         <div v-else-if="reviewItem" class="review-grid">
           <div class="review-left">
             <section class="review-section">
-              <h4>Student</h4>
+              <h4>{{ t.adminApproval.studentLabel }}</h4>
               <p class="review-student">
                 {{ reviewItem.student.first_name }} {{ reviewItem.student.last_name }}
-                <small>ID: {{ reviewItem.student_id }} · {{ reviewItem.student.major }}</small>
+                <small>{{ t.adminApproval.idLabel }} {{ reviewItem.student_id }} · {{ reviewItem.student.major }}</small>
               </p>
             </section>
 
             <section class="review-section">
-              <h4>Activity Details</h4>
+              <h4>{{ t.adminApproval.activityDetailsLabel }}</h4>
               <dl class="review-details">
-                <dt>External Organizer</dt>
+                <dt>{{ t.adminApproval.externalOrganizerLabel }}</dt>
                 <dd data-field="organization">{{ reviewItem.organization }}</dd>
-                <dt>Category</dt>
+                <dt>{{ t.adminApproval.categoryLabel }}</dt>
                 <dd data-field="activity_type">{{ reviewItem.activity_type }}</dd>
-                <dt>Role</dt>
-                <dd data-field="role">{{ reviewItem.role === 'organizer' ? 'Organizer' : 'Participant' }}</dd>
-                <dt>Date</dt>
+                <dt>{{ t.adminApproval.roleLabel }}</dt>
+                <dd data-field="role">{{ reviewItem.role === 'organizer' ? t.adminApproval.roleOrganizer : t.adminApproval.roleParticipant }}</dd>
+                <dt>{{ t.adminApproval.dateLabel }}</dt>
                 <dd data-field="date">{{ reviewDateRange(reviewItem) }}</dd>
-                <dt>Location</dt>
+                <dt>{{ t.adminApproval.locationLabel }}</dt>
                 <dd data-field="location">{{ reviewItem.location }}</dd>
-                <dt>Submitted</dt>
+                <dt>{{ t.adminApproval.submittedLabel }}</dt>
                 <dd>{{ formatDateOnly(reviewItem.submitted_at) }}</dd>
               </dl>
               <div class="review-description" data-field="description">
-                {{ reviewItem.description || 'ไม่มีคำอธิบาย' }}
+                {{ reviewItem.description || t.adminApproval.noDescriptionText }}
+              </div>
+
+              <div v-if="reviewItem.status === 'rejected' && reviewItem.reject_reason" class="review-reject-reason">
+                <strong>{{ t.adminApproval.rejectReasonLabel }}</strong>
+                <p>{{ reviewItem.reject_reason }}</p>
               </div>
             </section>
 
             <section class="review-section">
-              <h4>Evidence</h4>
+              <h4>{{ t.adminApproval.evidenceLabel }}</h4>
               <img
                 v-if="reviewItem.evidence.content_type.startsWith('image/')"
                 class="evidence-preview"
@@ -693,10 +733,10 @@ async function decideRequest(request, status) {
           <div class="review-right">
             <section class="review-section">
               <div class="skills-heading">
-                <h4>Skill Mapping (by student)</h4>
+                <h4>{{ t.adminApproval.skillMappingLabel }}</h4>
                 <span class="skill-count">
-                  {{ relatedSkillCount }} related ·
-                  {{ reviewItem.skill_target_role === 'staff' ? 'Staff skills' : 'Participant skills' }}
+                  {{ relatedSkillCount }} {{ t.adminApproval.relatedLabel }} ·
+                  {{ reviewItem.skill_target_role === 'staff' ? t.adminApproval.staffSkillsLabel : t.adminApproval.participantSkillsLabel }}
                 </span>
               </div>
 
@@ -721,7 +761,7 @@ async function decideRequest(request, status) {
                       ></i>
                     </span>
                     <span class="level-text">
-                      {{ skill.level === null ? 'ไม่เกี่ยวข้อง' : `Level ${skill.level}` }}
+                      {{ skill.level === null ? t.adminApproval.notRelatedLabel : `${t.adminApproval.levelPrefix} ${skill.level}` }}
                     </span>
                   </div>
                 </li>
@@ -742,12 +782,12 @@ async function decideRequest(request, status) {
       <div
         class="modal decision-modal"
         role="dialog"
-        :aria-label="decisionTarget.status === 'approved' ? 'Confirm approval' : 'Reject with comment'"
+        :aria-label="decisionTarget.status === 'approved' ? t.adminApproval.confirmApprovalAriaLabel : t.adminApproval.rejectWithCommentAriaLabel"
         :data-status="decisionTarget.status"
       >
         <div class="modal-header">
           <h3>
-            {{ decisionTarget.status === 'approved' ? 'ยืนยันการอนุมัติ' : 'ไม่อนุมัติกิจกรรม' }}
+            {{ decisionTarget.status === 'approved' ? t.adminApproval.confirmApprovalTitle : t.adminApproval.rejectActivityTitle }}
           </h3>
           <button class="modal-close" :disabled="deciding" @click="closeDecision">
             <X :size="16" />
@@ -758,24 +798,23 @@ async function decideRequest(request, status) {
           <strong>{{ decisionTarget.request.detail }}</strong>
           <span>
             {{ decisionTarget.request.requester_name }}
-            (ID: {{ decisionTarget.request.requester_student_id }})
+            ({{ t.adminApproval.idLabel }} {{ decisionTarget.request.requester_student_id }})
             · {{ decisionTarget.request.request_type_label }}
           </span>
         </div>
 
         <template v-if="decisionTarget.status === 'approved'">
           <p v-if="isExternal(decisionTarget.request)" class="decision-text">
-            ต้องการอนุมัติกิจกรรมนี้ใช่หรือไม่? กิจกรรมและ Skill Mapping ที่นักศึกษาตั้งไว้
-            จะถูกนับรวมในหน้า My Activities ของนักศึกษา
+            {{ t.adminApproval.confirmApprovalExternalText }}
           </p>
           <p v-else class="decision-text">
-            ต้องการอนุมัติคำขอนี้ใช่หรือไม่?
+            {{ t.adminApproval.confirmApprovalGenericText }}
           </p>
 
           <div v-if="isExternal(decisionTarget.request)" class="decision-skill-summary">
-            <h4>Skill Mapping (by student)</h4>
+            <h4>{{ t.adminApproval.skillMappingLabel }}</h4>
 
-            <p v-if="decisionSkillLoading" class="load-status">กำลังโหลด Skill Mapping...</p>
+            <p v-if="decisionSkillLoading" class="load-status">{{ t.adminApproval.loadingSkillMapping }}</p>
 
             <ul v-else class="skill-readonly compact">
               <li
@@ -797,7 +836,7 @@ async function decideRequest(request, status) {
                     ></i>
                   </span>
                   <span class="level-text">
-                    {{ skill.level === null ? 'ไม่เกี่ยวข้อง' : `Level ${skill.level}` }}
+                    {{ skill.level === null ? t.adminApproval.notRelatedLabel : `${t.adminApproval.levelPrefix} ${skill.level}` }}
                   </span>
                 </div>
               </li>
@@ -806,14 +845,14 @@ async function decideRequest(request, status) {
         </template>
 
         <label v-else class="reject-field">
-          <span>ความคิดเห็น / เหตุผลที่ไม่อนุมัติ *</span>
+          <span>{{ t.adminApproval.rejectCommentLabel }}</span>
           <textarea
             v-model="decisionComment"
             rows="4"
-            placeholder="อธิบายว่าทำไมไม่อนุมัติ หรือนักศึกษาต้องแก้ไขอะไร เช่น ไฟล์หลักฐานไม่ชัดเจน กรุณาแนบใหม่"
+            :placeholder="t.adminApproval.rejectCommentPlaceholder"
             @input="decisionError = ''"
           ></textarea>
-          <small class="decision-hint">ความคิดเห็นนี้จะส่งเป็นการแจ้งเตือน (Notification) ให้นักศึกษาเห็นทันที</small>
+          <small class="decision-hint">{{ t.adminApproval.rejectCommentHint }}</small>
         </label>
 
         <div v-if="decisionError" class="review-error" role="alert">
@@ -823,7 +862,7 @@ async function decideRequest(request, status) {
 
         <div class="decision-actions">
           <button class="reject-button" :disabled="deciding" @click="closeDecision">
-            ยกเลิก
+            {{ t.adminApproval.cancelButton }}
           </button>
 
           <button
@@ -833,7 +872,7 @@ async function decideRequest(request, status) {
             @click="confirmDecision"
           >
             <LoaderCircle v-if="deciding" class="spin" :size="14" />
-            ยืนยันอนุมัติ
+            {{ t.adminApproval.confirmApproveButton }}
           </button>
 
           <button
@@ -843,7 +882,7 @@ async function decideRequest(request, status) {
             @click="confirmDecision"
           >
             <LoaderCircle v-if="deciding" class="spin" :size="14" />
-            ยืนยันไม่อนุมัติ
+            {{ t.adminApproval.confirmRejectButton }}
           </button>
         </div>
       </div>
@@ -904,6 +943,39 @@ async function decideRequest(request, status) {
 
 .stat-approved { color: #16a34a; }
 .stat-rejected { color: #dc2626; }
+
+.status-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.status-tabs button {
+  padding: 8px 16px;
+  border: 1px solid #e5eaf2;
+  border-radius: 8px;
+  background: #fff;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.status-tabs button:hover {
+  border-color: #c7d2e0;
+}
+
+.status-tabs button.active {
+  background: #173f95;
+  border-color: #173f95;
+  color: #fff;
+}
+
+.no-actions {
+  color: #9aa5b5;
+  font-size: 12px;
+}
 
 .table-card {
   background: #fff;
@@ -1255,6 +1327,29 @@ tbody td {
   background: #f7f5ff;
   color: #3b4a61;
   font-size: 12.5px;
+  white-space: pre-wrap;
+}
+
+.review-reject-reason {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid #dc2626;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #7f1d1d;
+  font-size: 12.5px;
+}
+
+.review-reject-reason strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.review-reject-reason p {
+  margin: 0;
   white-space: pre-wrap;
 }
 
