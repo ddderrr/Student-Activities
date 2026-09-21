@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime
 from io import BytesIO
 import json
+import math
 from pathlib import Path
 from uuid import uuid4
 import unicodedata
@@ -9,10 +10,26 @@ import unicodedata
 import pandas as pd
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.graphics.shapes import Circle, Drawing, Line, Polygon, String
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import (
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 from database import Base, SessionLocal, engine, get_db
 from models import (
@@ -24,6 +41,7 @@ from models import (
     Skill,
     Student,
     StudentRequest,
+    StudentSkillBenchmark,
 )
 
 
@@ -127,20 +145,62 @@ DASHBOARD_MONTH_LABELS = [
 ]
 
 
+def dashboard_semester_months(semester: str) -> list[int]:
+    """Return PostgreSQL month numbers (1-12) for the selected semester."""
+    normalized = (semester or "ALL").strip().upper()
+
+    if normalized == "SEMESTER_1":
+        return [1, 2, 3, 4, 5, 6]
+    if normalized == "SEMESTER_2":
+        return [7, 8, 9, 10, 11, 12]
+    return list(range(1, 13))
+
+
+def dashboard_effective_completed(activity: Activity, now_value: datetime) -> bool:
+    """
+    Dashboard completion rule:
+    - cancelled is never completed
+    - explicit completed is completed
+    - an active activity whose end_at has passed is treated as completed automatically
+
+    This is derived for reporting; it does not silently rewrite the database row.
+    """
+    if activity.status == "cancelled":
+        return False
+    if activity.status == "completed":
+        return True
+    return activity.end_at is not None and activity.end_at < now_value
+
+
 @app.get("/api/admin/dashboard")
 def get_admin_dashboard(
+    year: int | None = None,
+    semester: str = "ALL",
     db: Session = Depends(get_db),
 ):
     """
-    Dashboard summary calculated from the same PostgreSQL data
-    used by the Activities page.
-    """
+    Dashboard summary for the selected activity year/semester.
 
-    total_activities = (
-        db.query(func.count(Activity.id))
-        .scalar()
-        or 0
+    Activities, participants, completion rate and Activity Growth all use
+    Activity.start_at as the reporting period. Student count remains the
+    faculty/system total because students are master data, not activities.
+    """
+    now_value = datetime.now()
+    selected_year = year or now_value.year
+    selected_months = dashboard_semester_months(semester)
+
+    # Activities are filtered by the real activity date (start_at), not created_at.
+    period_activities = (
+        db.query(Activity)
+        .filter(
+            func.extract("year", Activity.start_at) == selected_year,
+            func.extract("month", Activity.start_at).in_(selected_months),
+        )
+        .all()
     )
+
+    total_activities = len(period_activities)
+    period_activity_ids = [activity.id for activity in period_activities]
 
     total_students = (
         db.query(func.count(Student.student_id))
@@ -148,71 +208,67 @@ def get_admin_dashboard(
         or 0
     )
 
-    # Count unique students that are participants in at least one activity.
-    total_participants = (
-        db.query(
-            func.count(
-                func.distinct(ActivityMember.student_id)
+    # Participants follow the same selected activity period.
+    if period_activity_ids:
+        total_participants = (
+            db.query(func.count(func.distinct(ActivityMember.student_id)))
+            .filter(
+                ActivityMember.role == "participant",
+                ActivityMember.activity_id.in_(period_activity_ids),
             )
+            .scalar()
+            or 0
         )
-        .filter(ActivityMember.role == "participant")
-        .scalar()
-        or 0
-    )
+    else:
+        total_participants = 0
 
-    completed_activities = (
-        db.query(func.count(Activity.id))
-        .filter(Activity.status == "completed")
-        .scalar()
-        or 0
+    # Cancelled activities are kept in the Activities card, but excluded from
+    # the completion-rate denominator because they were not expected to finish.
+    completion_eligible = [
+        activity
+        for activity in period_activities
+        if activity.status != "cancelled"
+    ]
+    completed_activities = sum(
+        1
+        for activity in completion_eligible
+        if dashboard_effective_completed(activity, now_value)
     )
 
     completion_rate = (
-        round(
-            (completed_activities / total_activities) * 100
-        )
-        if total_activities
+        round((completed_activities / len(completion_eligible)) * 100)
+        if completion_eligible
         else 0
     )
 
-    # Activity Growth = activities created in the current year,
-    # grouped by created_at month.
-    current_year = datetime.now().year
+    # Activity Growth uses start_at and the selected year/semester.
     monthly_counts = [0] * 12
-
-    created_rows = (
-        db.query(Activity.created_at)
-        .filter(
-            func.extract(
-                "year",
-                Activity.created_at,
-            ) == current_year
-        )
-        .all()
-    )
-
-    for (created_at,) in created_rows:
-        if created_at is not None:
-            monthly_counts[created_at.month - 1] += 1
+    for activity in period_activities:
+        if activity.start_at is not None:
+            monthly_counts[activity.start_at.month - 1] += 1
 
     activity_growth = [
         {
-            "month": month,
+            "month": DASHBOARD_MONTH_LABELS[index],
             "count": monthly_counts[index],
         }
-        for index, month in enumerate(
-            DASHBOARD_MONTH_LABELS
-        )
+        for index in range(12)
+        if (index + 1) in selected_months
     ]
 
-    # "Faculty Skill Distribution" uses Staff skill levels.
-    # Level 1-5 is converted to a percentage (20%-100%).
+    # Keep this payload for backward compatibility. The current Vue page
+    # calculates period/role Skill Distribution from activity detail data.
     average_rows = (
         db.query(
             ActivitySkill.skill_key,
             func.avg(ActivitySkill.level),
         )
-        .filter(ActivitySkill.target_role == "staff")
+        .join(Activity, Activity.id == ActivitySkill.activity_id)
+        .filter(
+            ActivitySkill.target_role == "staff",
+            func.extract("year", Activity.start_at) == selected_year,
+            func.extract("month", Activity.start_at).in_(selected_months),
+        )
         .group_by(ActivitySkill.skill_key)
         .all()
     )
@@ -224,27 +280,46 @@ def get_admin_dashboard(
     }
 
     skills = []
-
     for skill_key, label in STAFF_SKILL_DEFINITIONS.items():
-        average_level = average_levels.get(skill_key, 0)
-
+        average_level = average_levels.get(skill_key)
         skills.append(
             {
                 "name": label,
-                "percentage": round(
-                    (average_level / 5) * 100
+                "percentage": (
+                    round((average_level / 5) * 100)
+                    if average_level is not None
+                    else 0
                 ),
             }
         )
+
+    available_year_rows = (
+        db.query(func.extract("year", Activity.start_at))
+        .distinct()
+        .order_by(func.extract("year", Activity.start_at).desc())
+        .all()
+    )
+    available_years = [
+        int(value)
+        for (value,) in available_year_rows
+        if value is not None
+    ]
+    if now_value.year not in available_years:
+        available_years.append(now_value.year)
+        available_years.sort(reverse=True)
 
     return {
         "totalActivities": total_activities,
         "totalStudents": total_students,
         "totalParticipants": total_participants,
+        "completedActivities": completed_activities,
+        "completionEligibleActivities": len(completion_eligible),
         "completionRate": completion_rate,
         "activityGrowth": activity_growth,
         "skills": skills,
-        "year": current_year,
+        "year": selected_year,
+        "semester": semester,
+        "availableYears": available_years,
     }
 
 
@@ -254,211 +329,230 @@ def get_admin_dashboard(
 # ============================================================
 
 
-def student_skill_semester_label(value: datetime) -> str:
-    """
-    Temporary semester derivation because the current database
-    does not have an explicit semester/academic-term column.
-
-    Semester 1 = Jan-Jun
-    Semester 2 = Jul-Dec
-    """
-    semester_number = 1 if value.month <= 6 else 2
-    return f"Semester {semester_number}/{value.year}"
+def student_skill_semester_number(value) -> int:
+    """Temporary semester rule: Semester 1 = Jan-Jun, Semester 2 = Jul-Dec."""
+    return 1 if value.month <= 6 else 2
 
 
-def student_skill_semester_sort_key(label: str) -> tuple[int, int]:
-    try:
-        semester_part, year_part = label.replace("Semester ", "").split("/")
-        return int(year_part), int(semester_part)
-    except (ValueError, AttributeError):
-        return (0, 0)
+def student_skill_period_label(year: int, semester: str) -> str:
+    if semester == "SEMESTER_1":
+        return f"Semester 1/{year}"
+    if semester == "SEMESTER_2":
+        return f"Semester 2/{year}"
+    return f"Year {year}"
+
+
+def normalize_student_skill_semester(semester: str) -> str:
+    normalized = (semester or "ALL").strip().upper()
+    aliases = {
+        "ALL": "ALL",
+        "YEAR": "ALL",
+        "SEMESTER_1": "SEMESTER_1",
+        "SEMESTER 1": "SEMESTER_1",
+        "1": "SEMESTER_1",
+        "SEMESTER_2": "SEMESTER_2",
+        "SEMESTER 2": "SEMESTER_2",
+        "2": "SEMESTER_2",
+    }
+    if normalized not in aliases:
+        raise HTTPException(status_code=400, detail="semester ต้องเป็น ALL, SEMESTER_1 หรือ SEMESTER_2")
+    return aliases[normalized]
+
+
+def get_student_skill_benchmarks(db: Session) -> dict[str, float]:
+    rows = {
+        row.skill_key: row.score_x100 / 100
+        for row in db.query(StudentSkillBenchmark).all()
+    }
+    return {
+        key: float(rows.get(key, 4.0))
+        for key in PARTICIPANT_SKILL_DEFINITIONS
+    }
+
+
+class StudentSkillBenchmarkUpdate(BaseModel):
+    scores: dict[str, float]
+
+
+@app.put("/api/admin/student-skills/benchmark")
+def update_student_skill_benchmark(
+    payload: StudentSkillBenchmarkUpdate,
+    db: Session = Depends(get_db),
+):
+    expected = set(PARTICIPANT_SKILL_DEFINITIONS)
+    received = set(payload.scores)
+    unknown = received - expected
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown participant skill: {', '.join(sorted(unknown))}")
+
+    for key, raw_score in payload.scores.items():
+        score = float(raw_score)
+        if score < 1 or score > 5:
+            raise HTTPException(status_code=400, detail=f"Benchmark {key} ต้องอยู่ระหว่าง 1.0-5.0")
+
+        row = db.get(StudentSkillBenchmark, key)
+        if row is None:
+            row = StudentSkillBenchmark(skill_key=key, score_x100=round(score * 100))
+            db.add(row)
+        else:
+            row.score_x100 = round(score * 100)
+
+    db.commit()
+    benchmarks = get_student_skill_benchmarks(db)
+    return {
+        "benchmarkScores": [benchmarks[key] for key in PARTICIPANT_SKILL_DEFINITIONS],
+        "benchmarkBySkill": benchmarks,
+    }
 
 
 @app.get("/api/admin/student-skills")
 def get_admin_student_skills(
+    year: int | None = None,
+    semester: str = "ALL",
     db: Session = Depends(get_db),
 ):
+    """Student skill report for a selected year or semester.
+
+    Calculation order is intentionally student-first:
+    activity evidence -> each student's per-skill average -> faculty average.
+    This prevents students with many activities from having more weight in the faculty radar.
     """
-    Build student proficiency from the real activity data.
+    selected_semester = normalize_student_skill_semester(semester)
+    now_value = datetime.now()
 
-    A student's score for each skill is the average participant-skill
-    level of activities that the student joined as a participant.
-    This avoids inventing a separate student-evaluation table before
-    the project has a real evaluation workflow.
-    """
+    total_students = db.query(func.count(Student.student_id)).scalar() or 0
 
-    total_students = (
-        db.query(func.count(Student.student_id))
-        .scalar()
-        or 0
-    )
+    # Years come from both internal activities and approved external activities.
+    internal_years = {
+        int(value) for (value,) in db.query(func.extract("year", Activity.start_at)).distinct().all()
+        if value is not None
+    }
+    external_years = {
+        int(value) for (value,) in db.query(func.extract("year", ExternalActivity.start_date))
+        .filter(ExternalActivity.status == "approved", ExternalActivity.role == "participant")
+        .distinct().all() if value is not None
+    }
+    available_years = sorted(internal_years | external_years | {now_value.year}, reverse=True)
+    selected_year = year if year in available_years else available_years[0]
 
-    rows = (
+    internal_rows = (
         db.query(
             Student.student_id,
             Student.first_name,
             Student.last_name,
             Student.major,
+            Activity.id,
             Activity.start_at,
             ActivitySkill.skill_key,
             ActivitySkill.level,
         )
-        .join(
-            ActivityMember,
-            ActivityMember.student_id == Student.student_id,
-        )
-        .join(
-            Activity,
-            Activity.id == ActivityMember.activity_id,
-        )
-        .join(
-            ActivitySkill,
-            ActivitySkill.activity_id == Activity.id,
-        )
+        .join(ActivityMember, ActivityMember.student_id == Student.student_id)
+        .join(Activity, Activity.id == ActivityMember.activity_id)
+        .join(ActivitySkill, ActivitySkill.activity_id == Activity.id)
         .filter(
             ActivityMember.role == "participant",
             ActivitySkill.target_role == "participant",
+            func.extract("year", Activity.start_at) == selected_year,
         )
         .all()
     )
 
-    # กิจกรรมภายนอกที่อนุมัติแล้ว (เฉพาะ role participant) นับรวมด้วย
-    # ใช้ start_date จัดภาคเรียนเหมือน start_at ของกิจกรรมปกติ
     external_rows = (
         db.query(
             Student.student_id,
             Student.first_name,
             Student.last_name,
             Student.major,
+            ExternalActivity.id,
             ExternalActivity.start_date,
             ExternalActivitySkill.skill_key,
             ExternalActivitySkill.level,
         )
-        .join(
-            ExternalActivity,
-            ExternalActivity.student_id == Student.student_id,
-        )
-        .join(
-            ExternalActivitySkill,
-            ExternalActivitySkill.external_activity_id == ExternalActivity.id,
-        )
+        .join(ExternalActivity, ExternalActivity.student_id == Student.student_id)
+        .join(ExternalActivitySkill, ExternalActivitySkill.external_activity_id == ExternalActivity.id)
         .filter(
             ExternalActivity.status == "approved",
             ExternalActivity.role == "participant",
             ExternalActivitySkill.target_role == "participant",
+            func.extract("year", ExternalActivity.start_date) == selected_year,
         )
         .all()
     )
 
-    rows = [*rows, *external_rows]
+    # student_id -> accumulated evidence. activity_ids is a set, so one activity
+    # counts once even when it contributes several skills.
+    grouped: dict[str, dict] = {}
 
-    # (semester, student_id) -> student data + accumulated skill levels
-    grouped: dict[tuple[str, str], dict] = {}
+    def add_row(row, source: str):
+        student_id, first_name, last_name, major, activity_id, start_at, skill_key, level = row
+        if start_at is None or skill_key not in PARTICIPANT_SKILL_DEFINITIONS:
+            return
+        sem_no = student_skill_semester_number(start_at)
+        if selected_semester == "SEMESTER_1" and sem_no != 1:
+            return
+        if selected_semester == "SEMESTER_2" and sem_no != 2:
+            return
 
-    for (
-        student_id,
-        first_name,
-        last_name,
-        major,
-        start_at,
-        skill_key,
-        level,
-    ) in rows:
-        if start_at is None:
-            continue
-
-        if skill_key not in PARTICIPANT_SKILL_DEFINITIONS:
-            continue
-
-        semester = student_skill_semester_label(start_at)
-        group_key = (semester, student_id)
-
-        if group_key not in grouped:
-            grouped[group_key] = {
+        if student_id not in grouped:
+            grouped[student_id] = {
                 "id": student_id,
                 "name": f"{first_name} {last_name}".strip(),
                 "major": major or "",
-                "semester": semester,
-                "skill_values": {
-                    key: []
-                    for key in PARTICIPANT_SKILL_DEFINITIONS
-                },
+                "skill_values": {key: [] for key in PARTICIPANT_SKILL_DEFINITIONS},
+                "skill_activity_ids": {key: set() for key in PARTICIPANT_SKILL_DEFINITIONS},
+                "activity_ids": set(),
             }
+        evidence_id = f"{source}:{activity_id}"
+        entry = grouped[student_id]
+        entry["activity_ids"].add(evidence_id)
+        entry["skill_activity_ids"][skill_key].add(evidence_id)
+        entry["skill_values"][skill_key].append(float(level))
 
-        grouped[group_key]["skill_values"][skill_key].append(
-            float(level)
-        )
+    for row in internal_rows:
+        add_row(row, "internal")
+    for row in external_rows:
+        add_row(row, "external")
 
+    period_label = student_skill_period_label(selected_year, selected_semester)
     students = []
-
     for entry in grouped.values():
         skills = {}
-
+        skill_activity_counts = {}
         for skill_key in PARTICIPANT_SKILL_DEFINITIONS:
             values = entry["skill_values"][skill_key]
-            # ไม่มี activity ที่ให้ skill นี้กับนักศึกษาคนนี้
-            # ให้เป็น None (JSON = null) แทน 0 เพราะ level จริงอยู่ช่วง 1-5
-            skills[skill_key] = (
-                round(sum(values) / len(values), 2)
-                if values
-                else None
-            )
+            skills[skill_key] = round(sum(values) / len(values), 2) if values else None
+            skill_activity_counts[skill_key] = len(entry["skill_activity_ids"][skill_key])
 
-        students.append(
-            {
-                "id": entry["id"],
-                "name": entry["name"],
-                "major": entry["major"],
-                "semester": entry["semester"],
-                "skills": skills,
-            }
-        )
+        students.append({
+            "id": entry["id"],
+            "name": entry["name"],
+            "major": entry["major"],
+            "semester": period_label,  # kept for existing frontend compatibility
+            "periodLabel": period_label,
+            "year": selected_year,
+            "period": selected_semester,
+            "activityCount": len(entry["activity_ids"]),
+            "skillActivityCounts": skill_activity_counts,
+            "skills": skills,
+        })
 
-    students.sort(
-        key=lambda item: (
-            student_skill_semester_sort_key(item["semester"]),
-            item["id"],
-        ),
-        reverse=True,
-    )
-
-    semester_set = {
-        item["semester"]
-        for item in students
-    }
-
-    semesters = sorted(
-        semester_set,
-        key=student_skill_semester_sort_key,
-        reverse=True,
-    )
-
-    # Always provide a sensible current semester even before data exists.
-    current_semester = student_skill_semester_label(datetime.now())
-    if not semesters:
-        semesters = [current_semester]
-
-    default_semester = (
-        current_semester
-        if current_semester in semesters
-        else semesters[0]
-    )
-
-    total_faculty_by_semester = {
-        semester: total_students
-        for semester in semesters
-    }
+    students.sort(key=lambda item: item["id"])
+    benchmarks = get_student_skill_benchmarks(db)
 
     return {
-        "semesters": semesters,
-        "defaultSemester": default_semester,
-        "totalFacultyBySemester": total_faculty_by_semester,
-        "benchmarkScores": [4, 4, 4, 4, 4, 4],
+        "years": available_years,
+        "availableYears": available_years,
+        "defaultYear": selected_year,
+        "selectedYear": selected_year,
+        "selectedSemester": selected_semester,
+        "periodLabel": period_label,
+        "periodOptions": ["ALL", "SEMESTER_1", "SEMESTER_2"],
+        "totalFaculty": total_students,
+        "totalFacultyBySemester": {period_label: total_students},
+        "benchmarkScores": [benchmarks[key] for key in PARTICIPANT_SKILL_DEFINITIONS],
+        "benchmarkBySkill": benchmarks,
         "skillDefinitions": [
-            {
-                "key": key,
-                "label": label,
-            }
+            {"key": key, "label": label}
             for key, label in PARTICIPANT_SKILL_DEFINITIONS.items()
         ],
         "students": students,
@@ -2421,6 +2515,619 @@ def list_my_activities(
         "total": len(items),
         "activities": items,
     }
+
+
+def student_skill_periods(
+    student: Student,
+    db: Session,
+) -> dict:
+    """
+    สร้างข้อมูล My Skills จาก source เดียวกันทั้ง Radar และตาราง
+
+    Period ที่สร้าง:
+    - year-YYYY       = รวมทั้งปี
+    - semester-1-YYYY = ม.ค.-มิ.ย.
+    - semester-2-YYYY = ก.ค.-ธ.ค.
+
+    คะแนนแต่ละ skill = ค่าเฉลี่ย level ของกิจกรรมทั้งหมดใน period
+    ที่ให้ skill นั้นกับ role participant
+    """
+
+    activity_map: dict[tuple[str, int], dict] = {}
+
+    # กิจกรรมที่สร้างโดย Admin:
+    # นับเฉพาะกรณีที่นักศึกษาเป็น participant และ skill เป็น participant
+    rows = (
+        db.query(
+            Activity.id,
+            Activity.name,
+            Activity.description,
+            Activity.start_at,
+            Activity.status,
+            ActivitySkill.skill_key,
+            ActivitySkill.level,
+        )
+        .join(
+            ActivityMember,
+            ActivityMember.activity_id == Activity.id,
+        )
+        .join(
+            ActivitySkill,
+            ActivitySkill.activity_id == Activity.id,
+        )
+        .filter(
+            ActivityMember.student_id == student.student_id,
+            ActivityMember.role == "participant",
+            ActivitySkill.target_role == "participant",
+        )
+        .all()
+    )
+
+    for (
+        activity_id,
+        title,
+        description,
+        start_at,
+        status,
+        skill_key,
+        level,
+    ) in rows:
+        if start_at is None or skill_key not in PARTICIPANT_SKILL_DEFINITIONS:
+            continue
+
+        key = ("activity", activity_id)
+
+        if key not in activity_map:
+            activity_map[key] = {
+                "source": "activity",
+                "id": activity_id,
+                "title": title,
+                "description": description or "",
+                "start_at": start_at,
+                "status": status,
+                "skills": {},
+            }
+
+        activity_map[key]["skills"][skill_key] = int(level)
+
+    # กิจกรรมภายนอก:
+    # นับเฉพาะ approved + participant เท่านั้น
+    external_rows = (
+        db.query(
+            ExternalActivity.id,
+            ExternalActivity.title,
+            ExternalActivity.description,
+            ExternalActivity.start_date,
+            ExternalActivity.status,
+            ExternalActivitySkill.skill_key,
+            ExternalActivitySkill.level,
+        )
+        .join(
+            ExternalActivitySkill,
+            ExternalActivitySkill.external_activity_id == ExternalActivity.id,
+        )
+        .filter(
+            ExternalActivity.student_id == student.student_id,
+            ExternalActivity.status == "approved",
+            ExternalActivity.role == "participant",
+            ExternalActivitySkill.target_role == "participant",
+        )
+        .all()
+    )
+
+    for (
+        external_id,
+        title,
+        description,
+        start_date,
+        status,
+        skill_key,
+        level,
+    ) in external_rows:
+        if start_date is None or skill_key not in PARTICIPANT_SKILL_DEFINITIONS:
+            continue
+
+        key = ("external_activity", external_id)
+
+        if key not in activity_map:
+            activity_map[key] = {
+                "source": "external_activity",
+                "id": external_id,
+                "title": title,
+                "description": description or "",
+                "start_at": datetime.combine(
+                    start_date,
+                    datetime.min.time(),
+                ),
+                "status": status,
+                "skills": {},
+            }
+
+        activity_map[key]["skills"][skill_key] = int(level)
+
+    activities = sorted(
+        activity_map.values(),
+        key=lambda item: (
+            item["start_at"],
+            item["source"],
+            item["id"],
+        ),
+        reverse=True,
+    )
+
+    years = sorted(
+        {item["start_at"].year for item in activities},
+        reverse=True,
+    )
+
+    if not years:
+        years = [datetime.now().year]
+
+    period_definitions = []
+    periods = {}
+
+    for year in years:
+        period_definitions.extend(
+            [
+                {
+                    "key": f"year-{year}",
+                    "label": f"Year {year}",
+                    "year": year,
+                    "semester": None,
+                },
+                {
+                    "key": f"semester-1-{year}",
+                    "label": f"Semester 1/{year}",
+                    "year": year,
+                    "semester": 1,
+                },
+                {
+                    "key": f"semester-2-{year}",
+                    "label": f"Semester 2/{year}",
+                    "year": year,
+                    "semester": 2,
+                },
+            ]
+        )
+
+    for period in period_definitions:
+        period_activities = []
+
+        for activity in activities:
+            activity_year = activity["start_at"].year
+            activity_semester = (
+                1 if activity["start_at"].month <= 6 else 2
+            )
+
+            if activity_year != period["year"]:
+                continue
+
+            if (
+                period["semester"] is not None
+                and activity_semester != period["semester"]
+            ):
+                continue
+
+            period_activities.append(activity)
+
+        values = {
+            skill_key: []
+            for skill_key in PARTICIPANT_SKILL_DEFINITIONS
+        }
+
+        for activity in period_activities:
+            for skill_key, level in activity["skills"].items():
+                if skill_key in values:
+                    values[skill_key].append(float(level))
+
+        skills = {
+            skill_key: (
+                round(sum(levels) / len(levels), 2)
+                if levels
+                else None
+            )
+            for skill_key, levels in values.items()
+        }
+
+        periods[period["key"]] = {
+            "key": period["key"],
+            "label": period["label"],
+            "year": period["year"],
+            "semester": period["semester"],
+            "skills": skills,
+            "activities": period_activities,
+        }
+
+    current_year = datetime.now().year
+    default_period = (
+        f"year-{current_year}"
+        if f"year-{current_year}" in periods
+        else period_definitions[0]["key"]
+    )
+
+    return {
+        "periodDefinitions": period_definitions,
+        "defaultPeriod": default_period,
+        "periods": periods,
+    }
+
+
+@app.get("/api/student/me/skills")
+def get_my_skills(
+    student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    """
+    My Skills ของนักศึกษาที่ login อยู่
+
+    Radar + ตารางกิจกรรมใช้ source เดียวกัน จึงไม่มีกรณี
+    กิจกรรมถูกนำไปคำนวณแต่ไม่ปรากฏในตาราง
+    """
+    period_data = student_skill_periods(student, db)
+
+    return {
+        "student": {
+            "student_id": student.student_id,
+            "first_name": student.first_name,
+            "last_name": student.last_name,
+            "email": student.email,
+            "faculty": student.faculty,
+            "major": student.major,
+        },
+        "skillDefinitions": [
+            {
+                "key": key,
+                "label": label,
+            }
+            for key, label in PARTICIPANT_SKILL_DEFINITIONS.items()
+        ],
+        **period_data,
+    }
+
+
+def skill_pdf_font_name() -> str:
+    """
+    พยายามใช้ Unicode font จากเครื่องก่อน เพื่อรองรับชื่อ/กิจกรรมภาษาไทย
+    ถ้าไม่มีจะ fallback เป็น Helvetica
+    """
+    candidates = [
+        Path("/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf"),
+        Path("/usr/share/fonts/opentype/noto/NotoSansThai-Regular.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("C:/Windows/Fonts/tahoma.ttf"),
+        Path("C:/Windows/Fonts/arial.ttf"),
+    ]
+
+    for font_path in candidates:
+        if font_path.is_file():
+            try:
+                pdfmetrics.registerFont(
+                    TTFont("SkillTranscriptFont", str(font_path))
+                )
+                return "SkillTranscriptFont"
+            except Exception:
+                continue
+
+    return "Helvetica"
+
+
+def build_skill_radar_pdf(
+    skills: dict,
+    font_name: str,
+) -> Drawing:
+    """
+    Radar chart สำหรับ PDF transcript
+    ใช้ 6 skill definitions ชุดเดียวกับหน้า Student
+    """
+    width = 150 * mm
+    height = 92 * mm
+    drawing = Drawing(width, height)
+
+    center_x = width / 2
+    center_y = height / 2 - 2 * mm
+    radius = 31 * mm
+
+    skill_items = list(PARTICIPANT_SKILL_DEFINITIONS.items())
+    count = len(skill_items)
+
+    # Grid 1-5
+    for level in range(1, 6):
+        level_radius = radius * (level / 5)
+        points = []
+
+        for index in range(count):
+            angle = math.radians(-90 + index * (360 / count))
+            points.extend(
+                [
+                    center_x + math.cos(angle) * level_radius,
+                    center_y + math.sin(angle) * level_radius,
+                ]
+            )
+
+        drawing.add(
+            Polygon(
+                points,
+                fillColor=None,
+                strokeColor=colors.HexColor("#D8E1EF"),
+                strokeWidth=0.7,
+            )
+        )
+
+    # Axis + labels
+    for index, (skill_key, label) in enumerate(skill_items):
+        angle = math.radians(-90 + index * (360 / count))
+        axis_x = center_x + math.cos(angle) * radius
+        axis_y = center_y + math.sin(angle) * radius
+
+        drawing.add(
+            Line(
+                center_x,
+                center_y,
+                axis_x,
+                axis_y,
+                strokeColor=colors.HexColor("#E4EAF3"),
+                strokeWidth=0.6,
+            )
+        )
+
+        label_radius = radius + 10 * mm
+        label_x = center_x + math.cos(angle) * label_radius
+        label_y = center_y + math.sin(angle) * label_radius
+
+        drawing.add(
+            String(
+                label_x,
+                label_y,
+                label,
+                fontName=font_name,
+                fontSize=6.5,
+                fillColor=colors.HexColor("#43536F"),
+                textAnchor="middle",
+            )
+        )
+
+    # Student polygon
+    radar_points = []
+
+    for index, (skill_key, _) in enumerate(skill_items):
+        value = skills.get(skill_key)
+        ratio = 0 if value is None else max(0, min(5, float(value))) / 5
+        angle = math.radians(-90 + index * (360 / count))
+
+        point_x = center_x + math.cos(angle) * radius * ratio
+        point_y = center_y + math.sin(angle) * radius * ratio
+
+        radar_points.extend([point_x, point_y])
+
+        drawing.add(
+            Circle(
+                point_x,
+                point_y,
+                1.3 * mm,
+                fillColor=colors.HexColor("#356FE5"),
+                strokeColor=colors.white,
+                strokeWidth=0.5,
+            )
+        )
+
+    drawing.add(
+        Polygon(
+            radar_points,
+            fillColor=colors.Color(
+                53 / 255,
+                111 / 255,
+                229 / 255,
+                alpha=0.18,
+            ),
+            strokeColor=colors.HexColor("#356FE5"),
+            strokeWidth=1.6,
+        )
+    )
+
+    return drawing
+
+
+@app.get("/api/student/me/skills/export")
+def export_my_skills_pdf(
+    period: str | None = None,
+    include_chart: bool = True,
+    student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    """
+    สร้าง PDF ตาม period ที่หน้า Student เลือกอยู่
+
+    include_chart=true  -> transcript พร้อม Radar Chart
+    include_chart=false -> transcript แบบตาราง ไม่มี Radar Chart
+    """
+    period_data = student_skill_periods(student, db)
+    selected_key = period or period_data["defaultPeriod"]
+    selected = period_data["periods"].get(selected_key)
+
+    if selected is None:
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบปี/ภาคเรียนที่ต้องการ Export",
+        )
+
+    buffer = BytesIO()
+    font_name = skill_pdf_font_name()
+
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        rightMargin=12 * mm,
+        leftMargin=12 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+        title=f"Skill Transcript - {selected['label']}",
+        author="Faculty of Science Student Progress Tracker",
+    )
+
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "SkillTitle",
+        parent=styles["Title"],
+        fontName=font_name,
+        fontSize=18,
+        leading=22,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#17356F"),
+    )
+
+    body_style = ParagraphStyle(
+        "SkillBody",
+        parent=styles["BodyText"],
+        fontName=font_name,
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#344054"),
+    )
+
+    small_style = ParagraphStyle(
+        "SkillSmall",
+        parent=body_style,
+        fontSize=8,
+        leading=10,
+    )
+
+    story = [
+        Paragraph("Student Skill Transcript", title_style),
+        Spacer(1, 3 * mm),
+        Paragraph(
+            (
+                f"{student.first_name} {student.last_name} "
+                f"| ID: {student.student_id} "
+                f"| Period: {selected['label']}"
+            ),
+            body_style,
+        ),
+        Spacer(1, 4 * mm),
+    ]
+
+    # Optional radar chart
+    if include_chart:
+        story.append(
+            build_skill_radar_pdf(
+                selected["skills"],
+                font_name,
+            )
+        )
+        story.append(Spacer(1, 4 * mm))
+
+    skill_rows = [["Skill", "Average / 5"]]
+
+    for skill_key, label in PARTICIPANT_SKILL_DEFINITIONS.items():
+        value = selected["skills"].get(skill_key)
+
+        skill_rows.append(
+            [
+                Paragraph(label, body_style),
+                "-" if value is None else f"{value:.2f}",
+            ]
+        )
+
+    skill_table = Table(
+        skill_rows,
+        colWidths=[95 * mm, 30 * mm],
+        repeatRows=1,
+    )
+    skill_table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (-1, -1), font_name),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF0FF")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#17356F")),
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D8DEEA")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (1, 1), (1, -1), "CENTER"),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+
+    story.append(skill_table)
+    story.append(Spacer(1, 7 * mm))
+    story.append(Paragraph("Activities used for calculation", body_style))
+    story.append(Spacer(1, 2 * mm))
+
+    activity_rows = [["Activity", "Skills", "Date", "Status"]]
+
+    for activity in selected["activities"]:
+        skills_text = ", ".join(
+            (
+                f"{PARTICIPANT_SKILL_DEFINITIONS.get(key, key)} "
+                f"{level}/5"
+            )
+            for key, level in activity["skills"].items()
+        )
+
+        activity_rows.append(
+            [
+                Paragraph(activity["title"] or "-", small_style),
+                Paragraph(skills_text or "-", small_style),
+                activity["start_at"].strftime("%d/%m/%Y"),
+                activity["status"] or "-",
+            ]
+        )
+
+    if not selected["activities"]:
+        activity_rows.append(
+            [
+                Paragraph("No activity data available", small_style),
+                "-",
+                "-",
+                "-",
+            ]
+        )
+
+    activity_table = Table(
+        activity_rows,
+        colWidths=[85 * mm, 110 * mm, 32 * mm, 30 * mm],
+        repeatRows=1,
+    )
+    activity_table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (-1, -1), font_name),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF0FF")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#17356F")),
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D8DEEA")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+
+    story.append(activity_table)
+    document.build(story)
+
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+
+    safe_period = selected_key.replace("/", "-")
+    chart_suffix = "with-radar" if include_chart else "without-radar"
+
+    filename = (
+        f"skill-transcript-{student.student_id}-"
+        f"{safe_period}-{chart_suffix}.pdf"
+    )
+
+    # Content-Length ช่วยให้ browser/download manager รู้ขนาดไฟล์ครบ
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename}"'
+            ),
+            "Content-Length": str(len(pdf_bytes)),
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @app.get("/api/external-activities/{external_activity_id}")

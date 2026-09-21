@@ -8,7 +8,9 @@ import {
   CheckCircle,
   AlertTriangle,
   Check,
-  X
+  X,
+  Settings,
+  Save
 } from 'lucide-vue-next'
 
 import { useLanguage } from '../../composables/useLanguage'
@@ -101,18 +103,37 @@ const radarLabels = computed(() =>
 const loading = ref(false)
 const error = ref('')
 const students = ref([])
-const totalFacultyBySemester = ref({})
+const totalFaculty = ref(0)
+const availableYears = ref([])
 
 /* =========================
-   Semester
+   Reporting period: Year + optional Semester
 ========================= */
-const selectedSemester = ref('')
-const semesterOpen = ref(false)
-const semesters = ref([])
+const selectedYear = ref(null)
+const selectedPeriod = ref('ALL')
+const yearOpen = ref(false)
+const periodOpen = ref(false)
 
-const selectSemester = (semester) => {
-  selectedSemester.value = semester
-  semesterOpen.value = false
+const periodOptions = [
+  { value: 'ALL', label: 'ทั้งปี' },
+  { value: 'SEMESTER_1', label: 'Semester 1 (ม.ค.–มิ.ย.)' },
+  { value: 'SEMESTER_2', label: 'Semester 2 (ก.ค.–ธ.ค.)' }
+]
+
+const selectedPeriodLabel = computed(() =>
+  periodOptions.find(option => option.value === selectedPeriod.value)?.label || 'ทั้งปี'
+)
+
+const selectYear = async (year) => {
+  selectedYear.value = year
+  yearOpen.value = false
+  await loadStudentSkills()
+}
+
+const selectPeriod = async (period) => {
+  selectedPeriod.value = period
+  periodOpen.value = false
+  await loadStudentSkills()
 }
 
 /* =========================
@@ -149,7 +170,11 @@ const loadStudentSkills = async () => {
   error.value = ''
 
   try {
-    const response = await fetch(`${API_BASE}/api/admin/student-skills`)
+    const params = new URLSearchParams()
+    if (selectedYear.value) params.set('year', selectedYear.value)
+    params.set('semester', selectedPeriod.value)
+
+    const response = await fetch(`${API_BASE}/api/admin/student-skills?${params.toString()}`)
     const data = await response.json()
 
     if (!response.ok) {
@@ -157,28 +182,22 @@ const loadStudentSkills = async () => {
     }
 
     students.value = Array.isArray(data.students) ? data.students : []
-    semesters.value = Array.isArray(data.semesters) ? data.semesters : []
-    totalFacultyBySemester.value = data.totalFacultyBySemester || {}
+    availableYears.value = Array.isArray(data.availableYears) ? data.availableYears : []
+    totalFaculty.value = Number(data.totalFaculty || 0)
 
-    if (
-      !selectedSemester.value ||
-      !semesters.value.includes(selectedSemester.value)
-    ) {
-      selectedSemester.value =
-        data.defaultSemester ||
-        semesters.value[0] ||
-        ''
+    if (!selectedYear.value || !availableYears.value.includes(Number(selectedYear.value))) {
+      selectedYear.value = Number(data.defaultYear || data.selectedYear || availableYears.value[0])
     }
 
+    selectedPeriod.value = data.selectedSemester || selectedPeriod.value
+
     if (Array.isArray(data.benchmarkScores) && data.benchmarkScores.length === 6) {
-      benchmarkScores.value = data.benchmarkScores.map((score) => Number(score) || 0)
+      benchmarkScores.value = data.benchmarkScores.map(score => Number(score) || 4)
     }
   } catch (err) {
     console.error('Student Skills API Error:', err)
     error.value = err.message || 'Cannot load student skill data'
     students.value = []
-    semesters.value = []
-    totalFacultyBySemester.value = {}
   } finally {
     loading.value = false
   }
@@ -229,40 +248,28 @@ const scoreMatchesFilter = (score) => {
 }
 
 /* =========================
-   Semester data
+   Selected period data
 ========================= */
-const semesterStudents = computed(() => {
-  if (!selectedSemester.value) return []
-  return students.value.filter(
-    student => student.semester === selectedSemester.value
-  )
-})
+const semesterStudents = computed(() => students.value)
 
 const studentsEvaluated = computed(() => semesterStudents.value.length)
 
 const facultyPercentage = computed(() => {
-  const total = totalFacultyBySemester.value[selectedSemester.value] ?? 0
-  if (total === 0) return '0.0'
-  return ((studentsEvaluated.value / total) * 100).toFixed(1)
+  if (totalFaculty.value === 0) return '0.0'
+  return ((studentsEvaluated.value / totalFaculty.value) * 100).toFixed(1)
 })
 
 const averageSkillScore = computed(() => {
-  if (semesterStudents.value.length === 0) return null
-
   const studentAverages = semesterStudents.value
     .map(student => averageOfSkills(student))
     .filter(value => value !== null)
 
   if (studentAverages.length === 0) return null
-
-  const total = studentAverages.reduce((sum, value) => sum + value, 0)
-  return (total / studentAverages.length).toFixed(2)
+  return (studentAverages.reduce((sum, value) => sum + value, 0) / studentAverages.length).toFixed(2)
 })
 
 const facultySkillAverages = computed(() => {
   const result = {}
-
-  // null = ไม่มีนักศึกษาคนไหนในภาคเรียนนี้มีข้อมูล skill นี้ (ไม่ใช่คะแนน 0)
   skillKeys.forEach(skill => {
     const values = semesterStudents.value
       .map(student => skillValueOf(student, skill.key))
@@ -272,7 +279,6 @@ const facultySkillAverages = computed(() => {
       ? values.reduce((sum, value) => sum + value, 0) / values.length
       : null
   })
-
   return result
 })
 
@@ -307,6 +313,46 @@ const actualRadarPoints = computed(() =>
 // Benchmark เริ่มต้น 4.0 / 5 ทุก skill
 const benchmarkScores = ref([4, 4, 4, 4, 4, 4])
 const benchmarkRadarPoints = computed(() => buildRadarPoints(benchmarkScores.value))
+
+const benchmarkModalOpen = ref(false)
+const benchmarkDraft = ref([4, 4, 4, 4, 4, 4])
+const benchmarkSaving = ref(false)
+const benchmarkError = ref('')
+
+const openBenchmarkSettings = () => {
+  benchmarkDraft.value = [...benchmarkScores.value]
+  benchmarkError.value = ''
+  benchmarkModalOpen.value = true
+}
+
+const saveBenchmarkSettings = async () => {
+  const values = benchmarkDraft.value.map(value => Number(value))
+  if (values.some(value => !Number.isFinite(value) || value < 1 || value > 5)) {
+    benchmarkError.value = 'Benchmark ทุกทักษะต้องอยู่ระหว่าง 1.0 - 5.0'
+    return
+  }
+
+  benchmarkSaving.value = true
+  benchmarkError.value = ''
+  try {
+    const scores = Object.fromEntries(skillKeys.map((skill, index) => [skill.key, values[index]]))
+    const response = await fetch(`${API_BASE}/api/admin/student-skills/benchmark`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scores })
+    })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.detail || 'Cannot save benchmark')
+
+    benchmarkScores.value = data.benchmarkScores.map(Number)
+    benchmarkDraft.value = [...benchmarkScores.value]
+    benchmarkModalOpen.value = false
+  } catch (err) {
+    benchmarkError.value = err.message || 'Cannot save benchmark'
+  } finally {
+    benchmarkSaving.value = false
+  }
+}
 
 /* =========================
    Top / Growth Area
@@ -441,7 +487,9 @@ const selectedSkillGaps = computed(() => {
     .sort((a, b) => a.difference - b.difference)
 })
 
-const selectedTopGaps = computed(() => selectedSkillGaps.value.slice(0, 3))
+// แสดง Skill Gap ที่ต่ำกว่าค่าเฉลี่ยคณะทั้งหมด
+// ไม่ตัดเหลือแค่ 3 รายการ เพื่อให้ผู้ใช้เห็นครบทุก Skill ที่มีช่องว่าง
+const selectedTopGaps = computed(() => selectedSkillGaps.value)
 
 const selectedStudentPhoto = computed(() => {
   if (!selectedStudent.value) return ''
@@ -483,8 +531,9 @@ const closeStudentRadar = () => {
 }
 
 const handleEscape = (event) => {
-  if (event.key === 'Escape' && selectedStudent.value) {
-    closeStudentRadar()
+  if (event.key === 'Escape') {
+    if (selectedStudent.value) closeStudentRadar()
+    if (benchmarkModalOpen.value) benchmarkModalOpen.value = false
   }
 }
 
@@ -550,7 +599,7 @@ onBeforeUnmount(() => {
           </strong>
 
           <span class="summary-sub">
-            {{ t.adminStudentSkills.thisSemester }}
+            {{ selectedPeriod === 'ALL' ? `ปี ${selectedYear}` : `${selectedPeriodLabel} / ${selectedYear}` }}
           </span>
 
         </div>
@@ -606,50 +655,49 @@ onBeforeUnmount(() => {
             <h2>{{ t.adminStudentSkills.facultyRadar }}</h2>
           </div>
 
-          <div class="semester-dropdown">
+          <div class="report-controls">
+            <div class="semester-dropdown">
+              <button class="semester-select" @click="yearOpen = !yearOpen; periodOpen = false">
+                ปี {{ selectedYear }}
+                <ChevronDown :size="14" />
+              </button>
+              <div v-if="yearOpen" class="semester-menu">
+                <button
+                  v-for="year in availableYears"
+                  :key="year"
+                  class="semester-option"
+                  :class="{ selected: year === selectedYear }"
+                  @click="selectYear(year)"
+                >
+                  <span>{{ year }}</span><Check v-if="year === selectedYear" :size="13" />
+                </button>
+              </div>
+            </div>
 
-               <button
-               class="semester-select"
-               @click="semesterOpen = !semesterOpen"
-               >
+            <div class="semester-dropdown">
+              <button class="semester-select" @click="periodOpen = !periodOpen; yearOpen = false">
+                {{ selectedPeriodLabel }}
+                <ChevronDown :size="14" />
+              </button>
+              <div v-if="periodOpen" class="semester-menu period-menu">
+                <button
+                  v-for="option in periodOptions"
+                  :key="option.value"
+                  class="semester-option"
+                  :class="{ selected: option.value === selectedPeriod }"
+                  @click="selectPeriod(option.value)"
+                >
+                  <span>{{ option.label }}</span><Check v-if="option.value === selectedPeriod" :size="13" />
+                </button>
+              </div>
+            </div>
 
-               {{ selectedSemester }}
-
-               <ChevronDown :size="14" />
-
-               </button>
-
-
-               <div
-               v-if="semesterOpen"
-               class="semester-menu"
-               >
-
-               <button
-                    v-for="semester in semesters"
-                    :key="semester"
-                    class="semester-option"
-                    :class="{ selected: semester === selectedSemester }"
-                    @click="selectSemester(semester)"
-               >
-
-                    <span>
-                    {{ semester }}
-                    </span>
-
-                    <Check
-                    v-if="semester === selectedSemester"
-                    :size="13"
-                    />
-
-               </button>
-
-               </div>
-
-               </div>
-
+            <button class="benchmark-settings-button" type="button" @click="openBenchmarkSettings">
+              <Settings :size="14" /> Benchmark
+            </button>
           </div>
 
+        </div>
 
         <!-- Radar -->
 
@@ -1034,6 +1082,10 @@ onBeforeUnmount(() => {
               </th>
 
               <th>
+                กิจกรรมที่เข้าร่วม
+              </th>
+
+              <th>
                 {{ t.adminStudentSkills.action }}
               </th>
 
@@ -1047,7 +1099,7 @@ onBeforeUnmount(() => {
             <tr v-if="filteredStudents.length === 0">
 
               <td
-                colspan="5"
+                colspan="6"
                 class="empty-row"
               >
                 {{ t.adminStudentSkills.noStudentData }}
@@ -1078,6 +1130,10 @@ onBeforeUnmount(() => {
               </td>
 
               <td>
+                <strong>{{ student.activityCount ?? 0 }}</strong> กิจกรรม
+              </td>
+
+              <td>
 
                 <button
                   class="radar-button"
@@ -1097,6 +1153,37 @@ onBeforeUnmount(() => {
       </div>
 
     </section>
+
+    <!-- Benchmark Settings -->
+    <div v-if="benchmarkModalOpen" class="modal-backdrop" @click.self="benchmarkModalOpen = false">
+      <div class="benchmark-modal">
+        <div class="benchmark-modal-header">
+          <div>
+            <h3>ตั้งค่า Benchmark Level</h3>
+            <p>กำหนดเป้าหมายของแต่ละทักษะได้ตั้งแต่ 1.0 ถึง 5.0 และบันทึกลงฐานข้อมูล</p>
+          </div>
+          <button class="detail-close" type="button" @click="benchmarkModalOpen = false"><X :size="20" /></button>
+        </div>
+
+        <div class="benchmark-form">
+          <label v-for="(skill, index) in skillKeys" :key="skill.key" class="benchmark-field">
+            <span>{{ skillDisplay(skill.label) }}</span>
+            <div class="benchmark-input-wrap">
+              <input v-model.number="benchmarkDraft[index]" type="number" min="1" max="5" step="0.1" />
+              <small>/ 5.0</small>
+            </div>
+          </label>
+        </div>
+
+        <div v-if="benchmarkError" class="benchmark-error">{{ benchmarkError }}</div>
+        <div class="benchmark-actions">
+          <button class="benchmark-cancel" type="button" @click="benchmarkModalOpen = false">ยกเลิก</button>
+          <button class="benchmark-save" type="button" :disabled="benchmarkSaving" @click="saveBenchmarkSettings">
+            <Save :size="15" /> {{ benchmarkSaving ? 'กำลังบันทึก...' : 'บันทึก Benchmark' }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- =========================
          Individual Student Detail Modal
@@ -1129,7 +1216,8 @@ onBeforeUnmount(() => {
               <div class="student-meta-row">
                 <span class="student-meta-chip">ID: {{ selectedStudent.id }}</span>
                 <span class="student-meta-chip">{{ t.adminStudentSkills.major }}: {{ selectedStudent.major ?? '—' }}</span>
-                <span class="student-meta-chip">{{ selectedStudent.semester }}</span>
+                <span class="student-meta-chip">{{ selectedStudent.periodLabel || selectedStudent.semester }}</span>
+                <span class="student-meta-chip">เข้าร่วม {{ selectedStudent.activityCount ?? 0 }} กิจกรรม</span>
               </div>
             </div>
           </div>
@@ -2216,7 +2304,7 @@ td {
 
 .student-identity-text h3 {
   margin: 0 0 6px;
-  font-size: 18px;
+  font-size: 21px;
   line-height: 1.2;
   color: #142f64;
 }
@@ -2232,7 +2320,7 @@ td {
   border-radius: 4px;
   background: #eef4ff;
   color: #315db9;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -2283,14 +2371,14 @@ td {
 .detail-section-heading h4,
 .gap-heading h4 {
   margin: 0;
-  font-size: 15px;
+  font-size: 18px;
   color: #17356e;
 }
 
 .detail-section-heading p,
 .gap-heading p {
   margin: 5px 0 0;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.5;
   color: #8794a8;
 }
@@ -2300,7 +2388,7 @@ td {
   flex-direction: column;
   gap: 6px;
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: #455a78;
 }
@@ -2366,7 +2454,7 @@ td {
   border: 1px solid #e4e8ef;
   border-radius: 6px;
   background: #fbfcff;
-  font-size: 11px;
+  font-size: 13px;
   color: #53627a;
 }
 
@@ -2390,7 +2478,7 @@ td {
 
 .strongest-label {
   margin-bottom: 5px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: .45px;
   color: #278451;
@@ -2398,13 +2486,13 @@ td {
 
 .strongest-skill-card h4 {
   margin: 0;
-  font-size: 17px;
+  font-size: 20px;
   color: #17356e;
 }
 
 .strongest-skill-card p {
   margin: 8px 0 0;
-  font-size: 11px;
+  font-size: 13px;
   color: #587066;
 }
 
@@ -2454,12 +2542,12 @@ td {
 }
 
 .gap-card-header strong {
-  font-size: 10px;
+  font-size: 13px;
   color: #20385f;
 }
 
 .gap-card-header span {
-  font-size: 11px;
+  font-size: 13px;
   color: #c04b4b;
 }
 
@@ -2467,7 +2555,7 @@ td {
   margin-top: 7px;
   display: flex;
   gap: 8px;
-  font-size: 11px;
+  font-size: 13px;
   color: #607089;
 }
 
@@ -2486,7 +2574,7 @@ td {
   border: 1px solid rgba(214, 222, 236, .9);
   border-radius: 5px;
   background: rgba(255,255,255,.82);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.45;
   color: #647086;
 }
@@ -2508,13 +2596,13 @@ td {
 }
 
 .no-gap-state strong {
-  font-size: 11px;
+  font-size: 14px;
   color: #24563e;
 }
 
 .no-gap-state span {
   max-width: 260px;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.5;
   color: #78879b;
 }
@@ -2602,4 +2690,41 @@ td {
   color: #b42318;
   font-size: 12px;
 }
+.report-controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+.period-menu { width: 205px; }
+.benchmark-settings-button { padding:5px 9px; display:flex; align-items:center; gap:5px; border:1px solid #d4dbe7; border-radius:5px; background:#fff; color:#315de6; font-size:11px; font-weight:700; cursor:pointer; }
+.benchmark-settings-button:hover { background:#f3f6ff; }
+.benchmark-modal { width:min(620px, 94vw); max-height:90vh; overflow:auto; background:#fff; border-radius:14px; box-shadow:0 20px 60px rgba(20,35,70,.2); }
+.benchmark-modal-header { padding:18px 20px; display:flex; justify-content:space-between; gap:16px; border-bottom:1px solid #edf0f5; }
+.benchmark-modal-header h3 { margin:0; color:#1d3268; font-size:18px; }
+.benchmark-modal-header p { margin:5px 0 0; color:#7f8ca2; font-size:12px; }
+.benchmark-form { padding:18px 20px; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.benchmark-field { padding:10px 12px; border:1px solid #e3e8f0; border-radius:8px; display:flex; align-items:center; justify-content:space-between; gap:12px; color:#314360; font-size:12px; }
+.benchmark-input-wrap { display:flex; align-items:center; gap:5px; flex-shrink:0; }
+.benchmark-input-wrap input {
+  width:68px;
+  padding:6px 7px;
+  border:1px solid #cfd7e5;
+  border-radius:5px;
+  background:#ffffff;
+  color:#111827;
+  font-weight:700;
+  color-scheme:light;
+}
+.benchmark-input-wrap input:focus {
+  background:#ffffff;
+  color:#111827;
+  border-color:#315de6;
+  outline:none;
+  box-shadow:0 0 0 2px rgba(49,93,230,.12);
+}
+.benchmark-input-wrap small { color:#8998ad; }
+.benchmark-error { margin:0 20px 12px; padding:8px 10px; border-radius:6px; background:#fff2f2; color:#b42318; font-size:12px; }
+.benchmark-actions { padding:0 20px 18px; display:flex; justify-content:flex-end; gap:8px; }
+.benchmark-cancel, .benchmark-save { padding:8px 12px; border-radius:6px; font-size:12px; cursor:pointer; }
+.benchmark-cancel { border:1px solid #d4dbe7; background:#fff; color:#52627a; }
+.benchmark-save { border:none; background:#315de6; color:#fff; display:flex; align-items:center; gap:6px; font-weight:700; }
+.benchmark-save:disabled { opacity:.6; cursor:not-allowed; }
+@media (max-width:650px) { .benchmark-form { grid-template-columns:1fr; } .report-controls { justify-content:flex-start; } }
+
 </style>

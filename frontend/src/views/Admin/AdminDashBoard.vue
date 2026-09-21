@@ -99,12 +99,48 @@ const selectPeriod = (period) => {
   resetSelectedItem()
 }
 
-const changeYear = () => {
-  resetSelectedItem()
+const fetchDashboardSummary = async () => {
+  const params = new URLSearchParams({
+    year: String(selectedYear.value),
+    semester: selectedSemester.value
+  })
+
+  const response = await fetch(`${API_BASE}/api/admin/dashboard?${params.toString()}`)
+  if (!response.ok) throw new Error('Cannot load dashboard summary')
+
+  const data = await response.json()
+  dashboardData.totalActivities = data.totalActivities ?? 0
+  dashboardData.totalStudents = data.totalStudents ?? 0
+  dashboardData.totalParticipants = data.totalParticipants ?? 0
+  dashboardData.completionRate = data.completionRate ?? 0
 }
 
-const changeSemester = () => {
+const changeYear = async () => {
   resetSelectedItem()
+  loading.value = true
+  error.value = null
+  try {
+    await fetchDashboardSummary()
+  } catch (err) {
+    console.error('Dashboard API Error:', err)
+    error.value = err.message
+  } finally {
+    loading.value = false
+  }
+}
+
+const changeSemester = async () => {
+  resetSelectedItem()
+  loading.value = true
+  error.value = null
+  try {
+    await fetchDashboardSummary()
+  } catch (err) {
+    console.error('Dashboard API Error:', err)
+    error.value = err.message
+  } finally {
+    loading.value = false
+  }
 }
 
 const fetchDashboard = async () => {
@@ -112,18 +148,7 @@ const fetchDashboard = async () => {
   error.value = null
 
   try {
-    // 1) Summary cards จาก Dashboard API
-    const dashboardResponse = await fetch(`${API_BASE}/api/admin/dashboard`)
-    if (!dashboardResponse.ok) throw new Error('Cannot load dashboard data')
-    const data = await dashboardResponse.json()
-
-    dashboardData.totalActivities = data.totalActivities ?? 0
-    dashboardData.totalStudents = data.totalStudents ?? 0
-    dashboardData.totalParticipants = data.totalParticipants ?? 0
-    dashboardData.completionRate = data.completionRate ?? 0
-
-    // 2) ดึง Activity จริงทั้งหมด
-    // ใช้ start_at เพื่อดูว่า "กิจกรรมจัดในเดือนไหน"
+    // 1) ดึง Activity จริงทั้งหมดก่อน เพื่อสร้างรายการปีและคำนวณกราฟ/Skill
     const activitiesResponse = await fetch(`${API_BASE}/api/activities`)
     if (!activitiesResponse.ok) throw new Error('Cannot load activities')
     const activitiesPayload = await activitiesResponse.json()
@@ -131,8 +156,7 @@ const fetchDashboard = async () => {
       ? activitiesPayload.activities
       : []
 
-    // 3) Detail endpoint มี staff_skills / participant_skills
-    // จึงดึงรายละเอียดเพื่อคำนวณ Skill Distribution ตามเดือน/ไตรมาส
+    // 2) Detail endpoint มี staff_skills / participant_skills
     const details = await Promise.all(
       activities.map(async (activity) => {
         const response = await fetch(`${API_BASE}/api/activities/${activity.id}`)
@@ -140,8 +164,11 @@ const fetchDashboard = async () => {
         return response.json()
       })
     )
-
     activityDetails.value = details
+
+    // ถ้าปีปัจจุบันไม่มีข้อมูลก็ยังคงเลือกได้ตามเดิม
+    // Summary จะกรองตามปี + Semester ที่ผู้ใช้เลือก
+    await fetchDashboardSummary()
   } catch (err) {
     console.error('Dashboard API Error:', err)
     error.value = err.message
@@ -323,7 +350,7 @@ const summaryCards = computed(() => [
     <section class="history-filter">
       <div class="history-filter-text">
         <strong>Dashboard History</strong>
-        <span>เลือกปีและภาคเรียนเพื่อดู Activity Growth และ Skill Distribution ย้อนหลัง</span>
+        <span>เลือกปีและภาคเรียนเพื่อดู Summary, Activity Growth และ Skill Distribution ย้อนหลัง</span>
       </div>
 
       <div class="history-filter-controls">

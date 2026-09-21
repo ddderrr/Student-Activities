@@ -155,6 +155,34 @@ class Skill(Base):
     label = Column(String(150), nullable=False)
 
 
+class StudentSkillBenchmark(Base):
+    """Benchmark ที่ Admin ปรับได้สำหรับ participant skills (1.0-5.0)."""
+    __tablename__ = "student_skill_benchmarks"
+
+    skill_key = Column(
+        String(80),
+        ForeignKey("skills.key", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    # เก็บเป็นจำนวนเต็ม x100 เพื่อเลี่ยง floating-point ใน DB เช่น 4.25 => 425
+    score_x100 = Column(Integer, nullable=False, default=400, server_default="400")
+    updated_at = Column(
+        DateTime(timezone=False),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "score_x100 >= 100 AND score_x100 <= 500",
+            name="ck_student_skill_benchmark_score",
+        ),
+    )
+
+    skill = relationship("Skill")
+
+
 class StudentRequest(Base):
     __tablename__ = "student_requests"
 

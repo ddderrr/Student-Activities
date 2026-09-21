@@ -11,3 +11,4 @@ python-multipart
 pytest
 httpx
 xlwt
+reportlab>=4.4,<5
