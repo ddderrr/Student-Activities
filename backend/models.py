@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     Date,
@@ -208,11 +209,62 @@ class StudentRequest(Base):
     )
 
     decided_at = Column(DateTime(timezone=False), nullable=True)
+    reject_reason = Column(Text, nullable=True)
 
     __table_args__ = (
         CheckConstraint(
             "status IN ('pending', 'approved', 'rejected')",
             name="ck_student_request_status",
+        ),
+    )
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # requester_student_id ของ student_requests ไม่ผูก FK กับ students
+    # (อาจไม่ใช่ student ที่มีอยู่ในระบบ) จึงเก็บ student_id เป็น string เฉย ๆ เหมือนกัน
+    student_id = Column(String(30), nullable=False, index=True)
+
+    source = Column(String(30), nullable=False)
+
+    external_activity_id = Column(
+        Integer,
+        ForeignKey("external_activities.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
+    request_id = Column(
+        Integer,
+        ForeignKey("student_requests.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+
+    # 'Pending' | 'Approved' | 'Rejected'
+    status = Column(String(20), nullable=False)
+
+    is_read = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+
+    created_at = Column(
+        DateTime(timezone=False),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('external_activity', 'student_request')",
+            name="ck_notification_source",
         ),
     )
 

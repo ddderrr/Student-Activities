@@ -11,6 +11,7 @@ import {
   X
 } from 'lucide-vue-next'
 import SkillLevelEditor from '../../components/Admin/SkillLevelEditor.vue'
+import DatePicker from '../../components/common/DatePicker.vue'
 import {
   API_BASE,
   EVIDENCE_EXTENSIONS,
@@ -31,14 +32,16 @@ const SKILLS_BY_ROLE = {
   organizer: STAFF_SKILLS
 }
 
-const notRelatedLevels = (definitions) =>
-  Object.fromEntries(definitions.map((skill) => [skill.key, null]))
+const DEFAULT_SKILL_LEVEL = 3
+
+const defaultLevels = (definitions) =>
+  Object.fromEntries(definitions.map((skill) => [skill.key, DEFAULT_SKILL_LEVEL]))
 
 // เก็บแยกตาม role เพื่อให้สลับบทบาทไปมาแล้วค่าที่ตั้งไว้ไม่หาย
-// เริ่มจาก "ไม่เกี่ยวข้อง" ทั้งหมด ให้นักศึกษาเลือกเฉพาะที่เกี่ยวข้อง
+// เริ่มจาก Level 3 ทั้งหมด นักศึกษาปรับระดับ หรือปิดเป็น "ไม่เกี่ยวข้อง" เองได้
 const emptySkillLevels = () => ({
-  participant: notRelatedLevels(PARTICIPANT_SKILLS),
-  organizer: notRelatedLevels(STAFF_SKILLS)
+  participant: defaultLevels(PARTICIPANT_SKILLS),
+  organizer: defaultLevels(STAFF_SKILLS)
 })
 
 /* =========================
@@ -81,9 +84,14 @@ const relatedSkillCount = computed(() =>
   Object.values(activeSkillLevels.value).filter((level) => level !== null).length
 )
 
-function setRole(role) {
-  form.value.role = role
-}
+// ตรวจทันทีที่เลือกวันที่ ไม่ต้องรอกด Submit ก่อนจะรู้ว่าช่วงวันที่ผิด
+const dateRangeError = computed(() => {
+  if (!form.value.start_date || !form.value.end_date) return ''
+
+  return form.value.end_date < form.value.start_date
+    ? 'วันที่สิ้นสุดต้องไม่อยู่ก่อนวันที่เริ่มต้น'
+    : ''
+})
 
 /* =========================
    Evidence file
@@ -157,8 +165,8 @@ function validateForm() {
     return 'กรุณากรอกข้อมูลที่มีเครื่องหมาย * ให้ครบ'
   }
 
-  if (value.end_date < value.start_date) {
-    return 'วันที่สิ้นสุดต้องไม่อยู่ก่อนวันที่เริ่มต้น'
+  if (dateRangeError.value) {
+    return dateRangeError.value
   }
 
   if (relatedSkillCount.value === 0) {
@@ -305,18 +313,22 @@ async function submitActivity() {
 
             <label class="field">
               <span>Start Date <b>*</b></span>
-              <input v-model="form.start_date" name="start_date" type="date" />
+              <DatePicker v-model="form.start_date" placeholder="Select start date" />
             </label>
 
             <label class="field">
               <span>End Date <b>*</b></span>
-              <input
+              <DatePicker
                 v-model="form.end_date"
-                name="end_date"
-                type="date"
-                :min="form.start_date || undefined"
+                :min="form.start_date"
+                placeholder="Select end date"
               />
             </label>
+
+            <p v-if="dateRangeError" class="field-error full">
+              <TriangleAlert :size="14" />
+              {{ dateRangeError }}
+            </p>
 
             <label class="field full">
               <span>Location <b>*</b></span>
@@ -414,6 +426,8 @@ async function submitActivity() {
           Evaluate the level of the skills you developed (1-5)
         </p>
 
+        <!-- ชุด Skill ตามบทบาทที่เลือกใน "Your Role" ด้านบน แท็บนี้แสดงผลอย่างเดียว
+             ไม่ใช่ตัวเลือก role อีกช่องหนึ่ง จึงปิดแท็บที่ไม่ตรง role ไว้ -->
         <div class="role-tabs" role="tablist" aria-label="Skill set">
           <button
             type="button"
@@ -421,7 +435,7 @@ async function submitActivity() {
             data-role="participant"
             :aria-selected="form.role === 'participant'"
             :class="{ active: form.role === 'participant' }"
-            @click="setRole('participant')"
+            :disabled="form.role !== 'participant'"
           >
             Participant
           </button>
@@ -431,7 +445,7 @@ async function submitActivity() {
             data-role="organizer"
             :aria-selected="form.role === 'organizer'"
             :class="{ active: form.role === 'organizer' }"
-            @click="setRole('organizer')"
+            :disabled="form.role !== 'organizer'"
           >
             Staff
           </button>
@@ -566,6 +580,19 @@ async function submitActivity() {
 }
 
 .field.full {
+  grid-column: 1 / -1;
+}
+
+.field-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 0;
+  color: #e0453a;
+  font-size: 12px;
+}
+
+.field-error.full {
   grid-column: 1 / -1;
 }
 
@@ -812,6 +839,11 @@ async function submitActivity() {
   background: #fff;
   color: #1c2434;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.role-tabs button:disabled {
+  color: #b0b8c4;
+  cursor: not-allowed;
 }
 
 .skill-summary {

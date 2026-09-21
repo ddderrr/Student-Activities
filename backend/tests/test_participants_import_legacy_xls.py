@@ -114,3 +114,49 @@ def test_confirm_legacy_xls_creates_student_and_membership_with_blank_email(
     )
     assert membership is not None
     assert membership.role == "participant"
+
+
+def test_update_participant_role_without_email_after_import(
+    client,
+    db_session,
+):
+    activity = create_activity(db_session)
+
+    content = build_legacy_xls(
+        [
+            [1, "670510670", "จักริน ชวชาติ", "คณะวิทยาศาสตร์", "10:05:00"],
+        ]
+    )
+
+    students = preview(client, activity.id, content).json()["students"]
+    confirm(client, activity.id, students)
+
+    student = db_session.get(Student, "670510670")
+    assert student.email == ""
+
+    response = client.patch(
+        f"/api/activities/{activity.id}/participants/670510670",
+        json={
+            "first_name": "จักริน",
+            "last_name": "ชวชาติ",
+            "email": "",
+            "faculty": "คณะวิทยาศาสตร์",
+            "major": "",
+            "role": "organizer",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["role"] == "organizer"
+    assert body["email"] == ""
+
+    membership = (
+        db_session.query(ActivityMember)
+        .filter_by(
+            activity_id=activity.id,
+            student_id="670510670",
+        )
+        .one_or_none()
+    )
+    assert membership.role == "organizer"

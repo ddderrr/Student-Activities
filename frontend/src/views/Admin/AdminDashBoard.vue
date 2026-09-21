@@ -164,10 +164,18 @@ const fetchDashboard = async () => {
         return response.json()
       })
     )
-    activityDetails.value = details
+    // 3) กิจกรรมภายนอกที่อนุมัติแล้ว นับรวมใน "การเติบโตของกิจกรรม" ด้วย
+    // (ไม่มี staff_skills/participant_skills จึงไม่กระทบ Skill Distribution)
+    const externalResponse = await fetch(`${API_BASE}/api/admin/dashboard/external-activities`)
+    const externalPayload = externalResponse.ok ? await externalResponse.json() : null
+    const externalActivities = Array.isArray(externalPayload?.external_activities)
+      ? externalPayload.external_activities
+      : []
+
+    activityDetails.value = [...details, ...externalActivities]
 
     // ถ้าปีปัจจุบันไม่มีข้อมูลก็ยังคงเลือกได้ตามเดิม
-    // Summary จะกรองตามปี + Semester ที่ผู้ใช้เลือก
+    // Summary จะกรองตามปี + Semester ที่ผู้ใช้เลือก (รวมกิจกรรมภายนอกแล้วฝั่ง backend)
     await fetchDashboardSummary()
   } catch (err) {
     console.error('Dashboard API Error:', err)
@@ -1050,6 +1058,26 @@ const summaryCards = computed(() => [
   overflow-y: hidden;
 
   padding-bottom: 4px;
+
+  scrollbar-width: thin;
+  scrollbar-color: #cfd8e5 #ffffff;
+}
+
+.chart-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.chart-scroll::-webkit-scrollbar-track {
+  background: #ffffff;
+}
+
+.chart-scroll::-webkit-scrollbar-thumb {
+  background: #cfd8e5;
+  border-radius: 8px;
+}
+
+.chart-scroll::-webkit-scrollbar-thumb:hover {
+  background: #b6c2d4;
 }
 
 

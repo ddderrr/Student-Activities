@@ -128,16 +128,51 @@ const decisionComment = ref('')
 const decisionError = ref('')
 const deciding = ref(false)
 
-function openDecision(request, status) {
+// Skill Mapping ที่นักศึกษาตั้งไว้ โชว์ให้ admin ยืนยันก่อนอนุมัติกิจกรรมภายนอก
+const decisionSkillItem = ref(null)
+const decisionSkillLoading = ref(false)
+
+const decisionSkillRows = computed(() => {
+  if (!decisionSkillItem.value) return []
+
+  const definitions =
+    decisionSkillItem.value.skill_target_role === 'staff'
+      ? STAFF_SKILLS
+      : PARTICIPANT_SKILLS
+
+  return definitions
+    .map((skill) => ({
+      ...skill,
+      level: decisionSkillItem.value.skills?.[skill.key] ?? null
+    }))
+    .sort((a, b) => (b.level ?? 0) - (a.level ?? 0))
+})
+
+async function openDecision(request, status) {
   decisionTarget.value = { request, status }
   decisionComment.value = ''
   decisionError.value = ''
   successMessage.value = ''
+  decisionSkillItem.value = null
+
+  if (status !== 'approved' || !isExternal(request)) return
+
+  decisionSkillLoading.value = true
+
+  try {
+    const response = await fetch(`${API_BASE}/api/external-activities/${request.id}`)
+    const data = await response.json().catch(() => null)
+
+    if (response.ok) decisionSkillItem.value = data
+  } finally {
+    decisionSkillLoading.value = false
+  }
 }
 
 function closeDecision() {
   if (deciding.value) return
   decisionTarget.value = null
+  decisionSkillItem.value = null
 }
 
 async function confirmDecision() {
@@ -155,29 +190,33 @@ async function confirmDecision() {
 
   deciding.value = true
 
+  // external activity ใช้ /decision ส่วนคำขอทั่วไปใช้ /api/requests/{id} ตรง ๆ
+  const endpoint = isExternal(request)
+    ? `${API_BASE}/api/external-activities/${request.id}/decision`
+    : `${API_BASE}/api/requests/${request.id}`
+
   try {
-    const response = await fetch(
-      `${API_BASE}/api/external-activities/${request.id}/decision`,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          status === 'approved'
-            ? { status }
-            // คอมเมนต์นี้แสดงให้นักศึกษาเห็นใน My Submissions
-            : { status, reject_reason: comment }
-        )
-      }
-    )
+    const response = await fetch(endpoint, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(
+        status === 'approved'
+          ? { status }
+          // คอมเมนต์นี้แสดงให้นักศึกษาเห็นใน My Submissions และส่งเป็น Notification
+          : { status, reject_reason: comment }
+      )
+    })
 
     const data = await response.json().catch(() => null)
 
     if (!response.ok) throw new Error(data?.detail || 'บันทึกไม่สำเร็จ')
 
+    const label = request.detail || request.requester_name
+
     successMessage.value =
       status === 'approved'
-        ? `อนุมัติ "${data.title}" แล้ว`
-        : `ไม่อนุมัติ "${data.title}" แล้ว`
+        ? `อนุมัติ "${label}" แล้ว`
+        : `ไม่อนุมัติ "${label}" แล้ว`
 
     deciding.value = false
     closeDecision()
@@ -256,6 +295,17 @@ function formatDate(value) {
   })
 
   return `${datePart} | ${timePart}`
+}
+
+// External activity ไม่เก็บเวลาจากฟอร์ม (มีแค่วันที่) จึงโชว์วันที่สั้น ๆ พอ ไม่โชว์เวลา
+function formatDateOnly(value) {
+  if (!value) return '-'
+
+  return new Date(value).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  })
 }
 
 async function fetchStats() {
@@ -454,7 +504,9 @@ async function decideRequest(request, status) {
                 </div>
               </td>
 
-              <td class="date-cell">{{ formatDate(request.submitted_at) }}</td>
+              <td class="date-cell">
+                {{ isExternal(request) ? formatDateOnly(request.submitted_at) : formatDate(request.submitted_at) }}
+              </td>
 
               <td>
                 <button
@@ -496,7 +548,7 @@ async function decideRequest(request, status) {
                   <button
                     class="reject-button"
                     :disabled="actionLoadingId === rowKey(request)"
-                    @click="decideRequest(request, 'rejected')"
+                    @click="openDecision(request, 'rejected')"
                   >
                     ยกเลิก
                   </button>
@@ -609,7 +661,7 @@ async function decideRequest(request, status) {
                 <dt>Location</dt>
                 <dd data-field="location">{{ reviewItem.location }}</dd>
                 <dt>Submitted</dt>
-                <dd>{{ formatDate(reviewItem.submitted_at) }}</dd>
+                <dd>{{ formatDateOnly(reviewItem.submitted_at) }}</dd>
               </dl>
               <div class="review-description" data-field="description">
                 {{ reviewItem.description || 'ไม่มีคำอธิบาย' }}
@@ -711,10 +763,47 @@ async function decideRequest(request, status) {
           </span>
         </div>
 
-        <p v-if="decisionTarget.status === 'approved'" class="decision-text">
-          ต้องการอนุมัติกิจกรรมนี้ใช่หรือไม่? กิจกรรมและ Skill Mapping ที่นักศึกษาตั้งไว้
-          จะถูกนับรวมในหน้า My Activities ของนักศึกษา
-        </p>
+        <template v-if="decisionTarget.status === 'approved'">
+          <p v-if="isExternal(decisionTarget.request)" class="decision-text">
+            ต้องการอนุมัติกิจกรรมนี้ใช่หรือไม่? กิจกรรมและ Skill Mapping ที่นักศึกษาตั้งไว้
+            จะถูกนับรวมในหน้า My Activities ของนักศึกษา
+          </p>
+          <p v-else class="decision-text">
+            ต้องการอนุมัติคำขอนี้ใช่หรือไม่?
+          </p>
+
+          <div v-if="isExternal(decisionTarget.request)" class="decision-skill-summary">
+            <h4>Skill Mapping (by student)</h4>
+
+            <p v-if="decisionSkillLoading" class="load-status">กำลังโหลด Skill Mapping...</p>
+
+            <ul v-else class="skill-readonly compact">
+              <li
+                v-for="skill in decisionSkillRows"
+                :key="skill.key"
+                :data-skill="skill.key"
+                :class="{ 'not-related': skill.level === null }"
+              >
+                <div class="skill-readonly-name">
+                  <strong>{{ skill.label }}</strong>
+                </div>
+
+                <div class="skill-readonly-level">
+                  <span v-if="skill.level !== null" class="level-bar" aria-hidden="true">
+                    <i
+                      v-for="level in 5"
+                      :key="level"
+                      :class="{ filled: level <= skill.level }"
+                    ></i>
+                  </span>
+                  <span class="level-text">
+                    {{ skill.level === null ? 'ไม่เกี่ยวข้อง' : `Level ${skill.level}` }}
+                  </span>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </template>
 
         <label v-else class="reject-field">
           <span>ความคิดเห็น / เหตุผลที่ไม่อนุมัติ *</span>
@@ -724,7 +813,7 @@ async function decideRequest(request, status) {
             placeholder="อธิบายว่าทำไมไม่อนุมัติ หรือนักศึกษาต้องแก้ไขอะไร เช่น ไฟล์หลักฐานไม่ชัดเจน กรุณาแนบใหม่"
             @input="decisionError = ''"
           ></textarea>
-          <small class="decision-hint">ความคิดเห็นนี้จะแสดงให้นักศึกษาเห็นในหน้า My Submissions</small>
+          <small class="decision-hint">ความคิดเห็นนี้จะส่งเป็นการแจ้งเตือน (Notification) ให้นักศึกษาเห็นทันที</small>
         </label>
 
         <div v-if="decisionError" class="review-error" role="alert">
@@ -1307,6 +1396,7 @@ tbody td {
   padding: 9px 11px;
   border: 1px solid #f1c3c0;
   border-radius: 8px;
+  background: #fff;
   color: #1c293d;
   font: inherit;
   font-size: 13px;
@@ -1357,6 +1447,32 @@ tbody td {
 
 .decision-modal .reject-field {
   margin-top: 14px;
+}
+
+.decision-skill-summary {
+  margin-top: 14px;
+  padding: 12px 13px;
+  border: 1px solid #e5eaf2;
+  border-radius: 10px;
+  background: #f8fafd;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.decision-skill-summary h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.skill-readonly.compact li {
+  padding: 8px 0;
+}
+
+.skill-readonly.compact .skill-readonly-name small {
+  display: none;
 }
 
 .decision-hint {

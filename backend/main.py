@@ -38,6 +38,7 @@ from models import (
     ActivitySkill,
     ExternalActivity,
     ExternalActivitySkill,
+    Notification,
     Skill,
     Student,
     StudentRequest,
@@ -182,8 +183,9 @@ def get_admin_dashboard(
     Dashboard summary for the selected activity year/semester.
 
     Activities, participants, completion rate and Activity Growth all use
-    Activity.start_at as the reporting period. Student count remains the
-    faculty/system total because students are master data, not activities.
+    the real activity date (Activity.start_at / ExternalActivity.start_date)
+    as the reporting period. Student count remains the faculty/system total
+    because students are master data, not activities.
     """
     now_value = datetime.now()
     selected_year = year or now_value.year
@@ -199,7 +201,19 @@ def get_admin_dashboard(
         .all()
     )
 
-    total_activities = len(period_activities)
+    # กิจกรรมภายนอกที่อนุมัติแล้ว นับรวมด้วย ใช้ start_date เป็น reporting period
+    # เดียวกับ Activity.start_at เพื่อให้กรองตามปี/เทอมที่เลือกสอดคล้องกัน
+    period_external_activities = (
+        db.query(ExternalActivity)
+        .filter(
+            ExternalActivity.status == "approved",
+            func.extract("year", ExternalActivity.start_date) == selected_year,
+            func.extract("month", ExternalActivity.start_date).in_(selected_months),
+        )
+        .all()
+    )
+
+    total_activities = len(period_activities) + len(period_external_activities)
     period_activity_ids = [activity.id for activity in period_activities]
 
     total_students = (
@@ -208,19 +222,33 @@ def get_admin_dashboard(
         or 0
     )
 
-    # Participants follow the same selected activity period.
+    # Participants follow the same selected activity period: admin activities
+    # (role participant) + approved external activities (role participant).
+    internal_participant_ids = set()
+
     if period_activity_ids:
-        total_participants = (
-            db.query(func.count(func.distinct(ActivityMember.student_id)))
-            .filter(
-                ActivityMember.role == "participant",
-                ActivityMember.activity_id.in_(period_activity_ids),
+        internal_participant_ids = {
+            row[0]
+            for row in (
+                db.query(ActivityMember.student_id)
+                .filter(
+                    ActivityMember.role == "participant",
+                    ActivityMember.activity_id.in_(period_activity_ids),
+                )
+                .distinct()
+                .all()
             )
-            .scalar()
-            or 0
-        )
-    else:
-        total_participants = 0
+        }
+
+    external_participant_ids = {
+        activity.student_id
+        for activity in period_external_activities
+        if activity.role == "participant"
+    }
+
+    total_participants = len(
+        internal_participant_ids | external_participant_ids
+    )
 
     # Cancelled activities are kept in the Activities card, but excluded from
     # the completion-rate denominator because they were not expected to finish.
@@ -241,11 +269,15 @@ def get_admin_dashboard(
         else 0
     )
 
-    # Activity Growth uses start_at and the selected year/semester.
+    # Activity Growth uses start_at/start_date and the selected year/semester.
     monthly_counts = [0] * 12
     for activity in period_activities:
         if activity.start_at is not None:
             monthly_counts[activity.start_at.month - 1] += 1
+
+    for activity in period_external_activities:
+        if activity.start_date is not None:
+            monthly_counts[activity.start_date.month - 1] += 1
 
     activity_growth = [
         {
@@ -322,6 +354,64 @@ def get_admin_dashboard(
         "availableYears": available_years,
     }
 
+
+@app.get("/api/admin/dashboard/external-activities")
+def get_dashboard_external_activities(
+    db: Session = Depends(get_db),
+):
+    """
+    กิจกรรมภายนอกที่อนุมัติแล้วทั้งหมด (ไม่แบ่งหน้า) ให้หน้า Dashboard
+    เอาไปรวมกับ /api/activities ตอนคำนวณ "การเติบโตของกิจกรรม" และ
+    "Skill Distribution" ตามเดือนที่เลือกเอง (ใช้ start_date เหมือน
+    start_at ของกิจกรรมปกติ, participant_skills/staff_skills รูปแบบ
+    เดียวกับ /api/activities/{id} เพื่อให้ frontend ใช้ logic เดิมได้เลย)
+    """
+
+    activities = (
+        db.query(ExternalActivity.id, ExternalActivity.start_date)
+        .filter(ExternalActivity.status == "approved")
+        .all()
+    )
+
+    skill_rows = (
+        db.query(
+            ExternalActivitySkill.external_activity_id,
+            ExternalActivitySkill.target_role,
+            ExternalActivitySkill.skill_key,
+            ExternalActivitySkill.level,
+        )
+        .join(
+            ExternalActivity,
+            ExternalActivity.id == ExternalActivitySkill.external_activity_id,
+        )
+        .filter(ExternalActivity.status == "approved")
+        .all()
+    )
+
+    skills_by_activity: dict[int, dict[str, dict]] = {}
+
+    for activity_id, target_role, skill_key, level in skill_rows:
+        bucket = skills_by_activity.setdefault(
+            activity_id,
+            {"participant": {}, "staff": {}},
+        )
+        bucket[target_role][skill_key] = level
+
+    return {
+        "external_activities": [
+            {
+                "id": f"external-{activity_id}",
+                "start_at": start_date.isoformat(),
+                "participant_skills": skills_by_activity.get(
+                    activity_id, {}
+                ).get("participant", {}),
+                "staff_skills": skills_by_activity.get(
+                    activity_id, {}
+                ).get("staff", {}),
+            }
+            for activity_id, start_date in activities
+        ],
+    }
 
 
 # ============================================================
@@ -2027,7 +2117,7 @@ def update_activity_participant(
             detail="ชื่อ/นามสกุลไม่ครบ",
         )
 
-    if "@" not in email:
+    if email and "@" not in email:
         raise HTTPException(
             status_code=400,
             detail="อีเมลไม่ถูกต้อง",
@@ -2114,10 +2204,21 @@ def get_current_student(
     student = db.get(Student, student_id)
 
     if not student:
-        raise HTTPException(
-            status_code=404,
-            detail="ไม่พบนักศึกษา",
+        # Demo/bypass mode: ยังไม่มีระบบ login นักศึกษาจริง ถ้า student ตาม
+        # X-Student-Id ยังไม่มีในระบบ ให้สร้าง mock student ให้อัตโนมัติ
+        # เพื่อให้ยิง flow นี้ (เช่น submit external activity) ได้ทันทีตอนเดโม
+        student = Student(
+            student_id=student_id,
+            first_name="Demo",
+            last_name="Student",
+            email="",
+            faculty="Faculty of Science",
+            major="",
         )
+
+        db.add(student)
+        db.commit()
+        db.refresh(student)
 
     return student
 
@@ -2387,6 +2488,135 @@ async def submit_external_activity(
     return serialize_external_activity(external_activity)
 
 
+@app.put("/api/student/me/external-activities/{external_activity_id}")
+async def update_external_activity(
+    external_activity_id: int,
+    title: str = Form(...),
+    organization: str = Form(...),
+    activity_type: str = Form(...),
+    start_date: date = Form(...),
+    end_date: date = Form(...),
+    location: str = Form(...),
+    role: str = Form(...),
+    description: str = Form(""),
+    skills: str = Form(...),
+    evidence: UploadFile | None = File(None),
+    student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    """
+    แก้ไขกิจกรรมภายนอกที่ถูกไม่อนุมัติ แล้วส่งใหม่ (status กลับเป็น pending)
+    ไฟล์หลักฐานเป็น optional: ถ้าไม่แนบไฟล์ใหม่มา ใช้ไฟล์เดิมต่อ
+    """
+    external_activity = db.get(ExternalActivity, external_activity_id)
+
+    if (
+        not external_activity
+        or external_activity.student_id != student.student_id
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบกิจกรรมภายนอกนี้",
+        )
+
+    if external_activity.status != "rejected":
+        raise HTTPException(
+            status_code=400,
+            detail="แก้ไขได้เฉพาะกิจกรรมที่ไม่ได้รับการอนุมัติเท่านั้น",
+        )
+
+    values = {
+        "title": title,
+        "organization": organization,
+        "activity_type": activity_type,
+        "location": location,
+    }
+
+    validate_required_text({**values, "role": role})
+
+    for field_name, max_length in EXTERNAL_ACTIVITY_MAX_LENGTHS.items():
+        if len(values[field_name].strip()) > max_length:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{field_name} ยาวเกิน {max_length} ตัวอักษร",
+            )
+
+    role = role.strip().lower()
+
+    if role not in EXTERNAL_ROLE_SKILLS:
+        raise HTTPException(
+            status_code=400,
+            detail="role ต้องเป็น participant หรือ organizer",
+        )
+
+    if end_date < start_date:
+        raise HTTPException(
+            status_code=400,
+            detail="วันที่สิ้นสุดต้องไม่อยู่ก่อนวันที่เริ่มต้น",
+        )
+
+    target_role, related_skills = parse_submitted_skills(skills, role)
+
+    new_evidence_file = None
+    new_evidence_path = None
+
+    if evidence is not None:
+        new_evidence_file = await read_evidence_file(evidence)
+        new_evidence_path = (
+            EXTERNAL_ACTIVITY_UPLOAD_DIR / new_evidence_file["stored_name"]
+        )
+        new_evidence_path.write_bytes(new_evidence_file["contents"])
+
+    old_evidence_filename = external_activity.evidence_filename
+
+    try:
+        external_activity.title = title.strip()
+        external_activity.organization = organization.strip()
+        external_activity.activity_type = activity_type.strip()
+        external_activity.start_date = start_date
+        external_activity.end_date = end_date
+        external_activity.location = location.strip()
+        external_activity.role = role
+        external_activity.description = description.strip()
+
+        external_activity.status = "pending"
+        external_activity.reject_reason = None
+        external_activity.decided_at = None
+        external_activity.submitted_at = datetime.now()
+
+        if new_evidence_file is not None:
+            external_activity.evidence_filename = new_evidence_file["stored_name"]
+            external_activity.evidence_original_name = new_evidence_file["original_name"]
+            external_activity.evidence_content_type = new_evidence_file["content_type"]
+            external_activity.evidence_size = len(new_evidence_file["contents"])
+
+        # cascade="all, delete-orphan" ทำให้ของเก่าถูกลบและแทนที่ด้วยชุดใหม่
+        external_activity.skill_levels = [
+            ExternalActivitySkill(
+                skill_key=skill_key,
+                target_role=target_role,
+                level=level,
+            )
+            for skill_key, level in related_skills.items()
+        ]
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        if new_evidence_path is not None:
+            new_evidence_path.unlink(missing_ok=True)
+        raise
+
+    if new_evidence_file is not None and old_evidence_filename:
+        (EXTERNAL_ACTIVITY_UPLOAD_DIR / old_evidence_filename).unlink(
+            missing_ok=True
+        )
+
+    db.refresh(external_activity)
+
+    return serialize_external_activity(external_activity)
+
+
 @app.get("/api/student/me/external-activities")
 def list_my_external_activities(
     student: Student = Depends(get_current_student),
@@ -2409,6 +2639,91 @@ def list_my_external_activities(
             for item in items
         ],
     }
+
+
+def create_notification(
+    db: Session,
+    *,
+    student_id: str,
+    title: str,
+    message: str,
+    status: str,
+    source: str,
+    external_activity_id: int | None = None,
+    request_id: int | None = None,
+) -> None:
+    db.add(
+        Notification(
+            student_id=student_id,
+            source=source,
+            external_activity_id=external_activity_id,
+            request_id=request_id,
+            title=title,
+            message=message,
+            status=status,
+        )
+    )
+
+
+def serialize_notification(notification: Notification) -> dict:
+    return {
+        "id": notification.id,
+        "activityId": notification.external_activity_id or notification.request_id,
+        "title": notification.title,
+        "message": notification.message,
+        "status": notification.status,
+        "read": notification.is_read,
+    }
+
+
+@app.get("/api/student/me/notifications")
+def list_my_notifications(
+    student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    notifications = (
+        db.query(Notification)
+        .filter(Notification.student_id == student.student_id)
+        .order_by(Notification.created_at.desc())
+        .all()
+    )
+
+    return [serialize_notification(item) for item in notifications]
+
+
+@app.patch("/api/student/me/notifications/mark-all-read")
+def mark_all_notifications_read(
+    student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    db.query(Notification).filter(
+        Notification.student_id == student.student_id,
+        Notification.is_read.is_(False),
+    ).update({"is_read": True})
+
+    db.commit()
+
+    return {"updated": True}
+
+
+@app.patch("/api/student/me/notifications/{notification_id}/read")
+def mark_notification_read(
+    notification_id: int,
+    student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    notification = db.get(Notification, notification_id)
+
+    if not notification or notification.student_id != student.student_id:
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบการแจ้งเตือนนี้",
+        )
+
+    notification.is_read = True
+    db.commit()
+
+    return serialize_notification(notification)
 
 
 @app.get("/api/student/me/activities")
@@ -3212,6 +3527,16 @@ def decide_external_activity(
 
         external_activity.reject_reason = reject_reason
 
+        create_notification(
+            db,
+            student_id=external_activity.student_id,
+            title=external_activity.title,
+            message=reject_reason,
+            status="Rejected",
+            source="external_activity",
+            external_activity_id=external_activity.id,
+        )
+
     external_activity.status = payload.status
     external_activity.decided_at = datetime.now()
 
@@ -3241,6 +3566,7 @@ class StudentRequestCreate(BaseModel):
 
 class RequestDecision(BaseModel):
     status: str
+    reject_reason: str | None = None
 
 
 def serialize_request(request: StudentRequest) -> dict:
@@ -3256,6 +3582,7 @@ def serialize_request(request: StudentRequest) -> dict:
         ),
         "detail": request.detail,
         "status": request.status,
+        "reject_reason": request.reject_reason,
         "submitted_at": request.submitted_at,
         "decided_at": request.decided_at,
     }
@@ -3471,6 +3798,33 @@ def decide_request(
             status_code=400,
             detail="คำขอนี้ถูกดำเนินการไปแล้ว",
         )
+
+    if payload.status == "rejected":
+        reject_reason = (payload.reject_reason or "").strip()
+
+        if not reject_reason:
+            raise HTTPException(
+                status_code=400,
+                detail="กรุณาระบุเหตุผลที่ไม่อนุมัติ",
+            )
+
+        request.reject_reason = reject_reason
+
+        create_notification(
+            db,
+            student_id=request.requester_student_id,
+            title=request.detail
+            or REQUEST_TYPE_DEFINITIONS.get(
+                request.request_type,
+                request.request_type,
+            ),
+            message=reject_reason,
+            status="Rejected",
+            source="student_request",
+            request_id=request.id,
+        )
+    else:
+        request.reject_reason = None
 
     request.status = payload.status
     request.decided_at = datetime.now()

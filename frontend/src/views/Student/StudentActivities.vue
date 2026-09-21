@@ -426,11 +426,24 @@ const openActivityFromNotification = async () => {
         item.id === activityId
     )
 
+  // Notification ของกิจกรรมภายนอกจะอ้าง id จาก My Submissions ไม่ใช่ Faculty Activities
+  const submission =
+    !activity &&
+    submissions.value.find(
+      item =>
+        item.id === activityId
+    )
+
 
   if (activity) {
 
     selectedActivity.value =
       activity
+
+  } else if (submission) {
+
+    sourceFilter.value = 'submissions'
+    selectedActivity.value = submission
 
   }
 

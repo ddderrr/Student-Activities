@@ -34,6 +34,8 @@ import StudentSideBar
 
   from '../components/Student/StudentSideBar.vue'
 
+import { API_BASE, studentHeaders } from '../constants/currentStudent'
+
 const router = useRouter()
 
 
@@ -126,63 +128,44 @@ const currentStudent = ref({
 
    Notifications
 
-   Mock ก่อนต่อ Backend
-
-   activityId ต้องตรงกับ id ใน StudentActivities.vue
+   ดึงจาก GET /api/student/me/notifications
+   activityId ที่ได้มาคือ external_activity_id (ใช้เปิด My Submissions)
 
 ===================================================== */
 
-const notifications = ref([
+const notifications = ref([])
 
-  {
+const fetchNotifications = async () => {
 
-    id: 1,
+  try {
 
-    activityId: 1,
+    const response = await fetch(
 
-    title: 'Science Volunteer Camp',
+      `${API_BASE}/api/student/me/notifications`,
 
-    message: 'Your activity is still waiting for approval.',
+      { headers: studentHeaders() }
 
-    status: 'Pending',
+    )
 
-    read: false
+    if (!response.ok) {
 
-  },
+      throw new Error(
+        'Cannot load notifications'
+      )
 
-  {
+    }
 
-    id: 2,
+    notifications.value =
 
-    activityId: 2,
+      await response.json()
 
-    title: 'Leadership Workshop',
+  } catch (error) {
 
-    message: 'Your activity is still waiting for approval.',
-
-    status: 'Pending',
-
-    read: false
-
-  },
-
-  {
-
-    id: 3,
-
-    activityId: 4,
-
-    title: 'Programming Workshop',
-
-    message: 'Your activity was not approved. Please check the details.',
-
-    status: 'Rejected',
-
-    read: false
+    notifications.value = []
 
   }
 
-])
+}
 
 
 
@@ -260,7 +243,7 @@ const openNotification = async (notification) => {
 
   /*
 
-    ถือว่าอ่านข้อความนี้แล้ว
+    ถือว่าอ่านข้อความนี้แล้ว (อัปเดตทั้งฝั่ง UI และ backend)
 
   */
 
@@ -269,6 +252,14 @@ const openNotification = async (notification) => {
   notificationOpen.value = false
 
   profileOpen.value = false
+
+  fetch(
+
+    `${API_BASE}/api/student/me/notifications/${notification.id}/read`,
+
+    { method: 'PATCH', headers: studentHeaders() }
+
+  ).catch(() => {})
 
   /*
 
@@ -283,6 +274,8 @@ const openNotification = async (notification) => {
     ของ Activity id 4 ให้อัตโนมัติ
 
   */
+
+  if (!notification.activityId) return
 
   await router.push({
 
@@ -311,6 +304,14 @@ const markAllAsRead = () => {
     }
 
   )
+
+  fetch(
+
+    `${API_BASE}/api/student/me/notifications/mark-all-read`,
+
+    { method: 'PATCH', headers: studentHeaders() }
+
+  ).catch(() => {})
 
 }
 
@@ -382,6 +383,8 @@ onMounted(() => {
 
   )
 
+  fetchNotifications()
+
 })
 
 
@@ -397,70 +400,6 @@ onBeforeUnmount(() => {
   )
 
 })
-
-
-
-/* =====================================================
-
-   Backend API
-
-   เปิดใช้ภายหลัง
-
-===================================================== */
-
-/*
-
-const fetchCurrentStudent = async () => {
-
-  const response = await fetch(
-
-    'http://localhost:8000/api/student/me'
-
-  )
-
-  if (!response.ok) {
-
-    throw new Error(
-
-      'Cannot load student profile'
-
-    )
-
-  }
-
-  currentStudent.value =
-
-    await response.json()
-
-}
-
-
-
-const fetchNotifications = async () => {
-
-  const response = await fetch(
-
-    'http://localhost:8000/api/student/me/notifications'
-
-  )
-
-  if (!response.ok) {
-
-    throw new Error(
-
-      'Cannot load notifications'
-
-    )
-
-  }
-
-  notifications.value =
-
-    await response.json()
-
-}
-
-*/
 
 </script>
 
