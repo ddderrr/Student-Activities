@@ -11,6 +11,8 @@ export function studentHeaders(extra = {}) {
   }
 }
 
+export const OTHER_CATEGORY_VALUE = 'อื่น ๆ'
+
 export const EXTERNAL_ACTIVITY_CATEGORIES = [
   'จิตอาสา / บริการสังคม',
   'อบรม / Workshop',
@@ -19,7 +21,7 @@ export const EXTERNAL_ACTIVITY_CATEGORIES = [
   'ค่ายกิจกรรม',
   'ศิลปะและวัฒนธรรม',
   'กีฬาและสุขภาพ',
-  'อื่น ๆ'
+  OTHER_CATEGORY_VALUE
 ]
 
 export const EXTERNAL_ROLE_OPTIONS = [

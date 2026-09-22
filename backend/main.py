@@ -649,6 +649,94 @@ def get_admin_student_skills(
     }
 
 
+@app.get("/api/admin/students/{student_id}/activities")
+def get_admin_student_activities(
+    student_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    ประวัติกิจกรรมทั้งหมดของนักศึกษา 1 คน (มุมมอง Admin) ใช้กับปุ่ม
+    "ดูกิจกรรม" ในหน้า Student Skills
+
+    ต่างจาก /api/student/me/activities ตรงที่กิจกรรมภายนอกจะคืนมา
+    "ทุกสถานะ" (pending/approved/rejected) เพราะ admin ต้องเห็น
+    ประวัติทั้งหมด ไม่ใช่แค่ที่อนุมัติแล้ว
+    """
+    student = db.get(Student, student_id)
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบนักศึกษา",
+        )
+
+    items = []
+
+    memberships = (
+        db.query(ActivityMember, Activity)
+        .join(Activity, Activity.id == ActivityMember.activity_id)
+        .filter(ActivityMember.student_id == student_id)
+        .all()
+    )
+
+    for member, activity in memberships:
+        items.append(
+            {
+                "source": "activity",
+                "id": activity.id,
+                "title": activity.name,
+                "activity_type": activity.activity_type,
+                "start_at": activity.start_at,
+                "end_at": activity.end_at,
+                "role": member.role,
+                # กิจกรรมของคณะ: admin เป็นคนเพิ่มสมาชิกเอง ถือว่า
+                # approved แล้วโดยปริยาย ไม่มี workflow อนุมัติแยก
+                "status": "approved",
+            }
+        )
+
+    external_activities = (
+        db.query(ExternalActivity)
+        .filter(ExternalActivity.student_id == student_id)
+        .all()
+    )
+
+    for external_activity in external_activities:
+        items.append(
+            {
+                "source": "external_activity",
+                "id": external_activity.id,
+                "title": external_activity.title,
+                "activity_type": external_activity.activity_type,
+                "start_at": datetime.combine(
+                    external_activity.start_date,
+                    datetime.min.time(),
+                ),
+                "end_at": datetime.combine(
+                    external_activity.end_date,
+                    datetime.min.time(),
+                ),
+                "role": external_activity.role,
+                "status": external_activity.status,
+            }
+        )
+
+    items.sort(
+        key=lambda item: (item["start_at"], item["source"], item["id"]),
+        reverse=True,
+    )
+
+    return {
+        "student": {
+            "student_id": student.student_id,
+            "first_name": student.first_name,
+            "last_name": student.last_name,
+        },
+        "total": len(items),
+        "activities": items,
+    }
+
+
 # ============================================================
 # ACTIVITY
 # ============================================================

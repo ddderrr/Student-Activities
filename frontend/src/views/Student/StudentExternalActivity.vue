@@ -20,6 +20,7 @@ import {
   EVIDENCE_MAX_BYTES,
   EXTERNAL_ACTIVITY_CATEGORIES,
   EXTERNAL_ROLE_OPTIONS,
+  OTHER_CATEGORY_VALUE,
   formatFileSize,
   studentHeaders
 } from '../../constants/currentStudent'
@@ -74,6 +75,71 @@ const formError = ref('')
 const successMessage = ref('')
 const submitting = ref(false)
 
+/* =========================
+   Category ("อื่น ๆ" custom category modal)
+========================= */
+// select แสดงตัวเลือกที่เลือกไว้ ส่วน form.activity_type คือค่าจริงที่ส่งไป backend
+// (เมื่อเลือก "อื่น ๆ" ค่าที่ส่งจริงคือข้อความที่นักศึกษาพิมพ์เอง ไม่ใช่คำว่า "อื่น ๆ")
+const selectedCategory = ref('')
+const customCategoryText = ref('')
+const showCategoryModal = ref(false)
+const categoryModalDraft = ref('')
+const categoryModalError = ref('')
+let lastConfirmedCategory = ''
+
+function applyCategoryFromValue(activityType) {
+  if (activityType && EXTERNAL_ACTIVITY_CATEGORIES.includes(activityType)) {
+    selectedCategory.value = activityType
+    customCategoryText.value = ''
+  } else if (activityType) {
+    selectedCategory.value = OTHER_CATEGORY_VALUE
+    customCategoryText.value = activityType
+  } else {
+    selectedCategory.value = ''
+    customCategoryText.value = ''
+  }
+
+  lastConfirmedCategory = selectedCategory.value
+}
+
+function onCategorySelect() {
+  if (selectedCategory.value === OTHER_CATEGORY_VALUE) {
+    categoryModalDraft.value = customCategoryText.value
+    categoryModalError.value = ''
+    showCategoryModal.value = true
+    return
+  }
+
+  customCategoryText.value = ''
+  form.value.activity_type = selectedCategory.value
+  lastConfirmedCategory = selectedCategory.value
+}
+
+function openCategoryModalForEdit() {
+  categoryModalDraft.value = customCategoryText.value
+  categoryModalError.value = ''
+  showCategoryModal.value = true
+}
+
+function confirmCategoryModal() {
+  const trimmed = categoryModalDraft.value.trim()
+
+  if (!trimmed) {
+    categoryModalError.value = t.value.studentExternalActivity.otherCategoryRequiredError
+    return
+  }
+
+  customCategoryText.value = trimmed
+  form.value.activity_type = trimmed
+  lastConfirmedCategory = OTHER_CATEGORY_VALUE
+  showCategoryModal.value = false
+}
+
+function cancelCategoryModal() {
+  selectedCategory.value = lastConfirmedCategory
+  showCategoryModal.value = false
+}
+
 // แก้ไข+ส่งใหม่กิจกรรมที่ถูกไม่อนุมัติ: /student/external-activity?edit=<id>
 const editingId = ref(null)
 const existingEvidence = ref(null)
@@ -109,6 +175,7 @@ onMounted(async () => {
       location: item.location,
       description: item.description || ''
     }
+    applyCategoryFromValue(item.activity_type)
 
     const definitions = SKILLS_BY_ROLE[item.role]
     skillLevels.value = {
@@ -288,6 +355,7 @@ async function submitActivity() {
       ? `${t.value.studentExternalActivity.resubmitSuccessPrefix} "${data.title}" ${t.value.studentExternalActivity.resubmitSuccessSuffix}`
       : `${t.value.studentExternalActivity.submitSuccessPrefix} "${data.title}" ${t.value.studentExternalActivity.submitSuccessSuffix}`
     form.value = emptyForm()
+    applyCategoryFromValue('')
     skillLevels.value = emptySkillLevels()
     evidenceFile.value = null
     existingEvidence.value = null
@@ -350,7 +418,7 @@ async function submitActivity() {
 
             <label class="field">
               <span>{{ t.studentExternalActivity.categoryLabel }} <b>*</b></span>
-              <select v-model="form.activity_type" name="activity_type">
+              <select v-model="selectedCategory" name="activity_type" @change="onCategorySelect">
                 <option disabled value="">{{ t.studentExternalActivity.selectCategoryOption }}</option>
                 <option
                   v-for="category in EXTERNAL_ACTIVITY_CATEGORIES"
@@ -360,6 +428,13 @@ async function submitActivity() {
                   {{ category }}
                 </option>
               </select>
+
+              <div v-if="selectedCategory === OTHER_CATEGORY_VALUE" class="custom-category-display">
+                <span>{{ t.studentExternalActivity.otherCategoryDisplayLabel }}: <strong>{{ customCategoryText }}</strong></span>
+                <button type="button" class="custom-category-edit" @click="openCategoryModalForEdit">
+                  {{ t.studentExternalActivity.otherCategoryEditButton }}
+                </button>
+              </div>
             </label>
 
             <label class="field">
@@ -555,6 +630,48 @@ async function submitActivity() {
         </div>
       </aside>
     </form>
+
+    <!-- OTHER CATEGORY MODAL -->
+    <div
+      v-if="showCategoryModal"
+      class="modal-backdrop"
+      @click.self="cancelCategoryModal"
+    >
+      <div class="category-modal">
+        <div class="modal-header">
+          <h2>{{ t.studentExternalActivity.otherCategoryModalTitle }}</h2>
+
+          <button class="modal-close" type="button" @click="cancelCategoryModal">
+            <X :size="20" />
+          </button>
+        </div>
+
+        <label class="field full">
+          <input
+            v-model="categoryModalDraft"
+            type="text"
+            maxlength="120"
+            :placeholder="t.studentExternalActivity.otherCategoryInputPlaceholder"
+            @keyup.enter="confirmCategoryModal"
+          />
+        </label>
+
+        <p v-if="categoryModalError" class="category-modal-error">
+          <TriangleAlert :size="15" />
+          {{ categoryModalError }}
+        </p>
+
+        <div class="modal-actions">
+          <button type="button" class="modal-secondary-button" @click="cancelCategoryModal">
+            {{ t.studentExternalActivity.otherCategoryCancelButton }}
+          </button>
+
+          <button type="button" class="modal-confirm-button" @click="confirmCategoryModal">
+            {{ t.studentExternalActivity.otherCategoryConfirmButton }}
+          </button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -983,5 +1100,120 @@ async function submitActivity() {
   .primary-button {
     width: 100%;
   }
+}
+
+/* =========================
+   Other category modal
+========================= */
+.custom-category-display {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: #53647c;
+}
+
+.custom-category-display strong {
+  color: #2a3547;
+}
+
+.custom-category-edit {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: #7e10c6;
+  font: inherit;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  padding: 22px;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, 0.34);
+}
+
+.category-modal {
+  width: min(420px, 100%);
+  padding: 22px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 24px 65px rgba(15, 23, 42, 0.2);
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  color: #1b283d;
+  font-size: 18px;
+}
+
+.modal-close {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: #f3f6f9;
+  color: #75869d;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.category-modal-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  color: #e0453a;
+  font-size: 12px;
+}
+
+.modal-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.modal-secondary-button,
+.modal-confirm-button {
+  min-height: 39px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.modal-secondary-button {
+  border: 1px solid #dfe6ef;
+  background: #fff;
+  color: #526279;
+}
+
+.modal-confirm-button {
+  background: #7e10c6;
+  color: #fff;
 }
 </style>

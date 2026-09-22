@@ -15,7 +15,7 @@ import {
 
 import { useLanguage } from '../../composables/useLanguage'
 
-const { t } = useLanguage()
+const { t, currentLanguage } = useLanguage()
 const API_BASE = 'http://localhost:8000'
 
 /* =========================
@@ -537,9 +537,94 @@ const closeStudentRadar = () => {
   selectedStudent.value = null
 }
 
+/* =========================
+   Student Activity History Modal
+========================= */
+const activityHistoryStudent = ref(null)
+const activityHistoryItems = ref([])
+const activityHistoryLoading = ref(false)
+const activityHistoryError = ref('')
+
+const openActivityHistory = async (student) => {
+  activityHistoryStudent.value = student
+  activityHistoryItems.value = []
+  activityHistoryError.value = ''
+  activityHistoryLoading.value = true
+
+  try {
+    const response = await fetch(`${API_BASE}/api/admin/students/${student.id}/activities`)
+
+    if (!response.ok) throw new Error(t.value.adminStudentSkills.activityHistoryError)
+
+    const data = await response.json()
+    activityHistoryItems.value = data.activities || []
+  } catch (error) {
+    activityHistoryError.value = error.message || t.value.adminStudentSkills.activityHistoryError
+  } finally {
+    activityHistoryLoading.value = false
+  }
+}
+
+const closeActivityHistory = () => {
+  activityHistoryStudent.value = null
+  activityHistoryItems.value = []
+  activityHistoryError.value = ''
+}
+
+function activityTypeLabel(source) {
+  return source === 'external_activity'
+    ? t.value.adminStudentSkills.activityTypeExternal
+    : t.value.adminStudentSkills.activityTypeFaculty
+}
+
+function activityRoleLabel(role) {
+  return role === 'organizer'
+    ? t.value.adminStudentSkills.roleOrganizer
+    : t.value.adminStudentSkills.roleParticipant
+}
+
+function activityStatusLabel(status) {
+  if (status === 'approved') return t.value.adminStudentSkills.statusApproved
+  if (status === 'rejected') return t.value.adminStudentSkills.statusRejected
+  return t.value.adminStudentSkills.statusPending
+}
+
+function formatActivityDateShort(date, { withYear = true } = {}) {
+  if (!date || Number.isNaN(date.getTime())) return '—'
+
+  const options = { day: 'numeric', month: 'short' }
+  if (withYear) options.year = 'numeric'
+
+  return new Intl.DateTimeFormat(currentLanguage.value === 'TH' ? 'th-TH' : 'en-US', options).format(date)
+}
+
+// รูปแบบสั้น ๆ เช่น "17 Sep - 25 Sep 2026" (ตัดปีของวันเริ่มออกถ้าอยู่ปีเดียวกัน)
+// เพื่อไม่ให้ column DATE กว้างเกินไปจนทับ column อื่นในตาราง
+function activityDateRange(item) {
+  const start = item.start_at ? new Date(item.start_at) : null
+  const end = item.end_at ? new Date(item.end_at) : null
+
+  const startValid = start && !Number.isNaN(start.getTime())
+  const endValid = end && !Number.isNaN(end.getTime())
+
+  if (!startValid && !endValid) return '—'
+  if (!startValid || !endValid) return formatActivityDateShort(startValid ? start : end)
+
+  if (start.toDateString() === end.toDateString()) {
+    return formatActivityDateShort(start)
+  }
+
+  const sameYear = start.getFullYear() === end.getFullYear()
+  const startLabel = formatActivityDateShort(start, { withYear: !sameYear })
+  const endLabel = formatActivityDateShort(end, { withYear: true })
+
+  return `${startLabel} - ${endLabel}`
+}
+
 const handleEscape = (event) => {
   if (event.key === 'Escape') {
     if (selectedStudent.value) closeStudentRadar()
+    if (activityHistoryStudent.value) closeActivityHistory()
     if (benchmarkModalOpen.value) benchmarkModalOpen.value = false
   }
 }
@@ -1144,12 +1229,23 @@ onBeforeUnmount(() => {
 
               <td>
 
-                <button
-                  class="radar-button"
-                  @click="openStudentRadar(student)"
-                >
-                  {{ t.adminStudentSkills.viewRadar }}
-                </button>
+                <div class="action-buttons">
+
+                  <button
+                    class="radar-button"
+                    @click="openStudentRadar(student)"
+                  >
+                    {{ t.adminStudentSkills.viewRadar }}
+                  </button>
+
+                  <button
+                    class="activities-button"
+                    @click="openActivityHistory(student)"
+                  >
+                    {{ t.adminStudentSkills.viewActivities }}
+                  </button>
+
+                </div>
 
               </td>
 
@@ -1361,6 +1457,82 @@ onBeforeUnmount(() => {
               </div>
             </section>
           </aside>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================
+         Student Activity History Modal
+    ========================== -->
+    <div
+      v-if="activityHistoryStudent"
+      class="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="`${t.adminStudentSkills.activityHistoryAriaLabel} ${activityHistoryStudent.name}`"
+      @click.self="closeActivityHistory"
+    >
+      <div class="activity-history-modal">
+        <header class="activity-history-header">
+          <div>
+            <h3>{{ t.adminStudentSkills.activityHistoryTitle }}</h3>
+            <p class="activity-history-subtitle">
+              {{ activityHistoryStudent.name }} · {{ activityHistoryStudent.id }}
+            </p>
+          </div>
+
+          <button
+            class="detail-close"
+            type="button"
+            :aria-label="t.adminStudentSkills.closeActivityHistory"
+            @click="closeActivityHistory"
+          >
+            <X :size="20" />
+          </button>
+        </header>
+
+        <div v-if="activityHistoryLoading" class="activity-history-state">
+          {{ t.adminStudentSkills.activityHistoryLoading }}
+        </div>
+
+        <div v-else-if="activityHistoryError" class="activity-history-state error">
+          <AlertTriangle :size="18" />
+          {{ activityHistoryError }}
+        </div>
+
+        <div v-else-if="activityHistoryItems.length === 0" class="activity-history-state">
+          {{ t.adminStudentSkills.noActivityHistory }}
+        </div>
+
+        <div v-else class="activity-history-table-wrapper">
+          <table class="activity-history-table">
+            <thead>
+              <tr>
+                <th>{{ t.adminStudentSkills.activityNameColumn }}</th>
+                <th>{{ t.adminStudentSkills.activityTypeColumn }}</th>
+                <th>{{ t.adminStudentSkills.activityDateColumn }}</th>
+                <th>{{ t.adminStudentSkills.activityRoleColumn }}</th>
+                <th>{{ t.adminStudentSkills.activityStatusColumn }}</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr
+                v-for="item in activityHistoryItems"
+                :key="`${item.source}-${item.id}`"
+              >
+                <td>{{ item.title }}</td>
+                <td>{{ activityTypeLabel(item.source) }}</td>
+                <td>{{ activityDateRange(item) }}</td>
+                <td>{{ activityRoleLabel(item.role) }}</td>
+                <td>
+                  <span class="status-pill" :class="item.status">
+                    {{ activityStatusLabel(item.status) }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -2093,6 +2265,174 @@ td {
 
 .radar-button:hover {
   background: #f3f6ff;
+}
+
+.action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.activities-button {
+  padding: 5px 12px;
+
+  border: 1px solid #cdeed8;
+
+  border-radius: 4px;
+
+  background: white;
+
+  color: #17945a;
+
+  font-size: 11px;
+
+  cursor: pointer;
+}
+
+.activities-button:hover {
+  background: #f0fbf5;
+}
+
+/* =========================
+   Activity History Modal
+========================= */
+
+.activity-history-modal {
+  width: min(760px, 96vw);
+  max-height: 88vh;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #dce4f0;
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(24, 45, 80, 0.24);
+}
+
+.activity-history-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid #e5eaf2;
+  backdrop-filter: blur(8px);
+}
+
+.activity-history-header h3 {
+  margin: 0;
+  color: #1d3268;
+  font-size: 18px;
+}
+
+.activity-history-subtitle {
+  margin: 4px 0 0;
+  color: #8da0bd;
+  font-size: 13px;
+}
+
+.activity-history-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 20px;
+  justify-content: center;
+  color: #7c8aa0;
+  font-size: 14px;
+}
+
+.activity-history-state.error {
+  color: #c8402f;
+}
+
+.activity-history-table-wrapper {
+  padding: 12px 20px 20px;
+  overflow-x: auto;
+}
+
+/* กำหนด table-layout/width เอง (ไม่พึ่ง selector `table` ตัวรวมของ
+   ตาราง student list ด้านบน) เพื่อคุมความกว้างแต่ละคอลัมน์ให้แน่นอน
+   และป้องกันข้อความ column DATE/ROLE ทับกันเหมือนตอน nowrap+fixed */
+.activity-history-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.activity-history-table th,
+.activity-history-table td {
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.activity-history-table th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #8da0bd;
+  border-bottom: 1px solid #e5eaf2;
+}
+
+.activity-history-table td {
+  padding: 12px;
+  font-size: 13px;
+  color: #33415c;
+  border-bottom: 1px solid #eef1f7;
+  vertical-align: top;
+}
+
+.activity-history-table th:nth-child(1),
+.activity-history-table td:nth-child(1) {
+  width: 30%;
+}
+
+.activity-history-table th:nth-child(2),
+.activity-history-table td:nth-child(2) {
+  width: 18%;
+}
+
+.activity-history-table th:nth-child(3),
+.activity-history-table td:nth-child(3) {
+  width: 20%;
+}
+
+.activity-history-table th:nth-child(4),
+.activity-history-table td:nth-child(4) {
+  width: 14%;
+}
+
+.activity-history-table th:nth-child(5),
+.activity-history-table td:nth-child(5) {
+  width: 18%;
+}
+
+.status-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.status-pill.approved {
+  background: #e3f9ee;
+  color: #17945a;
+}
+
+.status-pill.pending {
+  background: #fff4e0;
+  color: #b4740a;
+}
+
+.status-pill.rejected {
+  background: #fde9e8;
+  color: #c8402f;
 }
 
 
