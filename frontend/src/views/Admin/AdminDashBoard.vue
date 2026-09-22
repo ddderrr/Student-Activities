@@ -32,6 +32,12 @@ const PARTICIPANT_SKILLS = [
 const selectedPeriod = ref('MONTHLY')
 const selectedItem = ref(currentMonthLabel)
 
+// true เฉพาะตอนผู้ใช้กดเลือกเดือน/ไตรมาสใน Activity Growth chart เองเท่านั้น
+// (ไม่ใช่ตอนเปิดหน้าครั้งแรก หรือตอนเปลี่ยนปี/Semester) เพื่อให้ Summary Cards
+// ยังคงเป็นยอดรวมทั้ง Semester ตามที่ป้ายกำกับ "Academic Year / Semester
+// Filter" ด้านบนบอกไว้ จนกว่าจะมีการ drill-down ลงเดือน/ไตรมาสจริง ๆ
+const hasSelectedChartItem = ref(false)
+
 // Dashboard history filters
 // ใช้ logic เดียวกับ backend ปัจจุบัน:
 // Semester 1 = JAN-JUN, Semester 2 = JUL-DEC
@@ -76,6 +82,7 @@ const semesterLabel = computed(() => {
 })
 
 const resetSelectedItem = () => {
+  hasSelectedChartItem.value = false
   const indexes = semesterMonthIndexes.value
 
   if (selectedPeriod.value === 'MONTHLY') {
@@ -94,9 +101,28 @@ const resetSelectedItem = () => {
   selectedItem.value = preferredQuarter
 }
 
+// เดือน/ไตรมาสที่ผู้ใช้คลิกใน Activity Growth chart แปลงเป็นเลขเดือน (1-12)
+// ส่งให้ backend กรองสรุป (Activities/Participants/Completion Rate) ให้แคบ
+// ลงเหลือแค่ช่วงที่คลิกจริง แทนที่จะค้างอยู่ที่ทั้ง Semester
+const selectedMonthNumbers = computed(() => {
+  if (!hasSelectedChartItem.value) return []
+
+  if (selectedPeriod.value === 'MONTHLY') {
+    const index = MONTH_LABELS.indexOf(selectedItem.value)
+    return index === -1 ? [] : [index + 1]
+  }
+
+  const quarterNumber = Number(String(selectedItem.value).replace('Q', ''))
+  if (!Number.isInteger(quarterNumber) || quarterNumber < 1 || quarterNumber > 4) return []
+
+  const firstMonth = (quarterNumber - 1) * 3 + 1
+  return [firstMonth, firstMonth + 1, firstMonth + 2]
+})
+
 const selectPeriod = (period) => {
   selectedPeriod.value = period
   resetSelectedItem()
+  return refreshSummary()
 }
 
 const fetchDashboardSummary = async () => {
@@ -104,6 +130,10 @@ const fetchDashboardSummary = async () => {
     year: String(selectedYear.value),
     semester: selectedSemester.value
   })
+
+  if (selectedMonthNumbers.value.length) {
+    params.set('months', selectedMonthNumbers.value.join(','))
+  }
 
   const response = await fetch(`${API_BASE}/api/admin/dashboard?${params.toString()}`)
   if (!response.ok) throw new Error('Cannot load dashboard summary')
@@ -115,8 +145,7 @@ const fetchDashboardSummary = async () => {
   dashboardData.completionRate = data.completionRate ?? 0
 }
 
-const changeYear = async () => {
-  resetSelectedItem()
+const refreshSummary = async () => {
   loading.value = true
   error.value = null
   try {
@@ -129,18 +158,21 @@ const changeYear = async () => {
   }
 }
 
-const changeSemester = async () => {
+const changeYear = () => {
   resetSelectedItem()
-  loading.value = true
-  error.value = null
-  try {
-    await fetchDashboardSummary()
-  } catch (err) {
-    console.error('Dashboard API Error:', err)
-    error.value = err.message
-  } finally {
-    loading.value = false
-  }
+  return refreshSummary()
+}
+
+const changeSemester = () => {
+  resetSelectedItem()
+  return refreshSummary()
+}
+
+const selectChartItem = (month) => {
+  if (selectedItem.value === month && hasSelectedChartItem.value) return
+  selectedItem.value = month
+  hasSelectedChartItem.value = true
+  return refreshSummary()
 }
 
 const fetchDashboard = async () => {
@@ -559,7 +591,7 @@ const summaryCards = computed(() => [
                 :key="`label-${item.month}`"
                 class="x-axis-item"
                 :class="{ 'selected-month': item.month === selectedItem }"
-                @click="selectedItem = item.month"
+                @click="selectChartItem(item.month)"
               >
                 <strong class="activity-count">{{ item.count }}</strong>
                 <span>{{ displayLabel(item.month) }}</span>

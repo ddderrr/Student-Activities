@@ -177,6 +177,7 @@ def dashboard_effective_completed(activity: Activity, now_value: datetime) -> bo
 def get_admin_dashboard(
     year: int | None = None,
     semester: str = "ALL",
+    months: str | None = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -186,10 +187,35 @@ def get_admin_dashboard(
     the real activity date (Activity.start_at / ExternalActivity.start_date)
     as the reporting period. Student count remains the faculty/system total
     because students are master data, not activities.
+
+    `months`: optional comma-separated month numbers (e.g. "9" or "7,8,9")
+    that narrows the period further than `semester` — used when the admin
+    clicks a single month/quarter in the Activity Growth chart instead of
+    just picking a semester.
     """
     now_value = datetime.now()
     selected_year = year or now_value.year
-    selected_months = dashboard_semester_months(semester)
+
+    if months:
+        try:
+            selected_months = sorted(
+                {int(item) for item in months.split(",") if item.strip()}
+            )
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="months ต้องเป็นตัวเลข 1-12 คั่นด้วย comma",
+            )
+
+        if not selected_months or any(
+            month < 1 or month > 12 for month in selected_months
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="months ต้องอยู่ระหว่าง 1-12",
+            )
+    else:
+        selected_months = dashboard_semester_months(semester)
 
     # Activities are filtered by the real activity date (start_at), not created_at.
     period_activities = (
