@@ -802,24 +802,12 @@ onBeforeUnmount(() => {
                <!-- =========================
                     6-Sided Radar Grid
                ========================== -->
-
-               <!-- Outer Hexagon -->
-               <polygon
-               points="250,45 380,120 380,270 250,345 120,270 120,120"
-               class="radar-grid"
-               />
-
-               <!-- Middle Hexagon -->
-               <polygon
-               points="250,95 337,145 337,245 250,295 163,245 163,145"
-               class="radar-grid"
-               />
-
-               <!-- Inner Hexagon -->
-               <polygon
-               points="250,145 293,170 293,220 250,245 207,220 207,170"
-               class="radar-grid"
-               />
+               <!-- Radar scale: center = 0, rings = 1, 2, 3, 4, 5 -->
+               <polygon points="250,165 276,180 276,210 250,225 224,210 224,180" class="radar-grid" />
+               <polygon points="250,135 302,165 302,225 250,255 198,225 198,165" class="radar-grid" />
+               <polygon points="250,105 328,150 328,240 250,285 172,240 172,150" class="radar-grid" />
+               <polygon points="250,75 354,135 354,255 250,315 146,255 146,135" class="radar-grid" />
+               <polygon points="250,45 380,120 380,270 250,345 120,270 120,120" class="radar-grid" />
 
 
                <!-- =========================
@@ -1355,9 +1343,12 @@ onBeforeUnmount(() => {
 
             <div class="detail-radar-wrap">
               <svg class="detail-radar" viewBox="0 0 500 400">
+                <!-- Radar scale: center = 0, rings = 1, 2, 3, 4, 5 -->
+                <polygon points="250,165 276,180 276,210 250,225 224,210 224,180" class="radar-grid" />
+                <polygon points="250,135 302,165 302,225 250,255 198,225 198,165" class="radar-grid" />
+                <polygon points="250,105 328,150 328,240 250,285 172,240 172,150" class="radar-grid" />
+                <polygon points="250,75 354,135 354,255 250,315 146,255 146,135" class="radar-grid" />
                 <polygon points="250,45 380,120 380,270 250,345 120,270 120,120" class="radar-grid" />
-                <polygon points="250,95 337,145 337,245 250,295 163,245 163,145" class="radar-grid" />
-                <polygon points="250,145 293,170 293,220 250,245 207,220 207,170" class="radar-grid" />
 
                 <line x1="250" y1="195" x2="250" y2="45" class="radar-axis" />
                 <line x1="250" y1="195" x2="380" y2="120" class="radar-axis" />

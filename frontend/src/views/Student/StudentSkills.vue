@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
   BarChart3,
   CalendarDays,
@@ -27,6 +27,8 @@ const skillDefinitions = ref([])
 const periodDefinitions = ref([])
 const periods = ref({})
 const selectedPeriod = ref('')
+const showMySkills = ref(true)
+const showFacultyAverage = ref(true)
 
 const currentPeriod = computed(() =>
   periods.value[selectedPeriod.value] || {
@@ -39,25 +41,60 @@ const currentSkills = computed(() =>
   currentPeriod.value.skills || {}
 )
 
+const facultySkills = computed(() =>
+  currentPeriod.value.facultyAverage || {}
+)
+
 const currentActivities = computed(() =>
   currentPeriod.value.activities || []
 )
 
-const periodGroups = computed(() => {
-  const groups = new Map()
+const selectedYear = ref('')
+const selectedSemester = ref('all')
 
-  for (const period of periodDefinitions.value) {
-    if (!groups.has(period.year)) {
-      groups.set(period.year, [])
-    }
-    groups.get(period.year).push(period)
-  }
+const yearOptions = computed(() => {
+  const years = [
+    ...new Set(
+      periodDefinitions.value.map((period) =>
+        String(period.year)
+      )
+    )
+  ]
 
-  return [...groups.entries()].map(([year, items]) => ({
-    year,
-    items
-  }))
+  return years.sort((a, b) => Number(b) - Number(a))
 })
+
+function syncPeriodControls(periodKey) {
+  const period = periodDefinitions.value.find(
+    (item) => item.key === periodKey
+  )
+
+  if (!period) return
+
+  selectedYear.value = String(period.year)
+  selectedSemester.value =
+    period.semester === null
+      ? 'all'
+      : String(period.semester)
+}
+
+function applyPeriodSelection() {
+  if (!selectedYear.value) return
+
+  const key =
+    selectedSemester.value === 'all'
+      ? `year-${selectedYear.value}`
+      : `semester-${selectedSemester.value}-${selectedYear.value}`
+
+  if (periods.value[key]) {
+    selectedPeriod.value = key
+  }
+}
+
+watch(
+  [selectedYear, selectedSemester],
+  applyPeriodSelection
+)
 
 const skillItems = computed(() =>
   skillDefinitions.value.map((definition) => ({
@@ -89,6 +126,38 @@ const radarPoints = computed(() => {
     ].join(',')
   }).join(' ')
 })
+
+const facultyRadarPoints = computed(() => {
+  const items = skillDefinitions.value
+  if (!items.length) return ''
+
+  const center = 150
+  const radius = 112
+
+  return items.map((item, index) => {
+    const value = Number(
+      facultySkills.value[item.key] ?? 0
+    )
+    const ratio =
+      Math.max(0, Math.min(5, value)) / 5
+    const angle =
+      (-90 + index * (360 / items.length)) *
+      Math.PI / 180
+
+    return [
+      center + Math.cos(angle) * radius * ratio,
+      center + Math.sin(angle) * radius * ratio
+    ].join(',')
+  }).join(' ')
+})
+
+const hasFacultyData = computed(() =>
+  skillDefinitions.value.some(
+    (item) =>
+      facultySkills.value[item.key] !== null &&
+      facultySkills.value[item.key] !== undefined
+  )
+)
 
 const radarLabels = computed(() => {
   const items = skillItems.value
@@ -196,6 +265,8 @@ async function loadSkills() {
       data.defaultPeriod ||
       data.periodDefinitions?.[0]?.key ||
       ''
+
+    syncPeriodControls(selectedPeriod.value)
   } catch (error) {
     errorMessage.value =
       error instanceof TypeError
@@ -391,25 +462,30 @@ onMounted(loadSkills)
           </p>
         </div>
 
-        <!-- เลือกดูทั้งปี / Semester 1 / Semester 2 -->
-        <select
-          v-model="selectedPeriod"
-          class="period-select"
-        >
-          <optgroup
-            v-for="group in periodGroups"
-            :key="group.year"
-            :label="`${t.studentSkills.year} ${group.year}`"
+        <!-- เลือกปี + ช่วงเวลา แบบเดียวกับหน้า Admin -->
+        <div class="period-controls">
+          <select
+            v-model="selectedYear"
+            class="period-select year-select"
           >
             <option
-              v-for="period in group.items"
-              :key="period.key"
-              :value="period.key"
+              v-for="year in yearOptions"
+              :key="year"
+              :value="year"
             >
-              {{ period.label }}
+              ปี {{ year }}
             </option>
-          </optgroup>
-        </select>
+          </select>
+
+          <select
+            v-model="selectedSemester"
+            class="period-select semester-select"
+          >
+            <option value="all">ทั้งปี</option>
+            <option value="1">เทอม 1</option>
+            <option value="2">เทอม 2</option>
+          </select>
+        </div>
       </div>
 
       <div
@@ -534,7 +610,13 @@ onMounted(loadSkills)
                 />
 
                 <polygon
-                  v-if="hasSkillData"
+                  v-if="hasFacultyData && showFacultyAverage"
+                  :points="facultyRadarPoints"
+                  class="faculty-radar"
+                />
+
+                <polygon
+                  v-if="hasSkillData && showMySkills"
                   :points="radarPoints"
                   class="student-radar"
                 />
@@ -554,6 +636,28 @@ onMounted(loadSkills)
                   </text>
                 </g>
               </svg>
+
+              <div class="radar-legend">
+                <button
+                  type="button"
+                  class="legend-toggle"
+                  :class="{ inactive: !showMySkills }"
+                  @click="showMySkills = !showMySkills"
+                >
+                  <i class="legend-dot student-dot"></i>
+                  ทักษะของฉัน
+                </button>
+
+                <button
+                  type="button"
+                  class="legend-toggle"
+                  :class="{ inactive: !showFacultyAverage }"
+                  @click="showFacultyAverage = !showFacultyAverage"
+                >
+                  <i class="legend-line faculty-line"></i>
+                  ค่าเฉลี่ยของคณะ
+                </button>
+              </div>
 
               <div
                 v-if="!hasSkillData"
@@ -704,6 +808,7 @@ onMounted(loadSkills)
     </template>
   
       <!-- EXPORT MODAL -->
+      <Teleport to="body">
       <div
         v-if="exportOpen"
         class="export-overlay"
@@ -753,7 +858,11 @@ onMounted(loadSkills)
               <div>
                 <strong>{{ t.studentSkills.withRadarChart }}</strong>
                 <span>
+
                   {{ t.studentSkills.withRadarChartDesc }}
+
+            
+
                 </span>
               </div>
             </label>
@@ -833,6 +942,7 @@ onMounted(loadSkills)
           </div>
         </div>
       </div>
+      </Teleport>
 
 </section>
 </template>
@@ -870,8 +980,14 @@ onMounted(loadSkills)
   font-size: 13px;
 }
 
+.period-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .period-select {
-  min-width: 190px;
+  min-width: 112px;
   padding: 9px 12px;
   border: 1px solid #d7deeb;
   border-radius: 8px;
@@ -994,10 +1110,74 @@ onMounted(loadSkills)
   stroke-width: 1;
 }
 
+.faculty-radar {
+  fill: rgba(16, 185, 129, .08);
+  stroke: #10b981;
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+
 .student-radar {
   fill: rgba(53, 112, 229, .18);
   stroke: #356fe5;
   stroke-width: 2;
+}
+
+.radar-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin-top: -4px;
+  color: #667085;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-toggle {
+  border: 0;
+  background: transparent;
+  padding: 5px 7px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #667085;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  transition: opacity .18s ease, background .18s ease;
+}
+
+.legend-toggle:hover {
+  background: #f4f7fb;
+}
+
+.legend-toggle.inactive {
+  opacity: .35;
+  text-decoration: line-through;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.student-dot {
+  background: #356fe5;
+}
+
+.legend-line {
+  width: 18px;
+  height: 0;
+  border-top: 2px dashed #10b981;
 }
 
 .radar-label {
@@ -1441,8 +1621,12 @@ td {
     flex-direction: column;
   }
 
-  .period-select {
+  .period-controls {
     width: 100%;
+  }
+
+  .period-select {
+    width: 50%;
   }
 
   .overview-card {
@@ -1465,4 +1649,95 @@ td {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* =========================
+   READABILITY UPDATE
+   เพิ่มขนาดตัวอักษรทั้งหน้าเล็กน้อย
+========================= */
+
+.skills-page {
+  font-size: 15px;
+}
+
+.skills-page h1 {
+  font-size: 25px;
+}
+
+.skills-page .page-subtitle {
+  font-size: 14px;
+}
+
+.skills-page .chart-title,
+.skills-page .activities-title {
+  font-size: 14px;
+}
+
+.skills-page .skill-name {
+  font-size: 13px;
+}
+
+.skills-page .skill-score {
+  font-size: 13px;
+}
+
+.skills-page .radar-label {
+  font-size: 10px;
+}
+
+.skills-page .period-select {
+  font-size: 13px;
+}
+
+.skills-page .period-badge {
+  font-size: 11px;
+}
+
+.skills-page .radar-legend,
+.skills-page .legend-toggle {
+  font-size: 11px;
+}
+
+.skills-page .activity-table {
+  font-size: 12px;
+}
+
+.skills-page .activity-table th {
+  font-size: 11px;
+}
+
+.skills-page .activity-table td {
+  font-size: 12px;
+}
+
+.skills-page .skill-chip,
+.skills-page .status-badge,
+.skills-page .activity-count {
+  font-size: 10px;
+}
+
+.skills-page .export-button {
+  font-size: 12px;
+}
+
+.legend-toggle .student-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+  background: #356fe5;
+}
+
+.legend-toggle .faculty-line {
+  width: 19px;
+  flex: 0 0 19px;
+  border-top: 3px dashed #10b981;
+}
+
+.legend-toggle.inactive .student-dot,
+.legend-toggle.inactive .faculty-line {
+  opacity: .35;
+}
+
+
 </style>

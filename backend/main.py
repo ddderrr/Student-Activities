@@ -2946,6 +2946,119 @@ def list_my_activities(
     }
 
 
+
+def faculty_skill_average_for_period(
+    db: Session,
+    year: int,
+    semester: int | None,
+) -> dict:
+    """
+    ค่าเฉลี่ยทักษะของคณะ ใช้หลักเดียวกับหน้า Admin:
+    activity evidence -> ค่าเฉลี่ยต่อ skill ของนักศึกษาแต่ละคน
+    -> ค่าเฉลี่ยของนักศึกษาทั้งหมดในคณะ/ระบบ
+
+    ทำแบบ student-first เพื่อไม่ให้นักศึกษาที่มีกิจกรรมเยอะ
+    มีน้ำหนักมากกว่าคนอื่น
+    """
+    grouped: dict[str, dict[str, list[float]]] = {}
+
+    def add_value(student_id, when, skill_key, level):
+        if when is None or when.year != year:
+            return
+        if skill_key not in PARTICIPANT_SKILL_DEFINITIONS:
+            return
+
+        sem_no = 1 if when.month <= 6 else 2
+        if semester is not None and sem_no != semester:
+            return
+
+        if student_id not in grouped:
+            grouped[student_id] = {
+                key: []
+                for key in PARTICIPANT_SKILL_DEFINITIONS
+            }
+
+        grouped[student_id][skill_key].append(float(level))
+
+    internal_rows = (
+        db.query(
+            Student.student_id,
+            Activity.start_at,
+            ActivitySkill.skill_key,
+            ActivitySkill.level,
+        )
+        .join(
+            ActivityMember,
+            ActivityMember.student_id == Student.student_id,
+        )
+        .join(
+            Activity,
+            Activity.id == ActivityMember.activity_id,
+        )
+        .join(
+            ActivitySkill,
+            ActivitySkill.activity_id == Activity.id,
+        )
+        .filter(
+            ActivityMember.role == "participant",
+            ActivitySkill.target_role == "participant",
+            func.extract("year", Activity.start_at) == year,
+        )
+        .all()
+    )
+
+    external_rows = (
+        db.query(
+            Student.student_id,
+            ExternalActivity.start_date,
+            ExternalActivitySkill.skill_key,
+            ExternalActivitySkill.level,
+        )
+        .join(
+            ExternalActivity,
+            ExternalActivity.student_id == Student.student_id,
+        )
+        .join(
+            ExternalActivitySkill,
+            ExternalActivitySkill.external_activity_id == ExternalActivity.id,
+        )
+        .filter(
+            ExternalActivity.status == "approved",
+            ExternalActivity.role == "participant",
+            ExternalActivitySkill.target_role == "participant",
+            func.extract("year", ExternalActivity.start_date) == year,
+        )
+        .all()
+    )
+
+    for student_id, when, skill_key, level in internal_rows:
+        add_value(student_id, when, skill_key, level)
+
+    for student_id, when, skill_key, level in external_rows:
+        add_value(student_id, when, skill_key, level)
+
+    faculty_values = {
+        key: []
+        for key in PARTICIPANT_SKILL_DEFINITIONS
+    }
+
+    for student_skills in grouped.values():
+        for skill_key, levels in student_skills.items():
+            if levels:
+                faculty_values[skill_key].append(
+                    sum(levels) / len(levels)
+                )
+
+    return {
+        skill_key: (
+            round(sum(values) / len(values), 2)
+            if values
+            else None
+        )
+        for skill_key, values in faculty_values.items()
+    }
+
+
 def student_skill_periods(
     student: Student,
     db: Session,
@@ -3158,12 +3271,19 @@ def student_skill_periods(
             for skill_key, levels in values.items()
         }
 
+        faculty_average = faculty_skill_average_for_period(
+            db=db,
+            year=period["year"],
+            semester=period["semester"],
+        )
+
         periods[period["key"]] = {
             "key": period["key"],
             "label": period["label"],
             "year": period["year"],
             "semester": period["semester"],
             "skills": skills,
+            "facultyAverage": faculty_average,
             "activities": period_activities,
         }
 
@@ -3243,6 +3363,7 @@ def skill_pdf_font_name() -> str:
 def build_skill_radar_pdf(
     skills: dict,
     font_name: str,
+    faculty_skills: dict | None = None,
 ) -> Drawing:
     """
     Radar chart สำหรับ PDF transcript
@@ -3312,6 +3433,40 @@ def build_skill_radar_pdf(
                 fontSize=6.5,
                 fillColor=colors.HexColor("#43536F"),
                 textAnchor="middle",
+            )
+        )
+
+    # Faculty average polygon
+    if faculty_skills:
+        faculty_points = []
+
+        for index, (skill_key, _) in enumerate(skill_items):
+            value = faculty_skills.get(skill_key)
+            ratio = (
+                0
+                if value is None
+                else max(0, min(5, float(value))) / 5
+            )
+            angle = math.radians(
+                -90 + index * (360 / count)
+            )
+            faculty_points.extend([
+                center_x + math.cos(angle) * radius * ratio,
+                center_y + math.sin(angle) * radius * ratio,
+            ])
+
+        drawing.add(
+            Polygon(
+                faculty_points,
+                fillColor=colors.Color(
+                    16 / 255,
+                    185 / 255,
+                    129 / 255,
+                    alpha=0.08,
+                ),
+                strokeColor=colors.HexColor("#10B981"),
+                strokeWidth=1.4,
+                strokeDashArray=[4, 3],
             )
         )
 
@@ -3441,6 +3596,7 @@ def export_my_skills_pdf(
             build_skill_radar_pdf(
                 selected["skills"],
                 font_name,
+                selected.get("facultyAverage", {}),
             )
         )
         story.append(Spacer(1, 4 * mm))
