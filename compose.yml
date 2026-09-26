@@ -13,5 +13,48 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+
+    # ระบุ +psycopg2 ชัดเจน: SQLAlchemy 2.1 เปลี่ยน driver default ของ postgresql:// เป็น psycopg (v3)
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      TZ: Asia/Bangkok
+
+    # frontend เรียก API ที่ http://127.0.0.1:8000 (hardcode ไว้ในโค้ด)
+    # bind แค่ 127.0.0.1 เพราะ API ยังไม่มีระบบ login ไม่ควรเปิดให้เครื่องอื่นใน network เข้าถึง
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    volumes:
+      - uploads:/app/uploads
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+
+    # ใช้พอร์ต 5173 เพราะ CORS ใน backend อนุญาตเฉพาะ localhost:5173
+    ports:
+      - "127.0.0.1:5173:80"
+
+    depends_on:
+      - backend
+
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  uploads:

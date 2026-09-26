@@ -3340,6 +3340,8 @@ def skill_pdf_font_name() -> str:
     ถ้าไม่มีจะ fallback เป็น Helvetica
     """
     candidates = [
+        # Docker image: fonts-tlwg-loma-ttf (มีทั้งไทยและอังกฤษ ส่วน NotoSansThai มีแต่อักษรไทย)
+        Path("/usr/share/fonts/truetype/tlwg/Loma.ttf"),
         Path("/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf"),
         Path("/usr/share/fonts/opentype/noto/NotoSansThai-Regular.ttf"),
         Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
