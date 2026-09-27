@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   CheckCircle2,
@@ -7,7 +7,7 @@ import {
   Info,
   LoaderCircle,
   Paperclip,
-  TrendingUp,
+  SlidersHorizontal,
   TriangleAlert,
   X
 } from 'lucide-vue-next'
@@ -37,13 +37,11 @@ const SKILLS_BY_ROLE = {
   organizer: STAFF_SKILLS
 }
 
-const DEFAULT_SKILL_LEVEL = 3
-
 const defaultLevels = (definitions) =>
-  Object.fromEntries(definitions.map((skill) => [skill.key, DEFAULT_SKILL_LEVEL]))
+  Object.fromEntries(definitions.map((skill) => [skill.key, null]))
 
 // เก็บแยกตาม role เพื่อให้สลับบทบาทไปมาแล้วค่าที่ตั้งไว้ไม่หาย
-// เริ่มจาก Level 3 ทั้งหมด นักศึกษาปรับระดับ หรือปิดเป็น "ไม่เกี่ยวข้อง" เองได้
+// เริ่มจาก "ไม่เกี่ยวข้อง" (null) ทั้งหมด นักศึกษาต้องเลือกเองอย่างน้อย 1 ทักษะ
 const emptySkillLevels = () => ({
   participant: defaultLevels(PARTICIPANT_SKILLS),
   organizer: defaultLevels(STAFF_SKILLS)
@@ -203,9 +201,63 @@ const activeSkillLevels = computed({
   }
 })
 
-const relatedSkillCount = computed(() =>
-  Object.values(activeSkillLevels.value).filter((level) => level !== null).length
+const countRelated = (levels) =>
+  Object.values(levels).filter((level) => level !== null).length
+
+const relatedSkillCount = computed(() => countRelated(activeSkillLevels.value))
+
+const roleSkillLabel = computed(() =>
+  form.value.role === 'organizer'
+    ? t.value.studentExternalActivity.staffTab
+    : t.value.studentExternalActivity.participantTab
 )
+
+function skillsSummaryText(count) {
+  if (count === 0) return t.value.studentExternalActivity.skillsNoneSelected
+
+  const template = count === 1
+    ? t.value.studentExternalActivity.skillsSelectedSingular
+    : t.value.studentExternalActivity.skillsSelectedPlural
+  return template.replace('{count}', count)
+}
+
+// error ของช่องทักษะแสดงที่ตัวช่องเอง หายเมื่อเลือกทักษะแล้วอย่างน้อย 1 ทักษะ
+const skillsField = ref(null)
+const skillsError = ref('')
+
+watch(relatedSkillCount, (count) => {
+  if (count > 0) skillsError.value = ''
+})
+
+/* =========================
+   Skills modal
+   แก้บน draft: บันทึก = เขียนกลับ, ยกเลิก/ปิด = ทิ้ง draft
+========================= */
+const showSkillsModal = ref(false)
+const skillDraft = ref({})
+
+const draftRelatedCount = computed(() => countRelated(skillDraft.value))
+
+function openSkillsModal() {
+  skillDraft.value = { ...activeSkillLevels.value }
+  showSkillsModal.value = true
+}
+
+function cancelSkillsModal() {
+  showSkillsModal.value = false
+}
+
+function saveSkillsModal() {
+  activeSkillLevels.value = { ...skillDraft.value }
+  showSkillsModal.value = false
+}
+
+function onKeydown(event) {
+  if (event.key === 'Escape' && showSkillsModal.value) cancelSkillsModal()
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 // ตรวจทันทีที่เลือกวันที่ ไม่ต้องรอกด Submit ก่อนจะรู้ว่าช่วงวันที่ผิด
 const dateRangeError = computed(() => {
@@ -292,10 +344,6 @@ function validateForm() {
     return dateRangeError.value
   }
 
-  if (relatedSkillCount.value === 0) {
-    return t.value.studentExternalActivity.skillRequiredError
-  }
-
   if (!evidenceFile.value && !existingEvidence.value) {
     return t.value.studentExternalActivity.evidenceRequiredError
   }
@@ -316,7 +364,18 @@ async function submitActivity() {
 
   successMessage.value = ''
   formError.value = validateForm()
-  if (formError.value) return
+  skillsError.value = relatedSkillCount.value === 0
+    ? t.value.studentExternalActivity.skillRequiredError
+    : ''
+
+  // ถ้าผิดแค่ช่องทักษะ เลื่อนจอไปที่ช่องนั้น (error อื่นแสดงอยู่ข้างปุ่มส่งแล้ว)
+  if (skillsError.value && !formError.value) {
+    await nextTick()
+    skillsField.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    skillsField.value?.querySelector('button')?.focus({ preventScroll: true })
+  }
+
+  if (formError.value || skillsError.value) return
 
   const body = new FormData()
 
@@ -450,6 +509,37 @@ async function submitActivity() {
               </select>
             </label>
 
+            <div
+              ref="skillsField"
+              class="field full skills-field"
+              :class="{ invalid: skillsError }"
+            >
+              <span id="skills-field-label">{{ t.studentExternalActivity.skillsFieldLabel }} <b>*</b></span>
+
+              <div class="skills-field-row">
+                <div class="skills-field-summary" :class="{ empty: relatedSkillCount === 0 }">
+                  <strong>{{ skillsSummaryText(relatedSkillCount) }}</strong>
+                  <small>{{ roleSkillLabel }} · {{ t.studentExternalActivity.skillsFieldHint }}</small>
+                </div>
+
+                <button
+                  type="button"
+                  class="view-skills-button"
+                  aria-labelledby="skills-field-label"
+                  aria-haspopup="dialog"
+                  @click="openSkillsModal"
+                >
+                  <SlidersHorizontal :size="15" />
+                  {{ t.studentExternalActivity.viewSkillsButton }}
+                </button>
+              </div>
+
+              <p v-if="skillsError" class="field-error" role="alert">
+                <TriangleAlert :size="14" />
+                {{ skillsError }}
+              </p>
+            </div>
+
             <label class="field full">
               <span>{{ t.studentExternalActivity.descriptionLabel }}</span>
               <textarea
@@ -580,56 +670,64 @@ async function submitActivity() {
         </div>
       </div>
 
-      <!-- RIGHT: Skill Mapping (ตาม design) -->
-      <aside class="card skills-card">
-        <div class="card-heading">
-          <span class="heading-icon green"><TrendingUp :size="16" /></span>
-          <h2>{{ t.studentExternalActivity.skillMappingHeading }}</h2>
-        </div>
-        <p class="card-subtitle">
-          {{ t.studentExternalActivity.skillMappingSubtitle }}
-        </p>
-
-        <!-- ชุด Skill ตามบทบาทที่เลือกใน "Your Role" ด้านบน แท็บนี้แสดงผลอย่างเดียว
-             ไม่ใช่ตัวเลือก role อีกช่องหนึ่ง จึงปิดแท็บที่ไม่ตรง role ไว้ -->
-        <div class="role-tabs" role="tablist" :aria-label="t.studentExternalActivity.skillSetAriaLabel">
-          <button
-            type="button"
-            role="tab"
-            data-role="participant"
-            :aria-selected="form.role === 'participant'"
-            :class="{ active: form.role === 'participant' }"
-            :disabled="form.role !== 'participant'"
-          >
-            {{ t.studentExternalActivity.participantTab }}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            data-role="organizer"
-            :aria-selected="form.role === 'organizer'"
-            :class="{ active: form.role === 'organizer' }"
-            :disabled="form.role !== 'organizer'"
-          >
-            {{ t.studentExternalActivity.staffTab }}
-          </button>
-        </div>
-
-        <SkillLevelEditor
-          v-model="activeSkillLevels"
-          :definitions="skillDefinitions"
-          compact
-        />
-
-        <div class="skill-summary" :class="{ empty: relatedSkillCount === 0 }">
-          <strong>{{ relatedSkillCount }} {{ relatedSkillCount === 1 ? t.studentExternalActivity.relatedSkillSingular : t.studentExternalActivity.relatedSkillPlural }}</strong>
-          <span>
-            {{ t.studentExternalActivity.skillSummaryHint }}
-            ({{ form.role === 'organizer' ? t.studentExternalActivity.staffTab : t.studentExternalActivity.participantTab }})
-          </span>
-        </div>
-      </aside>
     </form>
+
+    <!-- SKILLS MODAL -->
+    <div
+      v-if="showSkillsModal"
+      class="modal-backdrop skills-backdrop"
+      @click.self="cancelSkillsModal"
+    >
+      <div
+        class="skills-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="skills-modal-title"
+      >
+        <div class="modal-header skills-modal-header">
+          <div>
+            <h2 id="skills-modal-title">
+              {{ t.studentExternalActivity.skillMappingHeading }} ({{ roleSkillLabel }})
+            </h2>
+            <p class="card-subtitle">{{ t.studentExternalActivity.skillMappingSubtitle }}</p>
+          </div>
+
+          <button
+            class="modal-close"
+            type="button"
+            :aria-label="t.studentExternalActivity.skillsModalClose"
+            @click="cancelSkillsModal"
+          >
+            <X :size="20" />
+          </button>
+        </div>
+
+        <!-- เลื่อนได้เฉพาะเนื้อหา ปุ่มด้านล่างอยู่กับที่เสมอ -->
+        <div class="skills-modal-body">
+          <SkillLevelEditor
+            v-model="skillDraft"
+            :definitions="skillDefinitions"
+            compact
+          />
+        </div>
+
+        <div class="skills-modal-footer">
+          <span class="skills-modal-count" :class="{ empty: draftRelatedCount === 0 }">
+            {{ skillsSummaryText(draftRelatedCount) }}
+          </span>
+
+          <div class="skills-modal-actions">
+            <button type="button" class="modal-secondary-button" @click="cancelSkillsModal">
+              {{ t.studentExternalActivity.skillsModalCancel }}
+            </button>
+
+            <button type="button" class="modal-confirm-button" @click="saveSkillsModal">
+              {{ t.studentExternalActivity.skillsModalSave }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- OTHER CATEGORY MODAL -->
     <div
@@ -701,26 +799,10 @@ async function submitActivity() {
 }
 
 .page-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
-  grid-template-areas:
-    "main skills"
-    "footer skills";
-  grid-template-rows: auto 1fr;
-  gap: 16px 18px;
-  align-items: start;
-}
-
-.form-main {
-  grid-area: main;
-}
-
-.form-footer {
-  grid-area: footer;
-}
-
-.skills-card {
-  grid-area: skills;
+  max-width: 860px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .form-column {
@@ -1014,78 +1096,71 @@ async function submitActivity() {
   to { transform: rotate(360deg); }
 }
 
-.skills-card {
-  position: sticky;
-  top: 16px;
-}
-
-.role-tabs {
-  margin-bottom: 14px;
-  padding: 3px;
-  border-radius: 9px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2px;
-  background: #eef0f4;
-}
-
-.role-tabs button {
-  padding: 8px 4px;
-  border: none;
-  border-radius: 7px;
-  background: transparent;
-  color: #4a5567;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.role-tabs button.active {
-  background: #fff;
-  color: #1c2434;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
-}
-
-.role-tabs button:disabled {
-  color: #b0b8c4;
-  cursor: not-allowed;
-}
-
-.skill-summary {
-  margin-top: 14px;
+.skills-field-row {
   padding: 10px 12px;
+  border: 1px solid #dfe3ea;
   border-radius: 8px;
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #fff;
+}
+
+.skills-field.invalid .skills-field-row {
+  border-color: #e0453a;
+  box-shadow: 0 0 0 3px rgba(224, 69, 58, 0.08);
+}
+
+.skills-field-summary {
+  min-width: 0;
+  display: flex;
   flex-direction: column;
-  gap: 3px;
-  background: #eef1ff;
+  gap: 2px;
+}
+
+.skills-field-summary strong {
   color: #1d2f6f;
-  font-size: 11.5px;
+  font-size: 13px;
 }
 
-.skill-summary strong {
-  font-size: 12.5px;
-}
-
-.skill-summary.empty {
-  background: #fff5da;
+.skills-field-summary.empty strong {
   color: #8a5a00;
 }
 
-@media (max-width: 1100px) {
-  .page-grid {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "main"
-      "skills"
-      "footer";
-    grid-template-rows: auto;
-  }
+.skills-field-summary small {
+  color: #7e8796;
+  font-size: 11.5px;
+}
 
-  .skills-card {
-    position: static;
-  }
+.skills-field .field-error {
+  margin: 0;
+}
+
+.view-skills-button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid #d9c6f3;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  background: #f7f0ff;
+  color: #7e10c6;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.view-skills-button:hover {
+  background: #efe3ff;
+}
+
+.view-skills-button:focus-visible {
+  outline: 2px solid #9b5de5;
+  outline-offset: 2px;
 }
 
 @media (max-width: 640px) {
@@ -1099,6 +1174,15 @@ async function submitActivity() {
 
   .primary-button {
     width: 100%;
+  }
+
+  .skills-field-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .view-skills-button {
+    justify-content: center;
   }
 }
 
@@ -1215,5 +1299,100 @@ async function submitActivity() {
 .modal-confirm-button {
   background: #7e10c6;
   color: #fff;
+}
+
+/* =========================
+   Skills modal
+   header / footer อยู่กับที่ เลื่อนเฉพาะ body
+========================= */
+.skills-modal {
+  width: min(600px, 100%);
+  max-height: calc(100vh - 44px);
+  max-height: calc(100dvh - 44px);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 24px 65px rgba(15, 23, 42, 0.2);
+}
+
+.skills-modal-header {
+  margin: 0;
+  padding: 20px 22px 4px;
+  flex-shrink: 0;
+}
+
+.skills-modal-header .card-subtitle {
+  margin: 6px 0 0;
+}
+
+.skills-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 12px 22px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.skills-modal-footer {
+  flex-shrink: 0;
+  padding: 12px 22px;
+  border-top: 1px solid #eef0f4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: #fff;
+}
+
+.skills-modal-count {
+  color: #1d2f6f;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.skills-modal-count.empty {
+  color: #8a5a00;
+}
+
+.skills-modal-actions {
+  display: flex;
+  gap: 9px;
+}
+
+@media (max-width: 640px) {
+  /* บนมือถือเป็น bottom sheet เต็มความกว้าง ปุ่มติดขอบล่างเสมอ */
+  .skills-backdrop {
+    padding: 0;
+    align-items: end;
+  }
+
+  .skills-modal {
+    width: 100%;
+    max-height: 92vh;
+    max-height: 92dvh;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .skills-modal-header {
+    padding: 16px 16px 4px;
+  }
+
+  .skills-modal-body {
+    padding: 10px 16px 14px;
+  }
+
+  .skills-modal-footer {
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .skills-modal-actions > button {
+    flex: 1;
+  }
 }
 </style>
