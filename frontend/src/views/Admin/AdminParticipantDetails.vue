@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Trash2
 } from 'lucide-vue-next'
+import { PARTICIPANT_SKILLS, STAFF_SKILLS } from '../../constants/activitySkills'
 import { useLanguage } from '../../composables/useLanguage'
 
 const { t } = useLanguage()
@@ -53,7 +54,9 @@ const activity = ref({
   responsible_person: '',
   advisor: '',
   location: '',
-  description: ''
+  description: '',
+  staff_skills: {},
+  participant_skills: {}
 })
 
 const participants = ref([])
@@ -89,6 +92,30 @@ const participantCount = computed(
 const organizerCount = computed(
   () => participants.value.filter((student) => student.role === 'organizer').length
 )
+
+// skill ที่ตั้งไว้ในกิจกรรม (ไม่มี key = ไม่เกี่ยวข้อง) เรียงตามลำดับใน definitions
+function savedSkillList(definitions, saved) {
+  return definitions
+    .filter((skill) => saved?.[skill.key] != null)
+    .map((skill) => ({ ...skill, level: saved[skill.key] }))
+}
+
+// organizer ได้ Staff skills, participant ได้ Participant skills
+// (เหมือนที่ backend ใช้คำนวณ skill ของนักศึกษา)
+const roleSkillGroups = computed(() => [
+  {
+    role: 'participant',
+    label: t.value.adminParticipantDetails.participantRole,
+    skillSetLabel: t.value.adminParticipantDetails.participantSkillSetLabel,
+    skills: savedSkillList(PARTICIPANT_SKILLS, activity.value.participant_skills)
+  },
+  {
+    role: 'organizer',
+    label: t.value.adminParticipantDetails.organizerRole,
+    skillSetLabel: t.value.adminParticipantDetails.staffSkillSetLabel,
+    skills: savedSkillList(STAFF_SKILLS, activity.value.staff_skills)
+  }
+])
 
 function formatActivityDate(value) {
   if (!value) return '—'
@@ -389,6 +416,78 @@ function roleLabel(role) {
             </button>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section
+      v-if="!pageLoading && !loadError"
+      class="skills-card"
+    >
+      <div class="table-heading">
+        <div>
+          <h2>{{ t.adminParticipantDetails.skillsGainedTitle }}</h2>
+          <p>{{ t.adminParticipantDetails.skillsGainedSubtitle }}</p>
+        </div>
+      </div>
+
+      <div class="skills-role-grid">
+        <article
+          v-for="group in roleSkillGroups"
+          :key="group.role"
+          class="skills-role-panel"
+          :data-role="group.role"
+        >
+          <header class="skills-role-header">
+            <span
+              class="role-badge"
+              :class="group.role"
+            >
+              {{ group.label }}
+            </span>
+            <small>{{ group.skillSetLabel }}</small>
+          </header>
+
+          <ul
+            v-if="group.skills.length"
+            class="skills-role-list"
+          >
+            <li
+              v-for="skill in group.skills"
+              :key="skill.key"
+              :data-skill="skill.key"
+            >
+              <div class="skill-icon">
+                <component :is="skill.icon" :size="16" />
+              </div>
+
+              <div class="skill-text">
+                <strong>{{ skill.label }}</strong>
+                <small>{{ skill.description }}</small>
+              </div>
+
+              <div
+                class="skill-level"
+                :aria-label="`${t.adminParticipantDetails.skillLevelLabel} ${skill.level} / 5`"
+              >
+                <span class="level-dots" aria-hidden="true">
+                  <i
+                    v-for="step in 5"
+                    :key="step"
+                    :class="{ filled: step <= skill.level }"
+                  ></i>
+                </span>
+                <strong>{{ t.adminParticipantDetails.skillLevelLabel }} {{ skill.level }}</strong>
+              </div>
+            </li>
+          </ul>
+
+          <p
+            v-else
+            class="skills-role-empty"
+          >
+            {{ t.adminParticipantDetails.noSkillsForRoleText }}
+          </p>
+        </article>
       </div>
     </section>
 
@@ -892,6 +991,126 @@ function roleLabel(role) {
   background: #fff;
 }
 
+.skills-card {
+  margin-bottom: 20px;
+  overflow: hidden;
+  border: 1px solid #e0e7f0;
+  border-radius: 13px;
+  background: #fff;
+}
+
+.skills-role-grid {
+  padding: 16px 20px 20px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.skills-role-panel {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #e7ecf3;
+  border-radius: 11px;
+  background: #fbfcfe;
+}
+
+.skills-role-header {
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.skills-role-header small {
+  color: #8a99ae;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.skills-role-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.skills-role-list li {
+  padding: 9px 11px;
+  border: 1px solid #edf1f6;
+  border-radius: 9px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.skill-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: #f1f5fb;
+  color: #1769dc;
+}
+
+.skill-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.skill-text strong {
+  display: block;
+  color: #26364b;
+  font-size: 12px;
+}
+
+.skill-text small {
+  display: block;
+  margin-top: 2px;
+  color: #94a1b1;
+  font-size: 10px;
+}
+
+.skill-level {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.level-dots {
+  display: flex;
+  gap: 3px;
+}
+
+.level-dots i {
+  width: 14px;
+  height: 5px;
+  border-radius: 999px;
+  background: #e3e9f1;
+}
+
+.level-dots i.filled {
+  background: #22a060;
+}
+
+.skill-level strong {
+  color: #17864d;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.skills-role-empty {
+  margin: 0;
+  padding: 14px 4px;
+  color: #93a5bc;
+  font-size: 12px;
+}
+
 .table-heading {
   padding: 17px 20px;
   border-bottom: 1px solid #e8edf4;
@@ -1153,6 +1372,10 @@ tr.editing {
 @media (max-width: 800px) {
   .details-page {
     padding: 22px 16px 36px;
+  }
+
+  .skills-role-grid {
+    grid-template-columns: 1fr;
   }
 
   .page-header {
