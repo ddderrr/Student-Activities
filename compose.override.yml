@@ -1,0 +1,51 @@
+# Dev mode: docker compose โหลดไฟล์นี้อัตโนมัติ
+#
+#   docker compose up -d
+#
+# รันครั้งเดียว แล้วแก้โค้ดได้เลย ไม่ต้อง build / restart ใหม่ (รันจาก WSL หรือ PowerShell ก็ได้)
+# - frontend: Vite dev server (hot reload) แทน nginx โดย mount frontend/src และ frontend/public เข้า container
+# - backend:  uvicorn --reload โดย mount backend/ เข้า container
+# ใช้ polling ตรวจไฟล์ที่เปลี่ยน เพราะ Docker บน Windows / WSL ไม่ส่ง event การแก้ไฟล์เข้า container
+#
+# แก้ package.json / requirements.txt / index.html / vite.config.js แล้วให้รัน docker compose up -d อีกครั้ง
+#
+# production (nginx, ไม่มี hot reload) ให้ข้ามไฟล์นี้:
+#   docker compose -f compose.yml up -d --build
+
+services:
+  backend:
+    # tag :dev แยกจาก production และ build ทุกครั้งที่ up (มี cache จึงเร็ว)
+    image: student-activities-backend:dev
+    pull_policy: build
+
+    build:
+      context: ./backend
+      target: dev
+
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    image: student-activities-frontend:dev
+    pull_policy: build
+
+    build:
+      context: ./frontend
+      target: dev
+
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+
+    # แทนที่ port ของ nginx (80) ด้วย port ของ Vite dev server
+    ports: !override
+      - "127.0.0.1:5173:5173"
+
+    # mount แค่ src และ public เพื่อใช้ node_modules (Linux) ที่ติดตั้งไว้ใน image
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+
+    init: true

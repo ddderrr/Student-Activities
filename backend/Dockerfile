@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -12,14 +12,33 @@ RUN apt-get update \
 
 WORKDIR /app
 
+RUN useradd --create-home --uid 1000 appuser
+
 COPY requirements.txt .
 RUN pip install -r requirements.txt
+
+
+# ---------- dev: ใช้กับ compose.override.yml (uvicorn --reload, mount โค้ดจากเครื่อง) ----------
+FROM base AS dev
+
+COPY . .
+
+RUN mkdir -p uploads/external_activities \
+    && chown -R appuser:appuser uploads
+USER appuser
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+
+# ---------- production (default) ----------
+FROM base
 
 COPY . .
 
 # รันด้วย user ธรรมดา และให้ user นี้เขียนโฟลเดอร์ uploads ได้
-RUN useradd --create-home --uid 1000 appuser \
-    && mkdir -p uploads/external_activities \
+RUN mkdir -p uploads/external_activities \
     && chown -R appuser:appuser uploads
 USER appuser
 
