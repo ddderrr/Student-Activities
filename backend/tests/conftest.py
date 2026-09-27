@@ -20,6 +20,15 @@ async def _noop_lifespan(app):
     yield
 
 
+@pytest.fixture(autouse=True)
+def upload_dir(tmp_path, monkeypatch):
+    # ทุกเทสต์เขียนไฟล์หลักฐานลง tmp แทน backend/uploads จริง
+    directory = tmp_path / "uploads"
+    directory.mkdir()
+    monkeypatch.setattr(main_module, "EXTERNAL_ACTIVITY_UPLOAD_DIR", directory)
+    return directory
+
+
 @pytest.fixture()
 def test_engine():
     engine = create_engine(

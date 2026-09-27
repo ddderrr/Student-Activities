@@ -77,6 +77,12 @@ function isExternal(request) {
    External activity review
 ========================= */
 const reviewItem = ref(null)
+
+// ไฟล์หลักฐานทั้งหมดของคำขอ (สูงสุด 10 ไฟล์) รูปภาพแสดงเป็นภาพย่อด้วย
+const reviewEvidenceFiles = computed(() => reviewItem.value?.evidence_files || [])
+const reviewEvidenceImages = computed(() =>
+  reviewEvidenceFiles.value.filter((file) => file.content_type.startsWith('image/'))
+)
 const reviewOpen = ref(false)
 const reviewLoading = ref(false)
 const reviewError = ref('')
@@ -709,24 +715,45 @@ async function decideRequest(request, status) {
             </section>
 
             <section class="review-section">
-              <h4>{{ t.adminApproval.evidenceLabel }}</h4>
-              <img
-                v-if="reviewItem.evidence.content_type.startsWith('image/')"
-                class="evidence-preview"
-                :src="`${API_BASE}${reviewItem.evidence.url}`"
-                :alt="reviewItem.evidence.original_name"
-              />
-              <a
-                class="evidence-file"
-                :href="`${API_BASE}${reviewItem.evidence.url}`"
-                target="_blank"
-                rel="noopener"
-              >
-                <FileText :size="15" />
-                <span>{{ reviewItem.evidence.original_name }}</span>
-                <small>{{ formatBytes(reviewItem.evidence.size) }}</small>
-                <ExternalLink :size="13" />
-              </a>
+              <h4>
+                {{ t.adminApproval.evidenceLabel }}
+                <small class="evidence-count">({{ reviewEvidenceFiles.length }})</small>
+              </h4>
+
+              <!-- รูปแสดงเป็นภาพย่อ กดเพื่อเปิดไฟล์เต็ม -->
+              <div v-if="reviewEvidenceImages.length" class="evidence-gallery">
+                <a
+                  v-for="file in reviewEvidenceImages"
+                  :key="`image-${file.id}`"
+                  :href="`${API_BASE}${file.url}`"
+                  target="_blank"
+                  rel="noopener"
+                  :title="file.original_name"
+                >
+                  <img
+                    class="evidence-preview"
+                    :src="`${API_BASE}${file.url}`"
+                    :alt="file.original_name"
+                    loading="lazy"
+                  />
+                </a>
+              </div>
+
+              <ul class="evidence-file-list">
+                <li v-for="file in reviewEvidenceFiles" :key="file.id">
+                  <a
+                    class="evidence-file"
+                    :href="`${API_BASE}${file.url}`"
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    <FileText :size="15" />
+                    <span>{{ file.original_name }}</span>
+                    <small>{{ formatBytes(file.size) }}</small>
+                    <ExternalLink :size="13" />
+                  </a>
+                </li>
+              </ul>
             </section>
           </div>
 
@@ -1353,13 +1380,38 @@ tbody td {
   white-space: pre-wrap;
 }
 
+.evidence-count {
+  color: #8ea0ba;
+  font-weight: 500;
+}
+
+.evidence-gallery {
+  margin-bottom: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.evidence-gallery a {
+  display: block;
+}
+
 .evidence-preview {
   width: 100%;
-  max-height: 260px;
-  margin-bottom: 10px;
+  height: 140px;
+  display: block;
   border-radius: 8px;
   object-fit: contain;
   background: #f4f7fc;
+}
+
+.evidence-file-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .evidence-file {

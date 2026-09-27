@@ -345,11 +345,13 @@ class ExternalActivity(Base):
     role = Column(String(20), nullable=False)
     description = Column(Text, nullable=False, default="")
 
-    # ไฟล์จริงอยู่ใน backend/uploads/external_activities/ เก็บแค่ชื่อไฟล์ (uuid)
-    evidence_filename = Column(String(100), nullable=False)
-    evidence_original_name = Column(String(255), nullable=False)
-    evidence_content_type = Column(String(100), nullable=False)
-    evidence_size = Column(Integer, nullable=False)
+    # เลิกใช้แล้ว: หลักฐานย้ายไปอยู่ที่ external_activity_evidence (หลายไฟล์ต่อคำขอ)
+    # เก็บคอลัมน์ไว้เป็นข้อมูลเดิมเผื่อย้อนกลับ ห้ามอ่าน/เขียนในโค้ดใหม่
+    # ดู migration_multiple_evidence_files.sql
+    evidence_filename = Column(String(100), nullable=True)
+    evidence_original_name = Column(String(255), nullable=True)
+    evidence_content_type = Column(String(100), nullable=True)
+    evidence_size = Column(Integer, nullable=True)
 
     status = Column(
         String(20),
@@ -392,6 +394,48 @@ class ExternalActivity(Base):
         "ExternalActivitySkill",
         back_populates="external_activity",
         cascade="all, delete-orphan",
+    )
+
+    evidence_files = relationship(
+        "ExternalActivityEvidence",
+        back_populates="external_activity",
+        cascade="all, delete-orphan",
+        order_by="ExternalActivityEvidence.id",
+    )
+
+
+class ExternalActivityEvidence(Base):
+    # ไฟล์หลักฐานของคำขอกิจกรรมภายนอก (สูงสุด 10 ไฟล์ต่อคำขอ)
+    # ไฟล์จริงอยู่ที่ uploads/external_activities/<external_activity_id>/<stored_name>
+    __tablename__ = "external_activity_evidence"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    external_activity_id = Column(
+        Integer,
+        ForeignKey(
+            "external_activities.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    # ชื่อไฟล์ที่ระบบสร้างเอง (uuid + นามสกุล)
+    stored_name = Column(String(100), nullable=False)
+    original_name = Column(String(255), nullable=False)
+    content_type = Column(String(100), nullable=False)
+    size = Column(Integer, nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=False),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    external_activity = relationship(
+        "ExternalActivity",
+        back_populates="evidence_files",
     )
 
 
