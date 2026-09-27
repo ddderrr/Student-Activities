@@ -7,7 +7,8 @@ import {
   Save,
   X,
   Users,
-  ShieldCheck
+  ShieldCheck,
+  Trash2
 } from 'lucide-vue-next'
 import { useLanguage } from '../../composables/useLanguage'
 
@@ -62,6 +63,7 @@ const loadError = ref('')
 const editingRowId = ref(null)
 const editDraft = ref(null)
 const savingRowId = ref(null)
+const removingRowId = ref(null)
 const saveMessage = ref('')
 
 const descriptionModalOpen = ref(false)
@@ -251,6 +253,40 @@ async function saveRow() {
     saveMessage.value = error.message || t.value.adminParticipantDetails.saveFailedFallbackError
   } finally {
     savingRowId.value = null
+  }
+}
+
+// นำนักศึกษาออกจากกิจกรรมนี้เท่านั้น ข้อมูลนักศึกษาและกิจกรรมอื่นยังอยู่
+async function removeParticipant(student) {
+  const confirmed = window.confirm(
+    t.value.adminParticipantDetails.removeParticipantConfirm
+      .replace('{name}', `${student.first_name} ${student.last_name}`)
+      .replace('{id}', student.student_id)
+  )
+
+  if (!confirmed) return
+
+  removingRowId.value = student.student_id
+  saveMessage.value = ''
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/activities/${activityId.value}/participants/${encodeURIComponent(student.student_id)}`,
+      { method: 'DELETE' }
+    )
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null)
+      throw new Error(errorBody?.detail || t.value.adminParticipantDetails.removeFailedError)
+    }
+
+    participants.value = participants.value.filter(
+      (item) => item.student_id !== student.student_id
+    )
+  } catch (error) {
+    saveMessage.value = error.message || t.value.adminParticipantDetails.removeFailedError
+  } finally {
+    removingRowId.value = null
   }
 }
 
@@ -511,14 +547,31 @@ function roleLabel(role) {
                 </td>
 
                 <td>
-                  <button
-                    class="edit-button"
-                    :disabled="editingRowId !== null"
-                    @click="startEdit(student)"
-                  >
-                    <Pencil :size="14" />
-                    {{ t.adminParticipantDetails.editButton }}
-                  </button>
+                  <div class="row-actions">
+                    <button
+                      class="edit-button"
+                      :disabled="editingRowId !== null || removingRowId !== null"
+                      @click="startEdit(student)"
+                    >
+                      <Pencil :size="14" />
+                      {{ t.adminParticipantDetails.editButton }}
+                    </button>
+
+                    <button
+                      class="remove-button"
+                      :disabled="editingRowId !== null || removingRowId !== null"
+                      @click="removeParticipant(student)"
+                    >
+                      <span
+                        v-if="removingRowId === student.student_id"
+                        class="mini-spinner"
+                      ></span>
+
+                      <Trash2 v-else :size="14" />
+
+                      {{ removingRowId === student.student_id ? t.adminParticipantDetails.removingButton : t.adminParticipantDetails.removeButton }}
+                    </button>
+                  </div>
                 </td>
               </template>
             </tr>
@@ -954,6 +1007,42 @@ tr.editing {
 .edit-button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.remove-button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: #fff0f0;
+  color: #c43d3d;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.remove-button:not(:disabled):hover {
+  background: #ffe2e2;
+}
+
+.remove-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.remove-button .mini-spinner {
+  border-color: rgba(196, 61, 61, 0.3);
+  border-top-color: #c43d3d;
 }
 
 .row-input,

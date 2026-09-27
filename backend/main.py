@@ -2258,6 +2258,41 @@ def update_activity_participant(
     }
 
 
+@app.delete(
+    "/api/activities/{activity_id}/participants/{student_id}",
+    status_code=204,
+)
+def remove_activity_participant(
+    activity_id: int,
+    student_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    นำนักศึกษาออกจากกิจกรรมนี้ (ลบแค่ activity_members)
+    ข้อมูลนักศึกษา (students) และกิจกรรมอื่นของนักศึกษายังอยู่
+    """
+    require_activity(
+        db,
+        activity_id,
+    )
+
+    member = db.get(
+        ActivityMember,
+        (activity_id, student_id),
+    )
+
+    if not member:
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบผู้เข้าร่วมนี้ในกิจกรรม",
+        )
+
+    db.delete(member)
+    db.commit()
+
+    return None
+
+
 # ============================================================
 # EXTERNAL ACTIVITIES (ส่งโดยนักศึกษา อนุมัติโดย admin)
 # ============================================================

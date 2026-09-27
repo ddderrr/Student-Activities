@@ -18,7 +18,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 
-# ---------- dev: ใช้กับ compose.override.yml (uvicorn --reload, mount โค้ดจากเครื่อง) ----------
+# ---------- dev: ใช้กับ compose.override.yml (auto reload, mount โค้ดจากเครื่อง) ----------
 FROM base AS dev
 
 COPY . .
@@ -29,7 +29,8 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# dev_server.py รัน uvicorn และ restart เมื่อไฟล์ .py เปลี่ยน (ทนต่อ error ชั่วคราวมากกว่า --reload)
+CMD ["python", "dev_server.py"]
 
 
 # ---------- production (default) ----------

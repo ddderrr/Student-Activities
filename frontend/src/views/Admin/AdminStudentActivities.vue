@@ -874,25 +874,113 @@ function removeImportFile(index) {
 }
 
 function toggleImportIssues() {
-  if (!importPreview.value?.invalid_count) return
+  if (!importIssueCount.value) return
   showImportIssues.value = !showImportIssues.value
 }
+
+const IMPORT_EDITABLE_FIELDS = ['student_id', 'first_name', 'last_name', 'email', 'major']
+const IMPORT_ROLES = ['participant', 'organizer']
+
+const importEditableColumns = computed(() => [
+  { field: 'student_id', label: t.value.adminStudentActivities.previewTableStudentId, width: '130px' },
+  { field: 'first_name', label: t.value.adminStudentActivities.previewTableFirstName, width: '150px' },
+  { field: 'last_name', label: t.value.adminStudentActivities.previewTableLastName, width: '150px' },
+  { field: 'email', label: t.value.adminStudentActivities.previewTableEmail, width: '220px' },
+  { field: 'major', label: t.value.adminStudentActivities.previewTableMajor, width: '160px' }
+])
+
+/*
+  ตรวจข้อมูลทุกแถวใน preview ใหม่ทุกครั้งที่แก้ในตาราง
+  ใช้กฎเดียวกับ validate_students ใน backend/main.py
+  (+ ตรวจรหัสนักศึกษาซ้ำในรายการ)
+  คืนค่าเป็น array ของ { field: ข้อความ error } ตามลำดับแถว
+*/
+const importRowErrors = computed(() => {
+  const labels = t.value.adminStudentActivities
+  const rowErrors = (importPreview.value?.students || []).map((student) => {
+    const errors = {}
+    const email = String(student.email ?? '').trim()
+
+    if (!String(student.student_id ?? '').trim()) {
+      errors.student_id = labels.importMissingStudentId
+    }
+
+    if (!String(student.first_name ?? '').trim()) {
+      errors.first_name = labels.importMissingFirstName
+    }
+
+    if (!String(student.last_name ?? '').trim()) {
+      errors.last_name = labels.importMissingLastName
+    }
+
+    if (!email) {
+      if (student._requireEmail) errors.email = labels.importMissingEmail
+    } else if (!email.includes('@')) {
+      errors.email = labels.invalidEmailFormat
+    }
+
+    if (!IMPORT_ROLES.includes(student.role)) {
+      errors.role = labels.importInvalidRole
+    }
+
+    return errors
+  })
+
+  // รหัสซ้ำ: นับเฉพาะแถวที่ไม่มีปัญหาอื่น แถวแรกที่ถูกต้องจะถูกนำเข้า
+  // แถวถัดไปที่รหัสเดียวกันถือว่าซ้ำ (backend จะ error ถ้าส่งรหัสซ้ำไปพร้อมกัน)
+  const seenStudentIds = new Set()
+
+  importPreview.value?.students.forEach((student, index) => {
+    if (Object.keys(rowErrors[index]).length) return
+
+    const studentId = String(student.student_id).trim()
+
+    if (seenStudentIds.has(studentId)) {
+      rowErrors[index].student_id = labels.importDuplicateStudentId
+    } else {
+      seenStudentIds.add(studentId)
+    }
+  })
+
+  return rowErrors
+})
+
+function importRowHasIssue(index) {
+  return Object.keys(importRowErrors.value[index] || {}).length > 0
+}
+
+const importIssueList = computed(() =>
+  (importPreview.value?.students || [])
+    .map((student, index) => ({
+      student,
+      index,
+      errors: Object.values(importRowErrors.value[index] || {})
+    }))
+    .filter((item) => item.errors.length)
+)
+
+const importIssueCount = computed(() => importIssueList.value.length)
 
 function validPreviewStudents() {
   if (!importPreview.value) return []
 
   return importPreview.value.students.filter(
-    (student) => !(student._issueErrors || []).length
+    (_student, index) => !importRowHasIssue(index)
   )
 }
 
 function cleanStudentForConfirm(student) {
   const {
-    _issueErrors,
+    _requireEmail,
+    _rowKey,
     _sourceFile,
     _sourceRow,
     ...cleanStudent
   } = student
+
+  for (const field of IMPORT_EDITABLE_FIELDS) {
+    cleanStudent[field] = String(cleanStudent[field] ?? '').trim()
+  }
 
   return cleanStudent
 }
@@ -912,13 +1000,10 @@ async function previewParticipantsImport() {
 
   try {
     const combinedPreview = {
-      total: 0,
-      invalid_count: 0,
-      students: [],
-      invalid_rows: []
+      students: []
     }
 
-    for (const file of selectedFiles.value) {
+    for (const [fileIndex, file] of selectedFiles.value.entries()) {
       const formData = new FormData()
       formData.append('file', file)
 
@@ -937,39 +1022,26 @@ async function previewParticipantsImport() {
       }
 
       const fileStudents = data.students || []
-      const fileIssues = data.invalid_rows || []
-      const issuesByStudentIndex = new Map()
+      // ไฟล์เช็คชื่อรุ่นเก่า (.xls) ไม่มี column email จึงไม่บังคับ (เหมือน backend)
+      const requireEmail = !file.name.toLowerCase().endsWith('.xls')
 
-      for (const issue of fileIssues) {
-        const localIndex = Math.max(0, Number(issue.row || 2) - 2)
-        const errors = Array.isArray(issue.errors)
-          ? issue.errors
-          : [String(issue.errors || t.value.adminStudentActivities.invalidDataDefault)]
-
-        issuesByStudentIndex.set(localIndex, errors)
-
-        combinedPreview.invalid_rows.push({
-          file_name: file.name,
-          row: Number(issue.row || localIndex + 2),
-          student_index: combinedPreview.students.length + localIndex,
-          errors
-        })
-      }
-
+      // ปัญหาของแต่ละแถวคำนวณใหม่ใน importRowErrors เพื่อให้แก้ข้อมูลในตารางแล้วอัปเดตทันที
       const normalizedStudents = fileStudents.map((student, index) => {
-        const role = String(student.role || 'participant').trim().toLowerCase()
+        const editableValues = Object.fromEntries(
+          IMPORT_EDITABLE_FIELDS.map((field) => [field, String(student[field] ?? '')])
+        )
 
         return {
           ...student,
-          role: role === 'organizer' ? 'organizer' : 'participant',
+          ...editableValues,
+          role: String(student.role || 'participant').trim().toLowerCase(),
+          _requireEmail: requireEmail,
+          _rowKey: `${fileIndex}-${index}`,
           _sourceFile: file.name,
-          _sourceRow: index + 2,
-          _issueErrors: issuesByStudentIndex.get(index) || []
+          _sourceRow: index + 2
         }
       })
 
-      combinedPreview.total += Number(data.total || normalizedStudents.length)
-      combinedPreview.invalid_count += Number(data.invalid_count || fileIssues.length)
       combinedPreview.students.push(...normalizedStudents)
     }
 
@@ -985,6 +1057,7 @@ async function confirmParticipantsImport() {
   if (!selectedActivity.value || !importPreview.value) return
 
   const studentsToImport = validPreviewStudents()
+  const skippedIssueCount = importIssueCount.value
 
   if (!studentsToImport.length) {
     importError.value =
@@ -1029,10 +1102,10 @@ async function confirmParticipantsImport() {
             data.duplicate_count
           )
         : '') +
-      (importPreview.value.invalid_count
+      (skippedIssueCount
         ? t.value.adminStudentActivities.importSuccessIssueSuffix.replace(
             '{count}',
-            importPreview.value.invalid_count
+            skippedIssueCount
           )
         : '')
   } catch (error) {
@@ -1046,7 +1119,7 @@ async function confirmParticipantsImport() {
 const previewIssueNoteText = computed(() =>
   t.value.adminStudentActivities.previewIssueNote.replace(
     '{count}',
-    importPreview.value?.invalid_count ?? 0
+    importIssueCount.value
   )
 )
 
@@ -1993,15 +2066,15 @@ const confirmImportButtonText = computed(() =>
           <div class="preview-summary">
             <div class="preview-summary-item">
               <span>{{ t.adminStudentActivities.previewFoundLabel }}</span>
-              <strong>{{ importPreview.total }}</strong>
+              <strong>{{ importPreview.students.length }}</strong>
             </div>
 
             <div class="preview-summary-item">
               <span>{{ t.adminStudentActivities.previewReadyLabel }}</span>
               <strong>
                 {{
-                  importPreview.total -
-                  importPreview.invalid_count
+                  importPreview.students.length -
+                  importIssueCount
                 }}
               </strong>
             </div>
@@ -2010,19 +2083,19 @@ const confirmImportButtonText = computed(() =>
               type="button"
               class="preview-summary-item issue-summary-button"
               :class="{ active: showImportIssues }"
-              :disabled="!importPreview.invalid_count"
+              :disabled="!importIssueCount"
               @click="toggleImportIssues"
             >
               <span>{{ t.adminStudentActivities.previewIssuesLabel }}</span>
-              <strong>{{ importPreview.invalid_count }}</strong>
-              <small v-if="importPreview.invalid_count">
+              <strong>{{ importIssueCount }}</strong>
+              <small v-if="importIssueCount">
                 {{ showImportIssues ? t.adminStudentActivities.hideDetailsText : t.adminStudentActivities.showDetailsText }}
               </small>
             </button>
           </div>
 
           <div
-            v-if="showImportIssues && importPreview.invalid_count"
+            v-if="showImportIssues && importIssueCount"
             class="import-issues-panel"
           >
             <div class="issues-panel-heading">
@@ -2035,24 +2108,24 @@ const confirmImportButtonText = computed(() =>
 
             <div class="issue-list">
               <div
-                v-for="(issue, issueIndex) in importPreview.invalid_rows"
-                :key="`${issue.file_name}-${issue.row}-${issueIndex}`"
+                v-for="issue in importIssueList"
+                :key="issue.student._rowKey"
                 class="issue-item"
               >
                 <div class="issue-item-top">
                   <strong>
                     {{
-                      importPreview.students[issue.student_index]?.student_id ||
+                      issue.student.student_id ||
                       t.adminStudentActivities.unknownStudentFallback
                     }}
                   </strong>
-                  <span>{{ issue.file_name }} • {{ t.adminStudentActivities.previewIssueRowLabel }} {{ issue.row }}</span>
+                  <span>{{ issue.student._sourceFile }} • {{ t.adminStudentActivities.previewIssueRowLabel }} {{ issue.student._sourceRow }}</span>
                 </div>
 
                 <ul>
                   <li
                     v-for="(error, errorIndex) in issue.errors"
-                    :key="`${issueIndex}-${errorIndex}`"
+                    :key="`${issue.student._rowKey}-${errorIndex}`"
                   >
                     {{ error }}
                   </li>
@@ -2061,47 +2134,79 @@ const confirmImportButtonText = computed(() =>
             </div>
           </div>
 
+          <p class="preview-edit-hint">
+            <Pencil :size="13" />
+            {{ t.adminStudentActivities.previewEditHint }}
+          </p>
+
           <div class="preview-table-wrapper preview-participants-scroll">
             <table class="preview-table participants-preview-table">
               <thead>
                 <tr>
-                  <th>{{ t.adminStudentActivities.previewTableStudentId }}</th>
-                  <th>{{ t.adminStudentActivities.previewTableName }}</th>
-                  <th>{{ t.adminStudentActivities.previewTableEmail }}</th>
+                  <th
+                    v-for="column in importEditableColumns"
+                    :key="column.field"
+                    :style="{ width: column.width }"
+                  >
+                    {{ column.label }}
+                  </th>
                   <th>{{ t.adminStudentActivities.previewTableRole }}</th>
                   <th>{{ t.adminStudentActivities.previewTableStatus }}</th>
                 </tr>
               </thead>
 
               <tbody>
+                <!-- key ต้องคงที่ (ไม่ใช้ student_id) ไม่งั้นแก้รหัสแล้ว input จะหลุด focus -->
                 <tr
                   v-for="(student, index) in importPreview.students"
-                  :key="`${student.student_id || 'student'}-${index}`"
-                  :class="{ 'preview-row-issue': student._issueErrors?.length }"
+                  :key="student._rowKey"
+                  :class="{ 'preview-row-issue': importRowHasIssue(index) }"
                 >
-                  <td>{{ student.student_id }}</td>
+                  <td
+                    v-for="column in importEditableColumns"
+                    :key="column.field"
+                  >
+                    <input
+                      v-model="student[column.field]"
+                      type="text"
+                      class="preview-cell-input"
+                      :class="{ invalid: importRowErrors[index]?.[column.field] }"
+                      :aria-label="column.label"
+                      :inputmode="column.field === 'email' ? 'email' : undefined"
+                      :disabled="confirmLoading"
+                      spellcheck="false"
+                    />
 
-                  <td>
-                    {{ student.first_name }}
-                    {{ student.last_name }}
+                    <small
+                      v-if="importRowErrors[index]?.[column.field]"
+                      class="preview-cell-error"
+                    >
+                      {{ importRowErrors[index][column.field] }}
+                    </small>
                   </td>
-
-                  <td>{{ student.email }}</td>
 
                   <td>
                     <select
                       v-model="student.role"
                       class="preview-role-select"
+                      :class="{ invalid: importRowErrors[index]?.role }"
                       :disabled="confirmLoading"
                     >
                       <option value="participant">{{ t.adminStudentActivities.participantLabel }}</option>
                       <option value="organizer">{{ t.adminStudentActivities.organizerLabel }}</option>
                     </select>
+
+                    <small
+                      v-if="importRowErrors[index]?.role"
+                      class="preview-cell-error"
+                    >
+                      {{ importRowErrors[index].role }}
+                    </small>
                   </td>
 
                   <td>
                     <button
-                      v-if="student._issueErrors?.length"
+                      v-if="importRowHasIssue(index)"
                       type="button"
                       class="preview-status issue"
                       @click="
@@ -2124,7 +2229,7 @@ const confirmImportButtonText = computed(() =>
           </div>
 
           <p
-            v-if="importPreview.invalid_count"
+            v-if="importIssueCount"
             class="preview-note preview-issue-note"
           >
             {{ previewIssueNoteText }}
@@ -3431,7 +3536,7 @@ td {
 }
 
 .import-modal.review-mode {
-  width: min(1000px, calc(100vw - 48px));
+  width: min(1180px, calc(100vw - 48px));
   max-height: 92vh;
   padding: 26px;
 }
@@ -3854,7 +3959,67 @@ td {
 }
 
 .participants-preview-table {
-  min-width: 900px;
+  min-width: 1080px;
+}
+
+.participants-preview-table td {
+  vertical-align: top;
+}
+
+.preview-edit-hint {
+  margin: 0;
+  padding: 10px 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid #edf1f5;
+  color: #6f7f96;
+  font-size: 10px;
+}
+
+.preview-cell-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid #dce5ef;
+  border-radius: 8px;
+  outline: none;
+  background: #fff;
+  color: #40516a;
+  font: inherit;
+  font-size: 11px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.preview-cell-input:focus {
+  border-color: #8b7ee8;
+  box-shadow: 0 0 0 3px rgba(139, 126, 232, 0.08);
+}
+
+.preview-cell-input:disabled {
+  background: #f8fafc;
+  cursor: not-allowed;
+}
+
+.preview-cell-input.invalid,
+.preview-role-select.invalid {
+  border-color: #eeb4b4;
+}
+
+.preview-cell-input.invalid:focus,
+.preview-role-select.invalid:focus {
+  border-color: #d86a6a;
+  box-shadow: 0 0 0 3px rgba(216, 106, 106, 0.1);
+}
+
+.preview-cell-error {
+  display: block;
+  margin-top: 4px;
+  padding-left: 2px;
+  color: #bd4b4b;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .participants-preview-table thead th {
