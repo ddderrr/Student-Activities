@@ -10,7 +10,9 @@ import {
 
   onMounted,
 
-  onBeforeUnmount
+  onBeforeUnmount,
+
+  watch
 
 } from 'vue'
 
@@ -28,7 +30,7 @@ import {
 
 } from 'lucide-vue-next'
 
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import StudentSideBar
 
@@ -39,6 +41,8 @@ import { useLanguage } from '../composables/useLanguage'
 
 const router = useRouter()
 
+const route = useRoute()
+
 const { t } = useLanguage()
 
 
@@ -47,13 +51,51 @@ const { t } = useLanguage()
 
    Sidebar
 
+   จอ ≤700px (breakpoint เดียวกับ CSS) sidebar เป็น drawer ทับหน้า
+
+   จึงเริ่มแบบปิด ส่วนจอใหญ่เริ่มแบบกางเหมือนเดิม
+
 ===================================================== */
 
-const sidebarOpen = ref(true)
+const mobileQuery = window.matchMedia('(max-width: 700px)')
+
+const sidebarOpen = ref(!mobileQuery.matches)
 
 const toggleSidebar = () => {
 
   sidebarOpen.value = !sidebarOpen.value
+
+}
+
+// ย่อ/ขยายจอข้าม breakpoint: เข้ามือถือ = ปิด drawer, กลับจอใหญ่ = กาง
+
+const onMobileQueryChange = (event) => {
+
+  sidebarOpen.value = !event.matches
+
+}
+
+// มือถือ: เปลี่ยนหน้าแล้วปิด drawer ไม่ให้บังหน้าใหม่
+
+watch(
+
+  () => route.fullPath,
+
+  () => {
+
+    if (mobileQuery.matches) sidebarOpen.value = false
+
+  }
+
+)
+
+const closeSidebarOnEscape = (event) => {
+
+  if (event.key === 'Escape' && mobileQuery.matches && sidebarOpen.value) {
+
+    sidebarOpen.value = false
+
+  }
 
 }
 
@@ -386,6 +428,22 @@ onMounted(() => {
 
   )
 
+  document.addEventListener(
+
+    'keydown',
+
+    closeSidebarOnEscape
+
+  )
+
+  mobileQuery.addEventListener(
+
+    'change',
+
+    onMobileQueryChange
+
+  )
+
   fetchNotifications()
 
 })
@@ -399,6 +457,22 @@ onBeforeUnmount(() => {
     'click',
 
     closeDropdownOnOutside
+
+  )
+
+  document.removeEventListener(
+
+    'keydown',
+
+    closeSidebarOnEscape
+
+  )
+
+  mobileQuery.removeEventListener(
+
+    'change',
+
+    onMobileQueryChange
 
   )
 
