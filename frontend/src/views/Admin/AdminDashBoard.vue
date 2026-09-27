@@ -64,8 +64,9 @@ const semesterMonthIndexes = computed(() => {
 const availableYears = computed(() => {
   const years = new Set()
 
+  // ไม่แสดงปีที่มีแต่กิจกรรม cancelled
   for (const activity of activityDetails.value) {
-    if (!activity.start_at) continue
+    if (!activity.start_at || activity.status === 'cancelled') continue
     const date = new Date(activity.start_at)
     if (!Number.isNaN(date.getTime())) years.add(date.getFullYear())
   }
@@ -283,12 +284,13 @@ const yAxisTicks = computed(() => {
 // Skill Distribution
 // Participant และ Staff คำนวณแยกกัน
 // ไม่มี skill ใน activity = ไม่นับเป็น 0 และไม่นำมาหาร
+// กิจกรรม cancelled ไม่นับ ให้ตรงกับคะแนนทักษะฝั่ง backend
 // ============================================================
 const activitiesInSelectedPeriod = computed(() => {
   const year = Number(selectedYear.value)
 
   return activityDetails.value.filter(activity => {
-    if (!activity.start_at) return false
+    if (!activity.start_at || activity.status === 'cancelled') return false
     const date = new Date(activity.start_at)
     if (Number.isNaN(date.getTime()) || date.getFullYear() !== year) return false
 

@@ -324,6 +324,7 @@ def get_admin_dashboard(
         .join(Activity, Activity.id == ActivitySkill.activity_id)
         .filter(
             ActivitySkill.target_role == "staff",
+            Activity.status != "cancelled",
             func.extract("year", Activity.start_at) == selected_year,
             func.extract("month", Activity.start_at).in_(selected_months),
         )
@@ -353,6 +354,7 @@ def get_admin_dashboard(
 
     available_year_rows = (
         db.query(func.extract("year", Activity.start_at))
+        .filter(Activity.status != "cancelled")
         .distinct()
         .order_by(func.extract("year", Activity.start_at).desc())
         .all()
@@ -540,8 +542,9 @@ def get_admin_student_skills(
 
     # Years come from both internal activities and approved external activities.
     internal_years = {
-        int(value) for (value,) in db.query(func.extract("year", Activity.start_at)).distinct().all()
-        if value is not None
+        int(value) for (value,) in db.query(func.extract("year", Activity.start_at))
+        .filter(Activity.status != "cancelled")
+        .distinct().all() if value is not None
     }
     external_years = {
         int(value) for (value,) in db.query(func.extract("year", ExternalActivity.start_date))
@@ -568,6 +571,7 @@ def get_admin_student_skills(
         .filter(
             ActivityMember.role == "participant",
             ActivitySkill.target_role == "participant",
+            Activity.status != "cancelled",
             func.extract("year", Activity.start_at) == selected_year,
         )
         .all()
@@ -3002,6 +3006,7 @@ def faculty_skill_average_for_period(
         .filter(
             ActivityMember.role == "participant",
             ActivitySkill.target_role == "participant",
+            Activity.status != "cancelled",
             func.extract("year", Activity.start_at) == year,
         )
         .all()
@@ -3079,6 +3084,7 @@ def student_skill_periods(
 
     # กิจกรรมที่สร้างโดย Admin:
     # นับเฉพาะกรณีที่นักศึกษาเป็น participant และ skill เป็น participant
+    # และไม่นับกิจกรรมที่ถูกยกเลิก (cancelled)
     rows = (
         db.query(
             Activity.id,
@@ -3101,6 +3107,7 @@ def student_skill_periods(
             ActivityMember.student_id == student.student_id,
             ActivityMember.role == "participant",
             ActivitySkill.target_role == "participant",
+            Activity.status != "cancelled",
         )
         .all()
     )
