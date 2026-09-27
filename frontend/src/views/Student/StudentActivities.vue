@@ -5,7 +5,6 @@ import {
   computed,
   onMounted,
   onBeforeUnmount,
-  inject,
   watch
 } from 'vue'
 
@@ -17,7 +16,8 @@ import {
   ChevronRight,
   ChevronDown,
   ExternalLink,
-  FileText
+  FileText,
+  X
 } from 'lucide-vue-next'
 
 import {
@@ -46,13 +46,14 @@ const { t } = useLanguage()
 
 /* =====================================================
    Search
-   รับค่าจาก StudentLayout.vue
+   ช่องค้นหาอยู่ใต้หัวข้อหน้า
 ===================================================== */
 
-const searchText = inject(
-  'studentSearch',
-  ref('')
-)
+const searchText = ref('')
+
+const clearSearch = () => {
+  searchText.value = ''
+}
 
 
 /* =====================================================
@@ -668,6 +669,25 @@ onBeforeUnmount(() => {
           <p>
             {{ t.studentActivities.pageSubtitle }}
           </p>
+
+          <div class="search-box">
+            <Search :size="17" />
+            <input
+              v-model="searchText"
+              type="search"
+              :placeholder="t.studentActivities.searchPlaceholder"
+              :aria-label="t.studentActivities.searchPlaceholder"
+            />
+            <button
+              v-if="searchText"
+              class="clear-search"
+              type="button"
+              :aria-label="t.studentActivities.clearSearch"
+              @click="clearSearch"
+            >
+              <X :size="15" />
+            </button>
+          </div>
 
         </div>
 
@@ -1464,6 +1484,69 @@ onBeforeUnmount(() => {
   color: #7e8796;
 
   font-size: 14px;
+}
+
+.page-header > div:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+
+/* =====================================================
+   Search
+===================================================== */
+
+.search-box {
+  width: 420px;
+  max-width: 100%;
+  height: 40px;
+  margin-top: 14px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: #fff;
+  border: 1px solid #e0e3e8;
+  border-radius: 20px;
+  color: #9ca3af;
+  box-sizing: border-box;
+}
+
+.search-box:focus-within {
+  border-color: #b5c0ff;
+  box-shadow: 0 0 0 3px rgba(67, 89, 255, 0.07);
+}
+
+.search-box input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #303846;
+  font: inherit;
+  font-size: 13px;
+}
+
+.search-box input::placeholder {
+  color: #9ca3af;
+  opacity: 1;
+}
+
+/* ใช้ปุ่มล้างของเราเอง ไม่ใช้ปุ่ม x ของ input type=search */
+.search-box input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.clear-search {
+  padding: 0;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: #8d96a5;
+  cursor: pointer;
 }
 
 

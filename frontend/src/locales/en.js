@@ -4,6 +4,7 @@ export default {
     thai: 'Thai',
     english: 'English',
     helpCenter: 'Help Center',
+    helpCenterContact: 'Contact by email:',
     logout: 'Logout',
     settings: 'Settings'
   },
@@ -313,6 +314,8 @@ export default {
   studentActivities: {
     pageTitle: 'My Activities',
     pageSubtitle: 'Faculty activities you joined and approved external activities.',
+    searchPlaceholder: 'Search my activities...',
+    clearSearch: 'Clear search',
     totalActivitiesLabel: 'TOTAL ACTIVITIES',
     allTab: 'All',
     facultyActivitiesTab: 'Faculty Activities',
@@ -751,8 +754,6 @@ export default {
   },
 
   studentLayout: {
-    searchPlaceholder: 'Search my activities...',
-    clearSearch: 'Clear search',
     notifications: 'Notifications',
     unread: 'unread',
     markAllRead: 'Mark all read',

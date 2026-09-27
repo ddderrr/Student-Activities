@@ -4,6 +4,9 @@ export const API_BASE = 'http://127.0.0.1:8000'
 // เมื่อมีระบบ login จริง ให้เปลี่ยนมาอ่านจาก session แทน
 export const MOCK_STUDENT_ID = '670510659'
 
+// ศูนย์ช่วยเหลือของนักศึกษา: ติดต่อทางอีเมล
+export const HELP_CENTER_EMAIL = 'natthanon_t@cmu.ac.th'
+
 export function studentHeaders(extra = {}) {
   return {
     'X-Student-Id': MOCK_STUDENT_ID,

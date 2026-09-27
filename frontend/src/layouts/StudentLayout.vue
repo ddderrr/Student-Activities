@@ -18,15 +18,11 @@ import {
 
 import {
 
-  Search,
-
   Bell,
 
   Menu,
 
-  UserRound,
-
-  X
+  UserRound
 
 } from 'lucide-vue-next'
 
@@ -106,30 +102,6 @@ provide(
   toggleSidebar
 
 )
-
-
-
-/* =====================================================
-
-   Search
-
-===================================================== */
-
-const searchText = ref('')
-
-provide(
-
-  'studentSearch',
-
-  searchText
-
-)
-
-const clearSearch = () => {
-
-  searchText.value = ''
-
-}
 
 
 
@@ -515,42 +487,6 @@ onBeforeUnmount(() => {
       ================================================== -->
 
       <header class="topbar">
-
-        <!-- Search -->
-
-        <div class="search-box">
-
-          <Search :size="17" />
-
-          <input
-
-            v-model="searchText"
-
-            type="text"
-
-            :placeholder="t.studentLayout.searchPlaceholder"
-
-          />
-
-          <button
-
-            v-if="searchText"
-
-            class="clear-search"
-
-            type="button"
-
-            :aria-label="t.studentLayout.clearSearch"
-
-            @click="clearSearch"
-
-          >
-
-            <X :size="15" />
-
-          </button>
-
-        </div>
 
 
 
@@ -1042,7 +978,7 @@ onBeforeUnmount(() => {
 
   align-items: center;
 
-  justify-content: space-between;
+  justify-content: flex-end;
 
   padding: 0 28px;
 
@@ -1051,112 +987,6 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid #eceef3;
 
   box-sizing: border-box;
-
-}
-
-
-
-/* =====================================================
-
-   Search
-
-===================================================== */
-
-.search-box {
-
-  width: 420px;
-
-  max-width: 50%;
-
-  height: 38px;
-
-  display: flex;
-
-  align-items: center;
-
-  gap: 9px;
-
-  padding: 0 14px;
-
-  background: #f8f9fb;
-
-  border: 1px solid #e0e3e8;
-
-  border-radius: 20px;
-
-  color: #9ca3af;
-
-  box-sizing: border-box;
-
-}
-
-
-
-.search-box:focus-within {
-
-  border-color: #b5c0ff;
-
-  background: white;
-
-  box-shadow:
-
-    0 0 0 3px rgba(67, 89, 255, 0.07);
-
-}
-
-
-
-.search-box input {
-
-  flex: 1;
-
-  min-width: 0;
-
-  border: none;
-
-  outline: none;
-
-  background: transparent;
-
-  font-size: 13px;
-
-  /* ตัวที่พิมพ์ให้เป็นสีเข้ม */
-
-  color: #303846;
-
-}
-
-
-
-/* placeholder ให้เห็นชัด */
-
-.search-box input::placeholder {
-
-  color: #9ca3af;
-
-  opacity: 1;
-
-}
-
-
-
-.clear-search {
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: center;
-
-  padding: 0;
-
-  border: none;
-
-  background: transparent;
-
-  color: #8d96a5;
-
-  cursor: pointer;
 
 }
 
@@ -1746,16 +1576,6 @@ onBeforeUnmount(() => {
 
   }
 
-
-
-  .search-box {
-
-    width: 300px;
-
-    max-width: 55%;
-
-  }
-
 }
 
 
@@ -1807,18 +1627,6 @@ onBeforeUnmount(() => {
     padding: 0 14px;
 
     gap: 12px;
-
-  }
-
-
-
-  .search-box {
-
-    width: 100%;
-
-    max-width: none;
-
-    flex: 1;
 
   }
 
@@ -1881,14 +1689,6 @@ onBeforeUnmount(() => {
     width: 32px;
 
     height: 32px;
-
-  }
-
-
-
-  .search-box input {
-
-    font-size: 11px;
 
   }
 
