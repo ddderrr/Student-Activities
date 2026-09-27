@@ -409,6 +409,66 @@ const editSubmission = (activity) => {
 }
 
 
+// ลบคำขอกิจกรรมภายนอก ได้เฉพาะ pending / rejected (backend กันซ้ำอีกชั้น)
+const deletingId = ref(null)
+
+const canDeleteSubmission = (activity) =>
+  activity.source === 'submission' &&
+  ['pending', 'rejected'].includes(activity.status)
+
+const deleteSubmission = async (activity) => {
+
+  const confirmed = window.confirm(
+    t.value.studentActivities.deleteSubmissionConfirm
+      .replace('{title}', activity.title)
+  )
+
+  if (!confirmed) return
+
+  deletingId.value = activity.id
+
+  try {
+
+    const response = await fetch(
+      `${API_BASE}/api/student/me/external-activities/${activity.id}`,
+      {
+        method: 'DELETE',
+        headers: studentHeaders()
+      }
+    )
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null)
+      throw new Error(
+        errorBody?.detail || t.value.studentActivities.deleteSubmissionFailed
+      )
+    }
+
+    submissions.value = submissions.value.filter(
+      item => item.id !== activity.id
+    )
+
+    if (selectedActivity.value?.id === activity.id && selectedActivity.value?.source === 'submission') {
+      selectedActivity.value = null
+    }
+
+  } catch (err) {
+
+    window.alert(
+      err instanceof TypeError
+        ? t.value.studentActivities.deleteSubmissionFailed
+        : err.message
+    )
+
+  } finally {
+
+    deletingId.value = null
+
+  }
+
+}
+
+
 const closeDetails = () => {
 
   selectedActivity.value =
@@ -925,6 +985,21 @@ onBeforeUnmount(() => {
               @click="editSubmission(activity)"
             >
               {{ t.studentActivities.editLabel }}
+            </button>
+
+
+            <button
+              v-if="canDeleteSubmission(activity)"
+              class="delete-submission-btn"
+              type="button"
+              :disabled="deletingId === activity.id"
+              @click="deleteSubmission(activity)"
+            >
+              {{
+                deletingId === activity.id
+                  ? t.studentActivities.deletingLabel
+                  : t.studentActivities.deleteLabel
+              }}
             </button>
 
 
@@ -1998,6 +2073,37 @@ onBeforeUnmount(() => {
 
 .edit-submission-btn:hover {
   opacity: 0.85;
+}
+
+
+.delete-submission-btn {
+  min-width: 70px;
+
+  padding: 7px 14px;
+
+  border: 1px solid #f3c1bd;
+
+  border-radius: 7px;
+
+  background: #fff;
+
+  color: #d92d20;
+
+  font-size: 10px;
+  font-weight: 700;
+
+  cursor: pointer;
+}
+
+
+.delete-submission-btn:hover {
+  background: #fef3f2;
+}
+
+
+.delete-submission-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 

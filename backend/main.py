@@ -2770,6 +2770,55 @@ async def update_external_activity(
     return serialize_external_activity(external_activity)
 
 
+@app.delete(
+    "/api/student/me/external-activities/{external_activity_id}",
+    status_code=204,
+)
+def delete_external_activity(
+    external_activity_id: int,
+    student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    """
+    ลบคำขอกิจกรรมภายนอกของตัวเอง ได้เฉพาะ pending หรือ rejected
+    approved แล้วนับเข้าทักษะไปแล้ว จึงห้ามลบ
+    ลบไฟล์หลักฐานออกจาก uploads หลัง commit สำเร็จ
+    """
+    external_activity = db.get(ExternalActivity, external_activity_id)
+
+    if (
+        not external_activity
+        or external_activity.student_id != student.student_id
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบกิจกรรมภายนอกนี้",
+        )
+
+    if external_activity.status not in ("pending", "rejected"):
+        raise HTTPException(
+            status_code=400,
+            detail="ลบได้เฉพาะคำขอที่รออนุมัติหรือไม่ได้รับการอนุมัติเท่านั้น",
+        )
+
+    evidence_filename = external_activity.evidence_filename
+
+    # FK ของ notifications เป็น ON DELETE CASCADE ใน PostgreSQL อยู่แล้ว
+    # ลบเองด้วยเพื่อให้ผลเหมือนกันทุก DB
+    db.query(Notification).filter(
+        Notification.external_activity_id == external_activity.id
+    ).delete(synchronize_session=False)
+    db.delete(external_activity)
+    db.commit()
+
+    if evidence_filename:
+        (EXTERNAL_ACTIVITY_UPLOAD_DIR / Path(evidence_filename).name).unlink(
+            missing_ok=True
+        )
+
+    return None
+
+
 @app.get("/api/student/me/external-activities")
 def list_my_external_activities(
     student: Student = Depends(get_current_student),
