@@ -15,6 +15,7 @@ import {
 } from 'lucide-vue-next'
 
 import { useLanguage } from '../../composables/useLanguage'
+import { HELP_CENTER_EMAIL } from '../../constants/currentStudent'
 
 const props = defineProps({
   collapsed: {
@@ -182,10 +183,12 @@ const logout = () => {
         </button>
       </div>
 
-      <!-- Help -->
-      <button
+      <!-- Help: ติดต่อทางอีเมล -->
+      <a
         class="menu-item"
-        :title="props.collapsed ? t.common.helpCenter : ''"
+        :href="`mailto:${HELP_CENTER_EMAIL}`"
+        :title="`${t.common.helpCenterContact} ${HELP_CENTER_EMAIL}`"
+        :aria-label="`${t.common.helpCenter}: ${t.common.helpCenterContact} ${HELP_CENTER_EMAIL}`"
       >
         <CircleHelp
           :size="18"
@@ -195,7 +198,7 @@ const logout = () => {
         <span class="menu-text">
           {{ t.common.helpCenter }}
         </span>
-      </button>
+      </a>
 
       <!-- Logout -->
       <button
@@ -363,6 +366,7 @@ const logout = () => {
   color: rgba(255, 255, 255, 0.82);
 
   text-align: left;
+  text-decoration: none;
 
   cursor: pointer;
 

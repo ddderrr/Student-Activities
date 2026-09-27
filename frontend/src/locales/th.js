@@ -4,6 +4,7 @@ export default {
     thai: 'ไทย',
     english: 'อังกฤษ',
     helpCenter: 'ศูนย์ช่วยเหลือ',
+    helpCenterContact: 'ติดต่อทางอีเมล',
     logout: 'ออกจากระบบ',
     settings: 'ตั้งค่า'
   },
@@ -314,6 +315,8 @@ export default {
   studentActivities: {
     pageTitle: 'กิจกรรมของฉัน',
     pageSubtitle: 'กิจกรรมของคณะที่คุณเข้าร่วมและกิจกรรมภายนอกที่ได้รับอนุมัติ',
+    searchPlaceholder: 'ค้นหากิจกรรมของฉัน...',
+    clearSearch: 'ล้างคำค้นหา',
     totalActivitiesLabel: 'กิจกรรมทั้งหมด',
     allTab: 'ทั้งหมด',
     facultyActivitiesTab: 'กิจกรรมคณะ',
@@ -752,8 +755,6 @@ export default {
   },
 
   studentLayout: {
-    searchPlaceholder: 'ค้นหากิจกรรมของฉัน...',
-    clearSearch: 'ล้างคำค้นหา',
     notifications: 'การแจ้งเตือน',
     unread: 'ยังไม่ได้อ่าน',
     markAllRead: 'อ่านทั้งหมดแล้ว',
