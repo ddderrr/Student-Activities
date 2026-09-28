@@ -5,9 +5,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# ฟอนต์ Loma (มีทั้งอักษรไทยและอังกฤษ/ตัวเลข) สำหรับ PDF transcript (ดู skill_pdf_font_name ใน main.py)
+# - fonts-tlwg-loma-ttf: ฟอนต์ PDF ของหน้า My Skills (ดู skill_pdf_font_name ใน main.py)
+# - pango/harfbuzz: WeasyPrint ใช้สร้าง Transcript PDF (ฟอนต์อยู่ใน backend/fonts)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-tlwg-loma-ttf \
+    && apt-get install -y --no-install-recommends \
+        fonts-tlwg-loma-ttf \
+        libpango-1.0-0 \
+        libpangoft2-1.0-0 \
+        libharfbuzz-subset0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

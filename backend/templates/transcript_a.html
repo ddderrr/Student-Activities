@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>{{ config.DOCUMENT_TITLE }} - {{ student.student_id }}</title>
+<style>
+  @font-face { font-family: "Taviraj"; src: url("{{ font_dir }}/Taviraj-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Taviraj"; src: url("{{ font_dir }}/Taviraj-Bold.ttf"); font-weight: 700; }
+
+  @page {
+    size: A4;
+    margin: 16mm 16mm 20mm;
+
+    @bottom-left {
+      content: "{{ config.VERIFY_TEXT }}";
+      font: 8pt "Taviraj", serif;
+      color: #555;
+    }
+
+    @bottom-right {
+      content: "เลขที่ {{ document_number }}  ·  หน้า " counter(page) "/" counter(pages);
+      font: 8pt "Taviraj", serif;
+      color: #555;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: "Taviraj", serif;
+    font-size: 10.5pt;
+    line-height: 1.45;
+    color: #111;
+  }
+
+  .watermark {
+    position: fixed;
+    top: 105mm;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 96pt;
+    font-weight: 700;
+    color: rgba(150, 20, 20, 0.07);
+    transform: rotate(-28deg);
+    z-index: -1;
+  }
+
+  /* หัวกระดาษอยู่กลาง */
+  .header { text-align: center; margin-bottom: 4mm; }
+
+  .logo {
+    width: 17mm;
+    height: 17mm;
+    margin: 0 auto 2mm;
+    border: 1px dashed #888;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8pt;
+    color: #666;
+  }
+
+  .logo img { width: 17mm; height: 17mm; object-fit: contain; }
+
+  .header .university { font-size: 15pt; font-weight: 700; margin: 0; }
+  .header .faculty { font-size: 13pt; margin: 0; }
+  .header .title { font-size: 14pt; font-weight: 700; margin: 2mm 0 0; }
+  .header .title-en { font-size: 9.5pt; color: #444; margin: 0; }
+
+  .rule { border: 0; border-top: 3px double #222; margin: 3mm 0 4mm; }
+
+  table { width: 100%; border-collapse: collapse; }
+
+  .info td { padding: 0.9mm 2mm; border: 1px solid #333; vertical-align: top; }
+  .info .label { width: 23%; background: #f2f2f2; font-weight: 700; }
+
+  h2 {
+    font-size: 11.5pt;
+    margin: 4.5mm 0 1.8mm;
+    padding-bottom: 0.8mm;
+    border-bottom: 1px solid #333;
+  }
+
+  .activities { margin-top: 3mm; }
+  .activities th.year-head {
+    border: 0;
+    background: none;
+    padding: 0 0 1.2mm;
+    text-align: left;
+    font-size: 10.5pt;
+  }
+
+  .activities { page-break-inside: auto; }
+  .activities th, .activities td { border: 1px solid #333; padding: 0.9mm 1.8mm; vertical-align: top; line-height: 1.35; }
+  .activities th { background: #e9e9e9; font-weight: 700; text-align: center; }
+  .activities tr { page-break-inside: avoid; }
+  .activities .no { width: 8mm; text-align: center; }
+  .activities .date { width: 23mm; white-space: nowrap; }
+  .activities .role { width: 25mm; }
+  .activities .source { width: 29mm; white-space: nowrap; }
+
+  .empty { border: 1px solid #333; padding: 4mm; text-align: center; color: #555; }
+
+  .summary td { border: 1px solid #333; padding: 0.9mm 2mm; text-align: center; }
+  .summary .head { background: #f2f2f2; font-weight: 700; }
+
+  /* คะแนนทักษะ 6 ช่อง */
+  .skills { display: flex; gap: 2.5mm; }
+  .skill {
+    flex: 1;
+    border: 1px solid #333;
+    text-align: center;
+    padding: 2mm 1mm;
+    page-break-inside: avoid;
+  }
+  .skill .score { font-size: 17pt; font-weight: 700; line-height: 1.1; }
+  .skill .label { font-size: 8pt; line-height: 1.3; margin-top: 1mm; }
+  .note { font-size: 8.5pt; color: #444; margin-top: 1.5mm; }
+
+  /* ช่องลงชื่อด้านขวา */
+  .signature {
+    width: 78mm;
+    margin: 7mm 0 0 auto;
+    text-align: center;
+    page-break-inside: avoid;
+  }
+  .signature .line { margin: 0 0 1.2mm; }
+  .signature .line:first-child { margin-bottom: 2.5mm; }
+</style>
+</head>
+<body>
+  <div class="watermark">{{ config.WATERMARK_TEXT }}</div>
+
+  <div class="header">
+    <div class="logo">
+      {% if logo_uri %}<img src="{{ logo_uri }}" alt="">{% else %}{{ config.LOGO_PLACEHOLDER_TEXT }}{% endif %}
+    </div>
+    <p class="university">{{ config.UNIVERSITY_NAME }}</p>
+    <p class="faculty">{{ config.FACULTY_NAME }}</p>
+    <p class="title">{{ config.DOCUMENT_TITLE }}</p>
+    <p class="title-en">{{ config.DOCUMENT_TITLE_EN }}</p>
+  </div>
+
+  <hr class="rule">
+
+  <table class="info">
+    <tr>
+      <td class="label">ชื่อ-สกุล</td>
+      <td>{{ student.name }}</td>
+      <td class="label">เลขที่เอกสาร</td>
+      <td>{{ document_number }}</td>
+    </tr>
+    <tr>
+      <td class="label">รหัสนักศึกษา</td>
+      <td>{{ student.student_id }}</td>
+      <td class="label">วันที่ออกเอกสาร</td>
+      <td>{{ issued_on | thai_date }}</td>
+    </tr>
+    <tr>
+      <td class="label">สาขาวิชา</td>
+      <td>{{ student.major or "-" }}</td>
+      <td class="label">ประเภทกิจกรรม</td>
+      <td>{{ scope_label }}</td>
+    </tr>
+    <tr>
+      <td class="label">ชั้นปี</td>
+      <td>{{ student.year_level or "-" }}</td>
+      <td class="label">ช่วงชั้นปี</td>
+      <td>{{ year_levels_label }}</td>
+    </tr>
+  </table>
+
+  <h2>รายการกิจกรรม</h2>
+
+  {% for group in groups %}
+    <table class="activities">
+      <!-- thead ซ้ำทุกหน้าเมื่อตารางยาวข้ามหน้า จึงรู้ว่าเป็นปีการศึกษาไหน -->
+      <thead>
+        <tr>
+          <th class="year-head" colspan="5">ปีการศึกษา {{ group.academic_year }}{% if group.year_level %} (ชั้นปีที่ {{ group.year_level }}){% endif %}</th>
+        </tr>
+        <tr>
+          <th class="no">ที่</th>
+          <th class="date">วันที่</th>
+          <th>ชื่อกิจกรรม / ผู้จัด</th>
+          <th class="source">ประเภท</th>
+          <th class="role">บทบาท</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in group.activities %}
+        <tr>
+          <td class="no">{{ loop.index }}</td>
+          <td class="date">{{ item.date | thai_date_short }}</td>
+          <td>{{ item.title }}<br><small>{{ item.organizer }}</small></td>
+          <td class="source">{{ item.source_label }}</td>
+          <td class="role">{{ item.role_label }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty">ไม่มีกิจกรรมตามเงื่อนไขที่เลือก</div>
+  {% endfor %}
+
+  <h2>สรุปจำนวนกิจกรรม</h2>
+  <table class="summary">
+    <tr class="head">
+      <td>รวมทั้งหมด</td>
+      <td>กิจกรรมคณะ</td>
+      <td>กิจกรรมสาขา</td>
+      <td>กิจกรรมภายนอก</td>
+      <td>ผู้เข้าร่วม</td>
+      <td>ผู้จัด / ทีมงาน</td>
+    </tr>
+    <tr>
+      <td><b>{{ summary.total }}</b></td>
+      <td>{{ summary.by_source.faculty }}</td>
+      <td>{{ summary.by_source.major + summary.by_source.other_major }}</td>
+      <td>{{ summary.by_source.external }}</td>
+      <td>{{ summary.participant }}</td>
+      <td>{{ summary.organizer }}</td>
+    </tr>
+  </table>
+
+  <h2>คะแนนทักษะ (เต็ม 5)</h2>
+  <div class="skills">
+    {% for skill in skill_rows %}
+    <div class="skill">
+      <div class="score">{{ skill.score | score }}</div>
+      <div class="label">{{ skill.label_th }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="note">คะแนนคิดจากค่าเฉลี่ยของกิจกรรมในเอกสารนี้ที่เข้าร่วมในบทบาทผู้เข้าร่วม ("-" = ยังไม่มีกิจกรรมที่ให้ทักษะนี้)</p>
+
+  <div class="signature">
+    <p class="line">ลงชื่อ ..............................................</p>
+    <p class="line">( {{ config.SIGNER_NAME }} )</p>
+    <p class="line">{{ config.SIGNER_POSITION }}</p>
+    <p class="line">วันที่ {{ issued_on | thai_date }}</p>
+  </div>
+</body>
+</html>

@@ -51,6 +51,13 @@ from admin_scope import (
     scope_student_request_query,
 )
 from database import Base, SessionLocal, engine, get_db
+import transcript_data
+from transcript_pdf import STYLES as TRANSCRIPT_STYLES, render_transcript_pdf
+from skill_definitions import (
+    PARTICIPANT_SKILL_DEFINITIONS,
+    SKILL_DEFINITIONS,
+    STAFF_SKILL_DEFINITIONS,
+)
 from student_bypass import STUDENT_BYPASS_EMAILS
 from models import (
     Activity,
@@ -67,28 +74,6 @@ from models import (
 )
 
 
-STAFF_SKILL_DEFINITIONS = {
-    "creative_leadership": "Creative Leadership",
-    "innovation": "Innovation",
-    "entrepreneurship": "Entrepreneurship",
-    "promote_equality": "Promote Equality",
-    "academic": "Academic",
-    "nature_environmental": "Nature and Environmental",
-}
-
-PARTICIPANT_SKILL_DEFINITIONS = {
-    "arts_culture_traditions": "Arts, Culture, and Traditions",
-    "volunteerism": "Volunteerism",
-    "academics": "Academics",
-    "internationalization": "Internationalization",
-    "health_promotion": "Health Promotion",
-    "nature_environmental_conservation": "Nature and Environmental Conservation",
-}
-
-SKILL_DEFINITIONS = {
-    **STAFF_SKILL_DEFINITIONS,
-    **PARTICIPANT_SKILL_DEFINITIONS,
-}
 
 # ไฟล์หลักฐานกิจกรรมภายนอก (ไม่ serve แบบ static ต้องผ่าน endpoint)
 EXTERNAL_ACTIVITY_UPLOAD_DIR = (
@@ -145,6 +130,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # ให้ frontend อ่านชื่อไฟล์ตอนดาวน์โหลด PDF ได้
+    expose_headers=["Content-Disposition"],
 )
 
 
@@ -4282,6 +4269,81 @@ def export_my_skills_pdf(
             "Content-Disposition": (
                 f'attachment; filename="{filename}"'
             ),
+            "Content-Length": str(len(pdf_bytes)),
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+# ============================================================
+# TRANSCRIPT PDF (ดู transcript_data.py / transcript_pdf.py / transcript_config.py)
+# ============================================================
+
+
+def parse_year_levels(years: str | None) -> list[int] | None:
+    if not years or not years.strip():
+        return None
+
+    try:
+        return [int(item) for item in years.split(",") if item.strip()]
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="years ต้องเป็นตัวเลขชั้นปีคั่นด้วย comma เช่น 1,2",
+        )
+
+
+@app.get("/api/student/me/transcript/options")
+def get_my_transcript_options(
+    student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    counts = transcript_data.scope_counts(db, student)
+
+    return {
+        "current_year_level": transcript_data.current_year_level(student.student_id),
+        "allowed_year_levels": transcript_data.allowed_year_levels(student.student_id),
+        "major": (student.major or "").strip(),
+        "scopes": [
+            {"key": key, "label": label, "count": counts[key]}
+            for key, label in transcript_data.SCOPE_LABELS.items()
+        ],
+        "styles": [
+            {"key": key, "label": style["label"]}
+            for key, style in TRANSCRIPT_STYLES.items()
+        ],
+    }
+
+
+@app.get("/api/student/me/transcript/export")
+def export_my_transcript(
+    style: str = "A",
+    scope: str = "all",
+    years: str | None = None,
+    student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    if style not in TRANSCRIPT_STYLES:
+        raise HTTPException(status_code=400, detail="style ต้องเป็น A หรือ B")
+
+    try:
+        data = transcript_data.collect_transcript(
+            db,
+            student,
+            scope=scope,
+            year_levels=parse_year_levels(years),
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+    pdf_bytes = render_transcript_pdf(data, style)
+    filename = f"transcript-{student.student_id}-{style}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
             "Content-Length": str(len(pdf_bytes)),
             "Cache-Control": "no-store",
         },
