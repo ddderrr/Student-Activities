@@ -2016,27 +2016,11 @@ def confirm_activity_participants(
             )
         ).strip()
 
-        email = str(
-            raw_student.get(
-                "email",
-                "",
-            )
-        ).strip()
-
-        faculty = str(
-            raw_student.get(
-                "faculty",
-                "Faculty of Science",
-            )
-            or "Faculty of Science"
-        ).strip()
-
-        major = str(
-            raw_student.get(
-                "major",
-                "",
-            )
-        ).strip()
+        # email / faculty / major ไม่บังคับ ไฟล์บางแบบ (เช่น .xls จากระบบเช็คอินเก่า)
+        # ไม่มีคอลัมน์เหล่านี้ ค่าว่างจึงแปลว่า "ไม่รู้" ไม่ใช่ "ลบค่าเดิม"
+        email = str(raw_student.get("email") or "").strip()
+        faculty = str(raw_student.get("faculty") or "").strip()
+        major = str(raw_student.get("major") or "").strip()
 
         role = normalize_role(
             raw_student.get("role")
@@ -2072,20 +2056,23 @@ def confirm_activity_participants(
                 first_name=first_name,
                 last_name=last_name,
                 email=email,
-                faculty=faculty,
+                faculty=faculty or "Faculty of Science",
                 major=major,
             )
 
             db.add(student)
             db.flush()
         else:
-            # ถ้า import ข้อมูลล่าสุดเข้ามา
-            # ให้อัปเดต master data ด้วย
+            # ถ้า import ข้อมูลล่าสุดเข้ามา ให้อัปเดต master data ด้วย
+            # ช่องที่ไม่บังคับอัปเดตเฉพาะเมื่อไฟล์มีค่า ไม่งั้นคงค่าเดิมไว้
             student.first_name = first_name
             student.last_name = last_name
-            student.email = email
-            student.faculty = faculty
-            student.major = major
+            if email:
+                student.email = email
+            if faculty:
+                student.faculty = faculty
+            if major:
+                student.major = major
 
         existing_member = db.get(
             ActivityMember,
