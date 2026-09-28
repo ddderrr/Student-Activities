@@ -234,8 +234,8 @@ async function openPreview() {
     if (request !== previewRequest) return
 
     previewFile.value = file
-    // view=FitH: ให้หน้ากว้างพอดีกรอบ เลื่อนลงดูหน้าถัดไปได้
-    previewUrl.value = `${URL.createObjectURL(file.blob)}#view=FitH`
+    // zoom=100: เปิดที่ 100% เสมอ ไม่ขยายตามความกว้างจอ (ผู้ใช้ยังซูมเองได้)
+    previewUrl.value = `${URL.createObjectURL(file.blob)}#zoom=100`
   } catch (error) {
     if (request !== previewRequest) return
     previewError.value = error.message || t.value.studentTranscript.downloadError
