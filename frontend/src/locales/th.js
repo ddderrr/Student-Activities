@@ -947,6 +947,11 @@ export default {
     demoNote: 'เอกสารเดโม มีลายน้ำ "ตัวอย่าง"',
     download: 'ดาวน์โหลด PDF',
     downloading: 'กำลังสร้าง PDF...',
-    downloadError: 'ดาวน์โหลดไม่สำเร็จ'
+    downloadError: 'ดาวน์โหลดไม่สำเร็จ',
+    preview: 'ดูตัวอย่าง',
+    previewTitle: 'ตัวอย่างทรานสคริปต์',
+    previewLoading: 'กำลังสร้าง PDF...',
+    close: 'ปิด',
+    previewPopupBlocked: 'เบราว์เซอร์บล็อกการเปิดแท็บใหม่ กรุณาอนุญาต popup แล้วลองอีกครั้ง หรือกดดาวน์โหลด PDF'
   },
 }
