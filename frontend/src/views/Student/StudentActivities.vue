@@ -173,9 +173,7 @@ const toActivityView = (item, student) => {
         level
       })
     ),
-    evidenceUrl: item.evidence_url
-      ? `${API_BASE}${item.evidence_url}`
-      : null
+    evidenceFiles: toEvidenceFiles(item.evidence_files)
   }
 
 }
@@ -187,6 +185,15 @@ const SUBMISSION_STATUS_LABELS = computed(() => ({
 }))
 
 // GET /api/student/me/external-activities (ทุกสถานะ)
+// ไฟล์หลักฐานทุกไฟล์ของคำขอ (สูงสุด 10 ไฟล์)
+const toEvidenceFiles = (files) =>
+  (files || []).map(file => ({
+    id: file.id,
+    name: file.original_name,
+    url: `${API_BASE}${file.url}`
+  }))
+
+
 const toSubmissionView = (item) => ({
   key: `submission-${item.id}`,
   id: item.id,
@@ -214,7 +221,7 @@ const toSubmissionView = (item) => ({
       level
     })
   ),
-  evidenceUrl: `${API_BASE}${item.evidence.url}`,
+  evidenceFiles: toEvidenceFiles(item.evidence_files),
   rejectReason: item.reject_reason
 })
 
@@ -1290,17 +1297,27 @@ onBeforeUnmount(() => {
               </div>
 
 
-              <a
-                v-if="selectedActivity.evidenceUrl"
-                class="evidence-link"
-                :href="selectedActivity.evidenceUrl"
-                target="_blank"
-                rel="noopener"
+              <ul
+                v-if="selectedActivity.evidenceFiles?.length"
+                class="evidence-links"
               >
-                <FileText :size="13" />
-                {{ t.studentActivities.viewEvidenceLabel }}
-                <ExternalLink :size="11" />
-              </a>
+                <li
+                  v-for="file in selectedActivity.evidenceFiles"
+                  :key="file.id"
+                >
+                  <a
+                    class="evidence-link"
+                    :href="file.url"
+                    target="_blank"
+                    rel="noopener"
+                    :title="file.name"
+                  >
+                    <FileText :size="13" />
+                    <span>{{ file.name }}</span>
+                    <ExternalLink :size="11" />
+                  </a>
+                </li>
+              </ul>
 
             </section>
 
@@ -2079,14 +2096,24 @@ onBeforeUnmount(() => {
 }
 
 
+.evidence-links {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+
 .evidence-link {
+  max-width: 100%;
+
   display: inline-flex;
 
   align-items: center;
 
   gap: 5px;
-
-  margin-top: 12px;
 
   color: #1e45c8;
 

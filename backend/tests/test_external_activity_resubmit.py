@@ -2,7 +2,7 @@ import base64
 import json
 from datetime import date
 
-from models import ExternalActivity, ExternalActivitySkill, Student
+from models import ExternalActivity, ExternalActivityEvidence, ExternalActivitySkill, Student
 
 # 1x1 transparent PNG, valid enough to pass the evidence content-sniff check.
 PNG_BYTES = base64.b64decode(
@@ -37,10 +37,6 @@ def create_rejected_activity(db_session, student_id="670510659") -> ExternalActi
         location="Chiang Mai",
         role="participant",
         description="old description",
-        evidence_filename="old-evidence.png",
-        evidence_original_name="old-evidence.png",
-        evidence_content_type="image/png",
-        evidence_size=100,
         status="rejected",
         reject_reason="ไฟล์หลักฐานไม่ชัดเจน",
     )
@@ -56,7 +52,17 @@ def create_rejected_activity(db_session, student_id="670510659") -> ExternalActi
             level=3,
         )
     )
+    db_session.add(
+        ExternalActivityEvidence(
+            external_activity_id=activity.id,
+            stored_name="old-evidence.png",
+            original_name="old-evidence.png",
+            content_type="image/png",
+            size=100,
+        )
+    )
     db_session.commit()
+    db_session.refresh(activity)
 
     return activity
 
@@ -109,12 +115,15 @@ def test_resubmit_rejected_activity_with_new_evidence(client, db_session):
             "role": "participant",
             "description": "updated description",
             "skills": json.dumps({"volunteerism": 5}),
+            # แทนไฟล์เดิม: ลบไฟล์เดิมออก และแนบไฟล์ใหม่
+            "remove_evidence_ids": [str(activity.evidence_files[0].id)],
         },
         files={"evidence": ("new-evidence.png", PNG_BYTES, "image/png")},
     )
 
     assert response.status_code == 200
     body = response.json()
+    assert [item["original_name"] for item in body["evidence_files"]] == ["new-evidence.png"]
     assert body["evidence"]["original_name"] == "new-evidence.png"
 
 

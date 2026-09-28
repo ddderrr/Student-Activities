@@ -18,6 +18,7 @@ import {
   API_BASE,
   EVIDENCE_EXTENSIONS,
   EVIDENCE_MAX_BYTES,
+  EVIDENCE_MAX_FILES,
   EXTERNAL_ACTIVITY_CATEGORIES,
   EXTERNAL_ROLE_OPTIONS,
   OTHER_CATEGORY_VALUE,
@@ -65,7 +66,8 @@ const route = useRoute()
 
 const form = ref(emptyForm())
 const skillLevels = ref(emptySkillLevels())
-const evidenceFile = ref(null)
+// ไฟล์ที่เลือกใหม่ (File) ยังไม่ได้อัปโหลด
+const newEvidenceFiles = ref([])
 const fileInput = ref(null)
 const isDragging = ref(false)
 
@@ -140,7 +142,17 @@ function cancelCategoryModal() {
 
 // แก้ไข+ส่งใหม่กิจกรรมที่ถูกไม่อนุมัติ: /student/external-activity?edit=<id>
 const editingId = ref(null)
-const existingEvidence = ref(null)
+// ไฟล์เดิมของคำขอที่กำลังแก้ไข และ id ที่ผู้ใช้กดลบ (ลบจริงตอนส่ง)
+const existingEvidence = ref([])
+const removedEvidenceIds = ref([])
+
+const keptExistingEvidence = computed(() =>
+  existingEvidence.value.filter((item) => !removedEvidenceIds.value.includes(item.id))
+)
+
+const evidenceCount = computed(() =>
+  keptExistingEvidence.value.length + newEvidenceFiles.value.length
+)
 
 onMounted(async () => {
   const editId = Number(route.query.edit)
@@ -183,7 +195,8 @@ onMounted(async () => {
       )
     }
 
-    existingEvidence.value = item.evidence
+    existingEvidence.value = item.evidence_files || []
+    removedEvidenceIds.value = []
   } catch (error) {
     formError.value = error.message || t.value.studentExternalActivity.loadEditFailed
   }
@@ -291,33 +304,48 @@ function fileProblem(file) {
   return ''
 }
 
-function setEvidenceFile(file) {
-  if (!file) return
+// รับได้หลายไฟล์ ไฟล์ที่ผิดเงื่อนไขหรือเกินจำนวนจะถูกข้ามและแจ้งชื่อไฟล์
+function addEvidenceFiles(fileList) {
+  const problems = []
 
-  const problem = fileProblem(file)
+  for (const file of Array.from(fileList || [])) {
+    if (evidenceCount.value >= EVIDENCE_MAX_FILES) {
+      problems.push(
+        t.value.studentExternalActivity.evidenceLimitError.replace('{max}', EVIDENCE_MAX_FILES)
+      )
+      break
+    }
 
-  if (problem) {
-    formError.value = problem
-    return
+    const problem = fileProblem(file)
+
+    if (problem) {
+      problems.push(`${file.name}: ${problem}`)
+      continue
+    }
+
+    newEvidenceFiles.value = [...newEvidenceFiles.value, file]
   }
 
-  formError.value = ''
-  evidenceFile.value = file
+  formError.value = problems.join(' · ')
 }
 
 function handleFileChange(event) {
-  setEvidenceFile(event.target.files?.[0])
+  addEvidenceFiles(event.target.files)
   // ให้เลือกไฟล์เดิมซ้ำได้หลังลบออก
   event.target.value = ''
 }
 
 function handleDrop(event) {
   isDragging.value = false
-  setEvidenceFile(event.dataTransfer?.files?.[0])
+  addEvidenceFiles(event.dataTransfer?.files)
 }
 
-function removeEvidenceFile() {
-  evidenceFile.value = null
+function removeNewEvidence(index) {
+  newEvidenceFiles.value = newEvidenceFiles.value.filter((_, itemIndex) => itemIndex !== index)
+}
+
+function removeExistingEvidence(id) {
+  removedEvidenceIds.value = [...removedEvidenceIds.value, id]
 }
 
 /* =========================
@@ -344,11 +372,20 @@ function validateForm() {
     return dateRangeError.value
   }
 
-  if (!evidenceFile.value && !existingEvidence.value) {
+  if (evidenceCount.value === 0) {
     return t.value.studentExternalActivity.evidenceRequiredError
   }
 
-  return evidenceFile.value ? fileProblem(evidenceFile.value) : ''
+  if (evidenceCount.value > EVIDENCE_MAX_FILES) {
+    return t.value.studentExternalActivity.evidenceLimitError.replace('{max}', EVIDENCE_MAX_FILES)
+  }
+
+  for (const file of newEvidenceFiles.value) {
+    const problem = fileProblem(file)
+    if (problem) return `${file.name}: ${problem}`
+  }
+
+  return ''
 }
 
 function errorDetail(data, fallback) {
@@ -386,9 +423,13 @@ async function submitActivity() {
   // ส่งเฉพาะชุด Skill ของ role ที่เลือก
   body.append('skills', JSON.stringify(activeSkillLevels.value))
 
-  // ตอนแก้ไข ถ้าไม่ได้เลือกไฟล์ใหม่ ไม่ต้องแนบ 'evidence' ไป backend จะใช้ไฟล์เดิมต่อ
-  if (evidenceFile.value) {
-    body.append('evidence', evidenceFile.value)
+  // แนบเฉพาะไฟล์ใหม่ ไฟล์เดิมที่ไม่ได้ลบ backend ใช้ต่อเอง
+  for (const file of newEvidenceFiles.value) {
+    body.append('evidence', file)
+  }
+
+  for (const id of removedEvidenceIds.value) {
+    body.append('remove_evidence_ids', String(id))
   }
 
   submitting.value = true
@@ -416,8 +457,9 @@ async function submitActivity() {
     form.value = emptyForm()
     applyCategoryFromValue('')
     skillLevels.value = emptySkillLevels()
-    evidenceFile.value = null
-    existingEvidence.value = null
+    newEvidenceFiles.value = []
+    existingEvidence.value = []
+    removedEvidenceIds.value = []
     editingId.value = null
   } catch (error) {
     formError.value =
@@ -582,58 +624,96 @@ async function submitActivity() {
           </div>
         </section>
 
-        <div
-          class="upload-box"
-          :class="{ dragging: isDragging, 'has-file': evidenceFile || existingEvidence }"
-          @click="!evidenceFile && openFilePicker()"
-          @dragover.prevent="isDragging = true"
-          @dragleave.prevent="isDragging = false"
-          @drop.prevent="handleDrop"
-        >
-          <input
-            ref="fileInput"
-            class="file-input"
-            type="file"
-            name="evidence"
-            accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
-            @change="handleFileChange"
-          />
+        <div class="evidence-section">
+          <div
+            v-if="evidenceCount < EVIDENCE_MAX_FILES"
+            class="upload-box"
+            :class="{ dragging: isDragging }"
+            @click="openFilePicker"
+            @dragover.prevent="isDragging = true"
+            @dragleave.prevent="isDragging = false"
+            @drop.prevent="handleDrop"
+          >
+            <input
+              ref="fileInput"
+              class="file-input"
+              type="file"
+              name="evidence"
+              multiple
+              accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+              @click.stop
+              @change="handleFileChange"
+            />
 
-          <template v-if="!evidenceFile && !existingEvidence">
             <span class="upload-icon"><ImagePlus :size="20" /></span>
             <strong>{{ t.studentExternalActivity.uploadEvidenceLabel }} <b>*</b></strong>
-            <p>{{ t.studentExternalActivity.uploadEvidenceHint }}</p>
+            <p>{{ t.studentExternalActivity.uploadEvidenceHint.replace('{max}', EVIDENCE_MAX_FILES) }}</p>
             <button type="button" class="link-button" @click.stop="openFilePicker">
-              {{ t.studentExternalActivity.chooseFileButton }}
-            </button>
-          </template>
-
-          <div v-else-if="!evidenceFile && existingEvidence" class="selected-file" @click.stop>
-            <span class="upload-icon"><Paperclip :size="18" /></span>
-            <div>
-              <strong>{{ existingEvidence.original_name }}</strong>
-              <small>{{ formatFileSize(existingEvidence.size) }} · {{ t.studentExternalActivity.currentEvidenceLabel }}</small>
-            </div>
-            <button type="button" class="link-button" @click.stop="openFilePicker">
-              {{ t.studentExternalActivity.replaceFileButton }}
+              {{
+                evidenceCount
+                  ? t.studentExternalActivity.addMoreFilesButton
+                  : t.studentExternalActivity.chooseFileButton
+              }}
             </button>
           </div>
 
-          <div v-else class="selected-file" @click.stop>
-            <span class="upload-icon"><Paperclip :size="18" /></span>
-            <div>
-              <strong>{{ evidenceFile.name }}</strong>
-              <small>{{ formatFileSize(evidenceFile.size) }}</small>
-            </div>
-            <button
-              type="button"
-              class="remove-file"
-              :aria-label="t.studentExternalActivity.removeFileAriaLabel"
-              @click="removeEvidenceFile"
+          <p v-else class="evidence-limit-note">
+            <Info :size="14" />
+            {{ t.studentExternalActivity.evidenceLimitReached.replace('{max}', EVIDENCE_MAX_FILES) }}
+          </p>
+
+          <div v-if="evidenceCount" class="evidence-list-header">
+            <strong>{{ t.studentExternalActivity.evidenceListHeading }}</strong>
+            <span>
+              {{
+                t.studentExternalActivity.evidenceCountLabel
+                  .replace('{count}', evidenceCount)
+                  .replace('{max}', EVIDENCE_MAX_FILES)
+              }}
+            </span>
+          </div>
+
+          <ul v-if="evidenceCount" class="evidence-list">
+            <li
+              v-for="item in keptExistingEvidence"
+              :key="`existing-${item.id}`"
+              class="selected-file"
             >
-              <X :size="15" />
-            </button>
-          </div>
+              <span class="upload-icon"><Paperclip :size="18" /></span>
+              <div>
+                <strong>{{ item.original_name }}</strong>
+                <small>{{ formatFileSize(item.size) }} · {{ t.studentExternalActivity.currentEvidenceLabel }}</small>
+              </div>
+              <button
+                type="button"
+                class="remove-file"
+                :aria-label="`${t.studentExternalActivity.removeFileAriaLabel} ${item.original_name}`"
+                @click="removeExistingEvidence(item.id)"
+              >
+                <X :size="15" />
+              </button>
+            </li>
+
+            <li
+              v-for="(file, index) in newEvidenceFiles"
+              :key="`new-${index}-${file.name}-${file.size}`"
+              class="selected-file"
+            >
+              <span class="upload-icon"><Paperclip :size="18" /></span>
+              <div>
+                <strong>{{ file.name }}</strong>
+                <small>{{ formatFileSize(file.size) }} · {{ t.studentExternalActivity.newEvidenceLabel }}</small>
+              </div>
+              <button
+                type="button"
+                class="remove-file"
+                :aria-label="`${t.studentExternalActivity.removeFileAriaLabel} ${file.name}`"
+                @click="removeNewEvidence(index)"
+              >
+                <X :size="15" />
+              </button>
+            </li>
+          </ul>
         </div>
 
       </div>
@@ -953,8 +1033,55 @@ async function submitActivity() {
   background: #f7f0ff;
 }
 
-.upload-box.has-file {
-  cursor: default;
+.evidence-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.evidence-limit-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #eef1ff;
+  color: #1d2f6f;
+  font-size: 12px;
+}
+
+.evidence-list-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.evidence-list-header strong {
+  color: #1c2434;
+}
+
+.evidence-list-header span {
+  color: #7e8796;
+}
+
+.evidence-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.evidence-list .selected-file {
+  padding: 10px 12px;
+  border: 1px solid #e6eaf1;
+  border-radius: 10px;
+  background: #fff;
+  box-sizing: border-box;
 }
 
 .file-input {

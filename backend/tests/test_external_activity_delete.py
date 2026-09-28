@@ -2,18 +2,10 @@ from datetime import date
 
 import pytest
 
-import main as main_module
 from models import ExternalActivity, ExternalActivitySkill, Notification, Student
 
 STUDENT_ID = "670510659"
 HEADERS = {"X-Student-Id": STUDENT_ID}
-
-
-@pytest.fixture()
-def upload_dir(tmp_path, monkeypatch):
-    # เขียนไฟล์หลักฐานลง tmp แทน backend/uploads จริง
-    monkeypatch.setattr(main_module, "EXTERNAL_ACTIVITY_UPLOAD_DIR", tmp_path)
-    return tmp_path
 
 
 def create_student(db_session, student_id=STUDENT_ID) -> Student:

@@ -4,6 +4,7 @@ from io import BytesIO
 import json
 import math
 from pathlib import Path
+import shutil
 from uuid import uuid4
 import unicodedata
 
@@ -37,6 +38,7 @@ from models import (
     ActivityMember,
     ActivitySkill,
     ExternalActivity,
+    ExternalActivityEvidence,
     ExternalActivitySkill,
     Notification,
     Skill,
@@ -2306,6 +2308,7 @@ EXTERNAL_ACTIVITY_REQUEST_TYPE = "external_activity"
 EXTERNAL_ACTIVITY_REQUEST_LABEL = "External Activity"
 
 EVIDENCE_MAX_BYTES = 5 * 1024 * 1024
+EVIDENCE_MAX_FILES = 10
 
 # ชนิดไฟล์ตรวจจาก magic bytes จริง ไม่เชื่อ content-type ที่ browser ส่งมา
 EVIDENCE_FILE_TYPES = {
@@ -2440,6 +2443,124 @@ async def read_evidence_file(file: UploadFile) -> dict:
     }
 
 
+def validate_evidence_count(count: int) -> None:
+    if count < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="กรุณาแนบไฟล์หลักฐานอย่างน้อย 1 ไฟล์",
+        )
+
+    if count > EVIDENCE_MAX_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"แนบไฟล์หลักฐานได้สูงสุด {EVIDENCE_MAX_FILES} ไฟล์ต่อคำขอ",
+        )
+
+
+def submitted_evidence(files: list[UploadFile] | None) -> list[UploadFile]:
+    # multipart ที่ไม่ได้เลือกไฟล์อาจส่ง part ว่างมา ตัดทิ้งก่อนนับ
+    return [file for file in (files or []) if file is not None and file.filename]
+
+
+async def read_evidence_files(files: list[UploadFile]) -> list[dict]:
+    # ตรวจครบทุกไฟล์ก่อนเขียนลงดิสก์ ไฟล์ไหนผิดก็ไม่รับทั้งคำขอ
+    return [await read_evidence_file(file) for file in files]
+
+
+def evidence_folder(external_activity_id: int) -> Path:
+    return EXTERNAL_ACTIVITY_UPLOAD_DIR / str(int(external_activity_id))
+
+
+def evidence_candidate_paths(external_activity_id: int, stored_name: str) -> list[Path]:
+    # ที่ใหม่: uploads/<id>/<ไฟล์> ถ้ายังไม่ได้รัน migrate_evidence_files.py
+    # ไฟล์ของคำขอเก่าจะยังอยู่ uploads/ ชั้นบน ใช้ .name กันหลุดออกนอกโฟลเดอร์
+    name = Path(stored_name).name
+    return [
+        evidence_folder(external_activity_id) / name,
+        EXTERNAL_ACTIVITY_UPLOAD_DIR / name,
+    ]
+
+
+def find_evidence_path(evidence: ExternalActivityEvidence) -> Path | None:
+    for path in evidence_candidate_paths(
+        evidence.external_activity_id,
+        evidence.stored_name,
+    ):
+        if path.is_file():
+            return path
+
+    return None
+
+
+def remove_evidence_storage(external_activity_id: int, stored_name: str) -> None:
+    for path in evidence_candidate_paths(external_activity_id, stored_name):
+        path.unlink(missing_ok=True)
+
+
+def write_evidence_files(
+    external_activity_id: int,
+    evidence_files: list[dict],
+) -> list[Path]:
+    folder = evidence_folder(external_activity_id)
+    folder.mkdir(parents=True, exist_ok=True)
+
+    written = []
+    try:
+        for evidence_file in evidence_files:
+            path = folder / evidence_file["stored_name"]
+            path.write_bytes(evidence_file["contents"])
+            written.append(path)
+    except Exception:
+        remove_written_files(written)
+        raise
+
+    return written
+
+
+def remove_written_files(paths: list[Path]) -> None:
+    for path in paths:
+        path.unlink(missing_ok=True)
+
+    # ลบโฟลเดอร์ถ้าว่าง (คำขอใหม่ที่บันทึกไม่สำเร็จ)
+    for folder in {path.parent for path in paths}:
+        try:
+            folder.rmdir()
+        except OSError:
+            pass
+
+
+def evidence_rows(evidence_files: list[dict]) -> list[ExternalActivityEvidence]:
+    return [
+        ExternalActivityEvidence(
+            stored_name=evidence_file["stored_name"],
+            original_name=evidence_file["original_name"],
+            content_type=evidence_file["content_type"],
+            size=len(evidence_file["contents"]),
+        )
+        for evidence_file in evidence_files
+    ]
+
+
+def serialize_evidence_file(
+    external_activity_id: int,
+    evidence: ExternalActivityEvidence,
+) -> dict:
+    return {
+        "id": evidence.id,
+        "original_name": evidence.original_name,
+        "content_type": evidence.content_type,
+        "size": evidence.size,
+        "url": f"/api/external-activities/{external_activity_id}/evidence/{evidence.id}",
+    }
+
+
+def serialize_evidence_files(external_activity: ExternalActivity) -> list[dict]:
+    return [
+        serialize_evidence_file(external_activity.id, evidence)
+        for evidence in external_activity.evidence_files
+    ]
+
+
 def parse_submitted_skills(raw_skills: str, role: str) -> tuple[str, dict]:
     """
     Skill Mapping ที่นักศึกษาตั้งเองตอนส่งฟอร์ม
@@ -2498,6 +2619,7 @@ def serialize_external_activity(
 ) -> dict:
     student = external_activity.student
     target_role = EXTERNAL_ROLE_SKILLS[external_activity.role][0]
+    evidence_files = serialize_evidence_files(external_activity)
 
     return {
         "id": external_activity.id,
@@ -2523,12 +2645,9 @@ def serialize_external_activity(
         "decided_at": external_activity.decided_at,
         "skill_target_role": target_role,
         "skills": external_activity_skills(external_activity),
-        "evidence": {
-            "original_name": external_activity.evidence_original_name,
-            "content_type": external_activity.evidence_content_type,
-            "size": external_activity.evidence_size,
-            "url": f"/api/external-activities/{external_activity.id}/evidence",
-        },
+        "evidence_files": evidence_files,
+        # ไฟล์แรก คงไว้ให้โค้ดที่ยังอ่าน evidence แบบไฟล์เดียวใช้ต่อได้
+        "evidence": evidence_files[0] if evidence_files else None,
     }
 
 
@@ -2561,10 +2680,13 @@ async def submit_external_activity(
     role: str = Form(...),
     description: str = Form(""),
     skills: str = Form(...),
-    evidence: UploadFile = File(...),
+    evidence: list[UploadFile] | None = File(None),
     student: Student = Depends(get_current_student),
     db: Session = Depends(get_db),
 ):
+    uploads = submitted_evidence(evidence)
+    validate_evidence_count(len(uploads))
+
     values = {
         "title": title,
         "organization": organization,
@@ -2599,9 +2721,8 @@ async def submit_external_activity(
     target_role, related_skills = parse_submitted_skills(skills, role)
 
     # ตรวจไฟล์เป็นขั้นสุดท้าย และเขียนลงดิสก์หลังข้อมูลอื่นผ่านหมดแล้ว
-    evidence_file = await read_evidence_file(evidence)
-    evidence_path = EXTERNAL_ACTIVITY_UPLOAD_DIR / evidence_file["stored_name"]
-    evidence_path.write_bytes(evidence_file["contents"])
+    evidence_files = await read_evidence_files(uploads)
+    written_paths: list[Path] = []
 
     try:
         external_activity = ExternalActivity(
@@ -2614,10 +2735,6 @@ async def submit_external_activity(
             location=location.strip(),
             role=role,
             description=description.strip(),
-            evidence_filename=evidence_file["stored_name"],
-            evidence_original_name=evidence_file["original_name"],
-            evidence_content_type=evidence_file["content_type"],
-            evidence_size=len(evidence_file["contents"]),
             status="pending",
             skill_levels=[
                 ExternalActivitySkill(
@@ -2630,10 +2747,16 @@ async def submit_external_activity(
         )
 
         db.add(external_activity)
+        # ต้องได้ id ก่อน เพราะไฟล์อยู่ในโฟลเดอร์ uploads/<id>/
+        db.flush()
+
+        written_paths = write_evidence_files(external_activity.id, evidence_files)
+        external_activity.evidence_files = evidence_rows(evidence_files)
+
         db.commit()
     except Exception:
         db.rollback()
-        evidence_path.unlink(missing_ok=True)
+        remove_written_files(written_paths)
         raise
 
     db.refresh(external_activity)
@@ -2653,13 +2776,15 @@ async def update_external_activity(
     role: str = Form(...),
     description: str = Form(""),
     skills: str = Form(...),
-    evidence: UploadFile | None = File(None),
+    evidence: list[UploadFile] | None = File(None),
+    remove_evidence_ids: list[int] | None = Form(None),
     student: Student = Depends(get_current_student),
     db: Session = Depends(get_db),
 ):
     """
     แก้ไขกิจกรรมภายนอกที่ถูกไม่อนุมัติ แล้วส่งใหม่ (status กลับเป็น pending)
-    ไฟล์หลักฐานเป็น optional: ถ้าไม่แนบไฟล์ใหม่มา ใช้ไฟล์เดิมต่อ
+    evidence = ไฟล์ที่เพิ่มใหม่, remove_evidence_ids = id ไฟล์เดิมที่จะลบ
+    ไฟล์เดิมที่ไม่ได้ลบใช้ต่อ รวมแล้วต้องมี 1-10 ไฟล์
     """
     external_activity = db.get(ExternalActivity, external_activity_id)
 
@@ -2710,17 +2835,26 @@ async def update_external_activity(
 
     target_role, related_skills = parse_submitted_skills(skills, role)
 
-    new_evidence_file = None
-    new_evidence_path = None
+    uploads = submitted_evidence(evidence)
+    remove_ids = set(remove_evidence_ids or [])
+    current_ids = {item.id for item in external_activity.evidence_files}
 
-    if evidence is not None:
-        new_evidence_file = await read_evidence_file(evidence)
-        new_evidence_path = (
-            EXTERNAL_ACTIVITY_UPLOAD_DIR / new_evidence_file["stored_name"]
+    if not remove_ids <= current_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="ไฟล์หลักฐานที่จะลบไม่ใช่ของคำขอนี้",
         )
-        new_evidence_path.write_bytes(new_evidence_file["contents"])
 
-    old_evidence_filename = external_activity.evidence_filename
+    validate_evidence_count(len(current_ids - remove_ids) + len(uploads))
+
+    new_evidence_files = await read_evidence_files(uploads)
+
+    removed_files = [
+        (item.external_activity_id, item.stored_name)
+        for item in external_activity.evidence_files
+        if item.id in remove_ids
+    ]
+    written_paths: list[Path] = []
 
     try:
         external_activity.title = title.strip()
@@ -2737,11 +2871,14 @@ async def update_external_activity(
         external_activity.decided_at = None
         external_activity.submitted_at = datetime.now()
 
-        if new_evidence_file is not None:
-            external_activity.evidence_filename = new_evidence_file["stored_name"]
-            external_activity.evidence_original_name = new_evidence_file["original_name"]
-            external_activity.evidence_content_type = new_evidence_file["content_type"]
-            external_activity.evidence_size = len(new_evidence_file["contents"])
+        written_paths = write_evidence_files(external_activity.id, new_evidence_files)
+
+        # cascade="all, delete-orphan": แถวที่เอาออกจาก list จะถูกลบ
+        external_activity.evidence_files = [
+            item
+            for item in external_activity.evidence_files
+            if item.id not in remove_ids
+        ] + evidence_rows(new_evidence_files)
 
         # cascade="all, delete-orphan" ทำให้ของเก่าถูกลบและแทนที่ด้วยชุดใหม่
         external_activity.skill_levels = [
@@ -2756,14 +2893,12 @@ async def update_external_activity(
         db.commit()
     except Exception:
         db.rollback()
-        if new_evidence_path is not None:
-            new_evidence_path.unlink(missing_ok=True)
+        remove_written_files(written_paths)
         raise
 
-    if new_evidence_file is not None and old_evidence_filename:
-        (EXTERNAL_ACTIVITY_UPLOAD_DIR / old_evidence_filename).unlink(
-            missing_ok=True
-        )
+    # ลบไฟล์เดิมที่ผู้ใช้เอาออก หลัง commit สำเร็จแล้วเท่านั้น
+    for activity_id, stored_name in removed_files:
+        remove_evidence_storage(activity_id, stored_name)
 
     db.refresh(external_activity)
 
@@ -2801,7 +2936,11 @@ def delete_external_activity(
             detail="ลบได้เฉพาะคำขอที่รออนุมัติหรือไม่ได้รับการอนุมัติเท่านั้น",
         )
 
-    evidence_filename = external_activity.evidence_filename
+    activity_id = external_activity.id
+    stored_names = [item.stored_name for item in external_activity.evidence_files]
+    # คอลัมน์เดิม (เลิกใช้แล้ว) อาจยังชี้ไฟล์ที่ uploads/ ชั้นบน
+    if external_activity.evidence_filename:
+        stored_names.append(external_activity.evidence_filename)
 
     # FK ของ notifications เป็น ON DELETE CASCADE ใน PostgreSQL อยู่แล้ว
     # ลบเองด้วยเพื่อให้ผลเหมือนกันทุก DB
@@ -2811,10 +2950,9 @@ def delete_external_activity(
     db.delete(external_activity)
     db.commit()
 
-    if evidence_filename:
-        (EXTERNAL_ACTIVITY_UPLOAD_DIR / Path(evidence_filename).name).unlink(
-            missing_ok=True
-        )
+    for stored_name in stored_names:
+        remove_evidence_storage(activity_id, stored_name)
+    shutil.rmtree(evidence_folder(activity_id), ignore_errors=True)
 
     return None
 
@@ -2976,6 +3114,7 @@ def list_my_activities(
                     if link.target_role == target_role
                 },
                 "evidence_url": None,
+                "evidence_files": [],
             }
         )
 
@@ -2989,6 +3128,7 @@ def list_my_activities(
     )
 
     for external_activity in approved_external:
+        evidence_files = serialize_evidence_files(external_activity)
         items.append(
             {
                 "source": "external_activity",
@@ -3010,8 +3150,9 @@ def list_my_activities(
                 "status": external_activity.status,
                 "skills": external_activity_skills(external_activity),
                 "evidence_url": (
-                    f"/api/external-activities/{external_activity.id}/evidence"
+                    evidence_files[0]["url"] if evidence_files else None
                 ),
+                "evidence_files": evidence_files,
             }
         )
 
@@ -3818,23 +3959,10 @@ def get_external_activity(
     )
 
 
-@app.get("/api/external-activities/{external_activity_id}/evidence")
-def get_external_activity_evidence(
-    external_activity_id: int,
-    db: Session = Depends(get_db),
-):
-    external_activity = require_external_activity(
-        db,
-        external_activity_id,
-    )
+def evidence_file_response(evidence: ExternalActivityEvidence) -> FileResponse:
+    path = find_evidence_path(evidence)
 
-    # เก็บเฉพาะชื่อไฟล์ที่ระบบสร้างเอง ใช้ .name กันไม่ให้หลุดออกนอกโฟลเดอร์
-    path = (
-        EXTERNAL_ACTIVITY_UPLOAD_DIR
-        / Path(external_activity.evidence_filename).name
-    )
-
-    if not path.is_file():
+    if path is None:
         raise HTTPException(
             status_code=404,
             detail="ไม่พบไฟล์หลักฐาน",
@@ -3842,10 +3970,47 @@ def get_external_activity_evidence(
 
     return FileResponse(
         path,
-        media_type=external_activity.evidence_content_type,
-        filename=external_activity.evidence_original_name,
+        media_type=evidence.content_type,
+        filename=evidence.original_name,
         content_disposition_type="inline",
     )
+
+
+@app.get("/api/external-activities/{external_activity_id}/evidence")
+def get_external_activity_evidence(
+    external_activity_id: int,
+    db: Session = Depends(get_db),
+):
+    # URL เดิมแบบไฟล์เดียว: ส่งไฟล์แรกของคำขอ
+    external_activity = require_external_activity(
+        db,
+        external_activity_id,
+    )
+
+    if not external_activity.evidence_files:
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบไฟล์หลักฐาน",
+        )
+
+    return evidence_file_response(external_activity.evidence_files[0])
+
+
+@app.get("/api/external-activities/{external_activity_id}/evidence/{evidence_id}")
+def get_external_activity_evidence_file(
+    external_activity_id: int,
+    evidence_id: int,
+    db: Session = Depends(get_db),
+):
+    evidence = db.get(ExternalActivityEvidence, evidence_id)
+
+    if not evidence or evidence.external_activity_id != external_activity_id:
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบไฟล์หลักฐาน",
+        )
+
+    return evidence_file_response(evidence)
 
 
 class ExternalActivityDecision(BaseModel):

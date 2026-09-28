@@ -33,6 +33,7 @@ export const EXTERNAL_ROLE_OPTIONS = [
 ]
 
 export const EVIDENCE_MAX_BYTES = 5 * 1024 * 1024
+export const EVIDENCE_MAX_FILES = 10
 export const EVIDENCE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.pdf']
 
 export function formatFileSize(bytes) {
