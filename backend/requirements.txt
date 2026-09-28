@@ -12,3 +12,8 @@ pytest
 httpx
 xlwt
 reportlab>=4.4,<5
+# transcript PDF (HTML/CSS -> PDF, จัดวางภาษาไทยถูกต้องผ่าน Pango/HarfBuzz)
+weasyprint>=66,<69
+jinja2
+# ใช้ในเทสต์อ่านข้อความจาก PDF
+pypdf

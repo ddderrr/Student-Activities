@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>{{ config.DOCUMENT_TITLE }} - {{ student.student_id }}</title>
+<style>
+  @font-face { font-family: "Sarabun"; src: url("{{ font_dir }}/Sarabun-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Sarabun"; src: url("{{ font_dir }}/Sarabun-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Sarabun"; src: url("{{ font_dir }}/Sarabun-Bold.ttf"); font-weight: 700; }
+
+  @page {
+    size: A4;
+    margin: 14mm 15mm 18mm;
+
+    @bottom-left {
+      content: "{{ config.VERIFY_TEXT }}";
+      font: 7.5pt "Sarabun", sans-serif;
+      color: #667085;
+    }
+
+    @bottom-right {
+      content: "{{ document_number }}  ·  " counter(page) "/" counter(pages);
+      font: 7.5pt "Sarabun", sans-serif;
+      color: #667085;
+    }
+  }
+
+  /* หน้าแรกไม่มีขอบบน ให้แถบหัวกระดาษชิดขอบ */
+  @page :first { margin-top: 0; }
+
+  :root {
+    --brand: #23306b;
+    --brand-soft: #eef0fa;
+    --accent: #7c3aed;
+    --ink: #1d2433;
+    --muted: #667085;
+    --line: #e4e7ec;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: "Sarabun", sans-serif;
+    font-size: 10pt;
+    line-height: 1.45;
+    color: var(--ink);
+  }
+
+  .watermark {
+    position: fixed;
+    top: 110mm;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 96pt;
+    font-weight: 700;
+    color: rgba(35, 48, 107, 0.06);
+    transform: rotate(-28deg);
+    z-index: -1;
+  }
+
+  /* แถบสีเต็มความกว้าง */
+  .band {
+    margin: 0 -15mm 6mm;
+    padding: 9mm 15mm 8mm;
+    background: var(--brand);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 6mm;
+  }
+
+  .logo {
+    width: 18mm;
+    height: 18mm;
+    flex-shrink: 0;
+    border: 1px dashed rgba(255, 255, 255, 0.7);
+    border-radius: 4mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 7pt;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  .logo img { width: 18mm; height: 18mm; object-fit: contain; }
+
+  .band .faculty { font-size: 10pt; opacity: 0.85; margin: 0; }
+  .band .title { font-size: 17pt; font-weight: 700; margin: 0; line-height: 1.25; }
+  .band .title-en { font-size: 9pt; opacity: 0.75; margin: 0; letter-spacing: 0.3pt; }
+
+  /* ข้อมูลนักศึกษาเรียงเป็นแถว */
+  .facts { display: flex; flex-wrap: wrap; gap: 2mm; margin-bottom: 2mm; }
+  .fact {
+    flex: 1 1 0;
+    min-width: 26mm;
+    padding: 2mm 3mm;
+    background: var(--brand-soft);
+    border-radius: 2mm;
+  }
+  .fact.wide { flex: 2 1 0; }
+  .fact small { display: block; font-size: 7.5pt; color: var(--muted); }
+  .fact b { font-size: 10pt; font-weight: 600; }
+
+  .filters { font-size: 8.5pt; color: var(--muted); margin: 0 0 5mm; }
+
+  h2 {
+    font-size: 11pt;
+    font-weight: 700;
+    color: var(--brand);
+    margin: 6mm 0 2.5mm;
+  }
+
+  /* คะแนนทักษะเป็นแถบยาว */
+  .bar-row { display: flex; align-items: center; gap: 3mm; margin-bottom: 1.6mm; page-break-inside: avoid; }
+  .bar-row .label { width: 62mm; font-size: 9pt; }
+  .bar-row .track { flex: 1; height: 3.2mm; background: var(--line); border-radius: 2mm; overflow: hidden; }
+  .bar-row .fill { height: 100%; background: linear-gradient(90deg, var(--brand), var(--accent)); border-radius: 2mm; }
+  .bar-row .value { width: 12mm; text-align: right; font-weight: 600; }
+  .note { font-size: 8pt; color: var(--muted); margin: 1mm 0 0; }
+
+  /* สรุปจำนวน */
+  .stats { display: flex; gap: 2mm; }
+  .stat { flex: 1; border: 1px solid var(--line); border-radius: 2mm; padding: 2mm 3mm; }
+  .stat b { display: block; font-size: 15pt; font-weight: 700; color: var(--brand); line-height: 1.2; }
+  .stat small { font-size: 8pt; color: var(--muted); }
+
+  /* ตารางกิจกรรมแบบโล่ง */
+  .year {
+    display: inline-block;
+    margin: 4mm 0 1.5mm;
+    padding: 0.6mm 3mm;
+    border-radius: 3mm;
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-weight: 600;
+    font-size: 9.5pt;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  .activities th { padding: 0; text-align: left; font-weight: 400; }
+  .activities td { padding: 1.6mm 1.5mm; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .activities tr { page-break-inside: avoid; }
+  .activities .date { width: 23mm; color: var(--muted); white-space: nowrap; }
+  .activities .meta { width: 34mm; text-align: right; color: var(--muted); font-size: 8.5pt; }
+  .activities small { color: var(--muted); }
+  .empty { color: var(--muted); padding: 3mm 0; }
+
+  /* QR + ลงนามด้านล่าง */
+  .bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-top: 12mm;
+    page-break-inside: avoid;
+  }
+  .qr {
+    width: 28mm;
+    height: 28mm;
+    border: 1px dashed #98a2b3;
+    border-radius: 2mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 7pt;
+    color: var(--muted);
+    padding: 2mm;
+  }
+  .sign { width: 75mm; text-align: center; }
+  .sign .space { height: 12mm; border-bottom: 1px solid var(--ink); margin-bottom: 1.5mm; }
+  .sign p { margin: 0; }
+  .sign .position { color: var(--muted); font-size: 9pt; }
+</style>
+</head>
+<body>
+  <div class="watermark">{{ config.WATERMARK_TEXT }}</div>
+
+  <div class="band">
+    <div class="logo">
+      {% if logo_uri %}<img src="{{ logo_uri }}" alt="">{% else %}{{ config.LOGO_PLACEHOLDER_TEXT }}{% endif %}
+    </div>
+    <div>
+      <p class="faculty">{{ config.FACULTY_NAME }} {{ config.UNIVERSITY_NAME }}</p>
+      <p class="title">{{ config.DOCUMENT_TITLE }}</p>
+      <p class="title-en">{{ config.DOCUMENT_TITLE_EN }}</p>
+    </div>
+  </div>
+
+  <div class="facts">
+    <div class="fact wide"><small>ชื่อ-สกุล</small><b>{{ student.name }}</b></div>
+    <div class="fact"><small>รหัสนักศึกษา</small><b>{{ student.student_id }}</b></div>
+    <div class="fact wide"><small>สาขาวิชา</small><b>{{ student.major or "-" }}</b></div>
+    <div class="fact"><small>ชั้นปี</small><b>{{ student.year_level or "-" }}</b></div>
+  </div>
+  <div class="facts">
+    <div class="fact wide"><small>เลขที่เอกสาร</small><b>{{ document_number }}</b></div>
+    <div class="fact wide"><small>วันที่ออกเอกสาร</small><b>{{ issued_on | thai_date }}</b></div>
+  </div>
+  <p class="filters">ประเภทกิจกรรม: {{ scope_label }} · ช่วงชั้นปี: {{ year_levels_label }}</p>
+
+  <h2>คะแนนทักษะ</h2>
+  {% for skill in skill_rows %}
+  <div class="bar-row">
+    <div class="label">{{ skill.label_th }}</div>
+    <div class="track"><div class="fill" style="width: {{ ((skill.score or 0) / 5 * 100) | round(1) }}%"></div></div>
+    <div class="value">{{ skill.score | score }}</div>
+  </div>
+  {% endfor %}
+  <p class="note">เต็ม 5 คิดจากค่าเฉลี่ยของกิจกรรมในเอกสารนี้ที่เข้าร่วมในบทบาทผู้เข้าร่วม ("-" = ยังไม่มีกิจกรรมที่ให้ทักษะนี้)</p>
+
+  <h2>สรุปจำนวนกิจกรรม</h2>
+  <div class="stats">
+    <div class="stat"><b>{{ summary.total }}</b><small>รวมทั้งหมด</small></div>
+    <div class="stat"><b>{{ summary.by_source.faculty }}</b><small>กิจกรรมคณะ</small></div>
+    <div class="stat"><b>{{ summary.by_source.major + summary.by_source.other_major }}</b><small>กิจกรรมสาขา</small></div>
+    <div class="stat"><b>{{ summary.by_source.external }}</b><small>กิจกรรมภายนอก</small></div>
+  </div>
+
+  <h2>รายการกิจกรรม</h2>
+  {% for group in groups %}
+    <table class="activities">
+      <!-- thead ซ้ำทุกหน้าเมื่อตารางยาวข้ามหน้า จึงรู้ว่าเป็นปีการศึกษาไหน -->
+      <thead>
+        <tr><th colspan="3"><div class="year">ปีการศึกษา {{ group.academic_year }}{% if group.year_level %} · ชั้นปีที่ {{ group.year_level }}{% endif %}</div></th></tr>
+      </thead>
+      {% for item in group.activities %}
+      <tr>
+        <td class="date">{{ item.date | thai_date_short }}</td>
+        <td>{{ item.title }}<br><small>{{ item.organizer }}</small></td>
+        <td class="meta">{{ item.source_label }}<br>{{ item.role_label }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p class="empty">ไม่มีกิจกรรมตามเงื่อนไขที่เลือก</p>
+  {% endfor %}
+
+  <div class="bottom">
+    <div class="qr">[QR ตรวจสอบเอกสาร]</div>
+    <div class="sign">
+      <div class="space"></div>
+      <p>{{ config.SIGNER_NAME }}</p>
+      <p class="position">{{ config.SIGNER_POSITION }}</p>
+      <p class="position">วันที่ {{ issued_on | thai_date }}</p>
+    </div>
+  </div>
+</body>
+</html>
