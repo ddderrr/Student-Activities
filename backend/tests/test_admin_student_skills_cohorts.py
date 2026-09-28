@@ -1,5 +1,7 @@
 from datetime import date, datetime
 
+import academic_calendar
+
 from main import report_academic_year_be, student_entry_year_be, student_year_level
 from models import Activity, ActivityMember, ActivitySkill, Student
 
@@ -27,6 +29,14 @@ def test_report_academic_year_starts_in_july():
 
     # ปีปัจจุบันแต่ยังไม่ถึง ก.ค. = ชั้นปีปัจจุบัน
     assert report_academic_year_be(2026, "ALL", date(2026, 3, 1)) == 2568
+
+
+def test_report_academic_year_follows_shared_start_month(monkeypatch):
+    # ใช้เดือนเริ่มปีการศึกษาเดียวกับ transcript (academic_calendar.py)
+    monkeypatch.setattr(academic_calendar, "ACADEMIC_YEAR_START_MONTH", 8)
+
+    assert report_academic_year_be(2026, "ALL", date(2026, 7, 31)) == 2568
+    assert report_academic_year_be(2026, "ALL", date(2026, 8, 1)) == 2569
 
 
 def test_student_year_level_is_class_standing():
