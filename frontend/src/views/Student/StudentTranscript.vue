@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { Download, FileText, RefreshCw } from 'lucide-vue-next'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { Download, Eye, FileText, Loader2, RefreshCw, X } from 'lucide-vue-next'
 
 import { useLanguage } from '../../composables/useLanguage'
 import { API_BASE, studentHeaders } from '../../constants/currentStudent'
@@ -84,48 +84,194 @@ function filenameFromDisposition(disposition, fallback) {
   return disposition.match(/filename="?([^";]+)"?/i)?.[1] || fallback
 }
 
-async function downloadTranscript() {
-  if (!canDownload.value) return
-
-  downloading.value = true
-  downloadError.value = ''
-
+function exportParams() {
   const params = new URLSearchParams({ style: style.value, scope: scope.value })
 
   if (!allYears.value) {
     params.set('years', selectedYears.value.join(','))
   }
 
-  try {
-    const response = await fetch(`${API_BASE}/api/student/me/transcript/export?${params}`, {
-      headers: studentHeaders()
-    })
+  return params
+}
 
-    if (!response.ok) {
-      const data = await response.json().catch(() => null)
-      throw new Error(data?.detail || t.value.studentTranscript.downloadError)
-    }
+// ใช้ร่วมกันทั้งดาวน์โหลดและดูตัวอย่าง: สร้าง PDF ตามตัวเลือกปัจจุบัน
+async function fetchTranscript() {
+  const response = await fetch(`${API_BASE}/api/student/me/transcript/export?${exportParams()}`, {
+    headers: studentHeaders()
+  })
 
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
+  if (!response.ok) {
+    const data = await response.json().catch(() => null)
+    throw new Error(data?.detail || t.value.studentTranscript.downloadError)
+  }
 
-    link.href = url
-    link.download = filenameFromDisposition(
+  return {
+    blob: await response.blob(),
+    filename: filenameFromDisposition(
       response.headers.get('content-disposition') || '',
       `transcript-${style.value}.pdf`
     )
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
+  }
+}
 
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+async function downloadTranscript() {
+  if (!canDownload.value) return
+
+  downloading.value = true
+  downloadError.value = ''
+
+  try {
+    const { blob, filename } = await fetchTranscript()
+    saveBlob(blob, filename)
   } catch (error) {
     downloadError.value = error.message || t.value.studentTranscript.downloadError
   } finally {
     downloading.value = false
   }
 }
+
+
+/* =========================
+   ดูตัวอย่าง
+========================= */
+
+const previewButton = ref(null)
+const previewCloseButton = ref(null)
+const previewOpen = ref(false)
+const previewLoading = ref(false)
+const previewError = ref('')
+const previewUrl = ref('')
+const previewFile = ref(null)
+const previewNotice = ref('')
+
+// ปิด popup ระหว่างโหลดแล้วเปิดใหม่: ผลของคำขอเก่าต้องไม่ทับของใหม่
+let previewRequest = 0
+
+// iPhone/iPad แสดง PDF ใน iframe ได้แค่หน้าแรกและเลื่อนไม่ได้ ส่วน Android ไม่มีตัวแสดง PDF ในหน้าเว็บ
+// จึงเปิดในแท็บใหม่แทน (iPadOS รายงานตัวเองเป็น Mac จึงดู maxTouchPoints ด้วย)
+function shouldOpenPreviewInNewTab() {
+  const ua = navigator.userAgent || ''
+  const iOS = /iPad|iPhone|iPod/.test(ua) ||
+    (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+
+  return iOS || /Android/i.test(ua) || navigator.pdfViewerEnabled === false
+}
+
+function releasePreview() {
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  previewUrl.value = ''
+  previewFile.value = null
+}
+
+function onPreviewKeydown(event) {
+  if (event.key === 'Escape') closePreview()
+}
+
+async function openPreviewInNewTab() {
+  // เปิดแท็บก่อน await เพื่อไม่ให้ browser บล็อก popup
+  const tab = window.open('', '_blank')
+
+  if (!tab) {
+    previewNotice.value = t.value.studentTranscript.previewPopupBlocked
+    return
+  }
+
+  previewLoading.value = true
+  previewNotice.value = ''
+  downloadError.value = ''
+
+  try {
+    const { blob } = await fetchTranscript()
+    const url = URL.createObjectURL(blob)
+    tab.location.href = url
+    // แท็บใหม่ใช้ URL นี้อยู่ ปล่อยทีหลัง
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } catch (error) {
+    tab.close()
+    downloadError.value = error.message || t.value.studentTranscript.downloadError
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+async function openPreview() {
+  if (!canDownload.value || previewLoading.value) return
+
+  if (shouldOpenPreviewInNewTab()) {
+    await openPreviewInNewTab()
+    return
+  }
+
+  const request = ++previewRequest
+
+  releasePreview()
+  previewError.value = ''
+  previewNotice.value = ''
+  previewLoading.value = true
+  previewOpen.value = true
+  document.addEventListener('keydown', onPreviewKeydown)
+  document.body.style.overflow = 'hidden'
+
+  await nextTick()
+  previewCloseButton.value?.focus()
+
+  try {
+    const file = await fetchTranscript()
+
+    if (request !== previewRequest) return
+
+    previewFile.value = file
+    // view=FitH: ให้หน้ากว้างพอดีกรอบ เลื่อนลงดูหน้าถัดไปได้
+    previewUrl.value = `${URL.createObjectURL(file.blob)}#view=FitH`
+  } catch (error) {
+    if (request !== previewRequest) return
+    previewError.value = error.message || t.value.studentTranscript.downloadError
+  } finally {
+    if (request === previewRequest) previewLoading.value = false
+  }
+}
+
+function closePreview() {
+  if (!previewOpen.value) return
+
+  previewRequest++
+  previewOpen.value = false
+  previewLoading.value = false
+  releasePreview()
+  document.removeEventListener('keydown', onPreviewKeydown)
+  document.body.style.overflow = ''
+  previewButton.value?.focus()
+}
+
+function downloadFromPreview() {
+  if (previewFile.value) {
+    saveBlob(previewFile.value.blob, previewFile.value.filename)
+  }
+}
+
+const previewSummary = computed(() => {
+  const styleLabel = styleCards.value.find((card) => card.key === style.value)?.title || style.value
+  const years = allYears.value
+    ? t.value.studentTranscript.allYears
+    : selectedYears.value.map((level) => `${t.value.studentTranscript.yearPrefix} ${level}`).join(', ')
+
+  return `${styleLabel} · ${scopeLabels.value[scope.value]} · ${years}`
+})
+
+onBeforeUnmount(closePreview)
 
 onMounted(loadOptions)
 </script>
@@ -246,12 +392,99 @@ onMounted(loadOptions)
           {{ t.studentTranscript.demoNote }}
         </p>
 
-        <button type="submit" class="primary-btn" :disabled="!canDownload" data-testid="download">
-          <Download :size="17" />
-          {{ downloading ? t.studentTranscript.downloading : t.studentTranscript.download }}
-        </button>
+        <div class="action-buttons">
+          <button
+            ref="previewButton"
+            type="button"
+            class="secondary-btn"
+            :disabled="!canDownload || previewLoading"
+            data-testid="preview"
+            @click="openPreview"
+          >
+            <Loader2 v-if="previewLoading && !previewOpen" :size="17" class="spin" />
+            <Eye v-else :size="17" />
+            {{ t.studentTranscript.preview }}
+          </button>
+
+          <button type="submit" class="primary-btn" :disabled="!canDownload" data-testid="download">
+            <Download :size="17" />
+            {{ downloading ? t.studentTranscript.downloading : t.studentTranscript.download }}
+          </button>
+        </div>
       </div>
+
+      <p v-if="previewNotice" class="error-text" role="alert">{{ previewNotice }}</p>
     </form>
+
+    <!-- popup ดูตัวอย่าง PDF: คลิกนอกกรอบ / Esc / ปุ่มปิด = ปิด -->
+    <div
+      v-if="previewOpen"
+      class="preview-backdrop"
+      data-testid="preview-backdrop"
+      @click.self="closePreview"
+    >
+      <div
+        class="preview-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="preview-title"
+      >
+        <div class="preview-header">
+          <div class="preview-heading">
+            <h2 id="preview-title">{{ t.studentTranscript.previewTitle }}</h2>
+            <p>{{ previewSummary }}</p>
+          </div>
+
+          <div class="preview-actions">
+            <button
+              type="button"
+              class="primary-btn"
+              :disabled="!previewFile"
+              :aria-label="t.studentTranscript.download"
+              data-testid="preview-download"
+              @click="downloadFromPreview"
+            >
+              <Download :size="17" />
+              <span class="label">{{ t.studentTranscript.download }}</span>
+            </button>
+
+            <button
+              ref="previewCloseButton"
+              type="button"
+              class="icon-btn"
+              :aria-label="t.studentTranscript.close"
+              :title="t.studentTranscript.close"
+              data-testid="preview-close"
+              @click="closePreview"
+            >
+              <X :size="20" />
+            </button>
+          </div>
+        </div>
+
+        <div class="preview-body">
+          <div v-if="previewLoading" class="preview-status" data-testid="preview-loading">
+            <Loader2 :size="28" class="spin" />
+            <span>{{ t.studentTranscript.previewLoading }}</span>
+          </div>
+
+          <div v-else-if="previewError" class="preview-status error" role="alert">
+            <span>{{ previewError }}</span>
+            <button type="button" class="ghost-btn" @click="openPreview">
+              <RefreshCw :size="15" />
+              {{ t.studentTranscript.retry }}
+            </button>
+          </div>
+
+          <iframe
+            v-else-if="previewUrl"
+            :src="previewUrl"
+            :title="t.studentTranscript.previewTitle"
+            data-testid="preview-frame"
+          ></iframe>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -533,6 +766,140 @@ input[type="radio"] {
   color: inherit;
 }
 
+.action-buttons {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border: 1px solid #6d28d9;
+  border-radius: 9px;
+  background: #fff;
+  color: #6d28d9;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* popup ดูตัวอย่าง */
+.preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.6);
+  display: flex;
+  box-sizing: border-box;
+}
+
+.preview-dialog {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.35);
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e8ecf3;
+}
+
+.preview-heading {
+  min-width: 0;
+}
+
+.preview-heading h2 {
+  margin: 0 0 2px;
+  color: #172d68;
+  font-size: 17px;
+}
+
+.preview-heading p {
+  margin: 0;
+  color: #6b7a96;
+  font-size: 13px;
+}
+
+.preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #d7deeb;
+  border-radius: 9px;
+  background: #fff;
+  color: #33415f;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: #f5f7fb;
+}
+
+.preview-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #525659;
+}
+
+.preview-body iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.preview-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #f5f7fb;
+  color: #33415f;
+}
+
+.preview-status.error {
+  color: #b42318;
+}
+
 .error-text {
   margin: 18px 0 0;
   color: #b42318;
@@ -560,6 +927,30 @@ input[type="radio"] {
 
   .primary-btn {
     justify-content: center;
+  }
+
+  .action-buttons {
+    flex-direction: column-reverse;
+  }
+
+  .action-buttons .secondary-btn {
+    justify-content: center;
+  }
+
+  .preview-backdrop {
+    padding: 0;
+  }
+
+  .preview-dialog {
+    border-radius: 0;
+  }
+
+  .preview-header {
+    padding: 10px 12px;
+  }
+
+  .preview-actions .label {
+    display: none;
   }
 }
 </style>

@@ -946,6 +946,11 @@ export default {
     demoNote: 'Demo document with a "SAMPLE" watermark',
     download: 'Download PDF',
     downloading: 'Generating PDF...',
-    downloadError: 'Download failed.'
+    downloadError: 'Download failed.',
+    preview: 'Preview',
+    previewTitle: 'Transcript preview',
+    previewLoading: 'Generating PDF...',
+    close: 'Close',
+    previewPopupBlocked: 'Your browser blocked the new tab. Allow pop-ups and try again, or download the PDF.'
   },
 }
