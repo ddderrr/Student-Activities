@@ -11,7 +11,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
     raise RuntimeError(
-        "ไม่พบ DATABASE_URL กรุณาสร้าง backend/.env จาก .env.example"
+        "ไม่พบ DATABASE_URL กรุณาสร้าง .env ที่ root ของโปรเจกต์ (หรือ backend/.env) จาก .env.example"
     )
 
 
