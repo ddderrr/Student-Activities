@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 
 import {
   Search,
@@ -10,7 +10,8 @@ import {
   Check,
   X,
   Settings,
-  Save
+  Save,
+  Users
 } from 'lucide-vue-next'
 
 import { useLanguage } from '../../composables/useLanguage'
@@ -114,6 +115,8 @@ const error = ref('')
 const students = ref([])
 const totalFaculty = ref(0)
 const availableYears = ref([])
+// จำนวนนักศึกษาทั้งหมดแยกตาม { yearLevel, major } ใช้คำนวณ % เมื่อกรองชั้นปี/สาขา
+const population = ref([])
 
 /* =========================
    Reporting period: Year + optional Semester
@@ -148,6 +151,81 @@ const selectPeriod = async (period) => {
   selectedPeriod.value = period
   periodOpen.value = false
   await loadStudentSkills()
+}
+
+/* =========================
+   Class year / Major filter (กรองข้อมูลทั้งหน้า)
+========================= */
+const ALL_OPTION = '__ALL__'
+const selectedYearLevel = ref(ALL_OPTION)
+const selectedMajor = ref(ALL_OPTION)
+
+// ชั้นปีมาจาก backend (คำนวณจากรหัสนักศึกษา 2 หลักแรก)
+// ปี 1-4 แยกกลุ่ม ส่วนปี 5 ขึ้นไปรวมเป็นกลุ่มเดียว
+const yearLevelGroup = (level) => {
+  if (level === null || level === undefined) return 'UNKNOWN'
+  return level >= 5 ? '5+' : String(level)
+}
+
+const yearLevelLabel = (group) => {
+  const labels = t.value.adminStudentSkills
+
+  return {
+    1: labels.yearLevel1,
+    2: labels.yearLevel2,
+    3: labels.yearLevel3,
+    4: labels.yearLevel4,
+    '5+': labels.yearLevel5Plus,
+    UNKNOWN: labels.yearLevelUnknown
+  }[group] ?? group
+}
+
+// ปี 1-4 แสดงเสมอ ส่วน "ปี 5 ขึ้นไป" / "ไม่ทราบ" แสดงเมื่อมีนักศึกษากลุ่มนั้น
+const yearLevelOptions = computed(() => {
+  const present = new Set(
+    [...population.value, ...students.value].map(item => yearLevelGroup(item.yearLevel))
+  )
+
+  return ['1', '2', '3', '4', '5+', 'UNKNOWN']
+    .filter(group => !['5+', 'UNKNOWN'].includes(group) || present.has(group))
+    .map(group => ({ value: group, label: yearLevelLabel(group) }))
+})
+
+const majorOptions = computed(() => {
+  const majors = new Set(
+    [...population.value, ...students.value].map(item => item.major || '')
+  )
+
+  const named = [...majors]
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, 'th'))
+    .map(major => ({ value: major, label: major }))
+
+  return majors.has('')
+    ? [...named, { value: '', label: t.value.adminStudentSkills.majorNotSpecified }]
+    : named
+})
+
+const matchesCohort = (item) =>
+  (selectedYearLevel.value === ALL_OPTION || yearLevelGroup(item.yearLevel) === selectedYearLevel.value) &&
+  (selectedMajor.value === ALL_OPTION || (item.major || '') === selectedMajor.value)
+
+const cohortFilterActive = computed(() =>
+  selectedYearLevel.value !== ALL_OPTION || selectedMajor.value !== ALL_OPTION
+)
+
+const cohortLabel = computed(() =>
+  [
+    selectedYearLevel.value !== ALL_OPTION ? yearLevelLabel(selectedYearLevel.value) : null,
+    selectedMajor.value !== ALL_OPTION
+      ? majorOptions.value.find(option => option.value === selectedMajor.value)?.label ?? selectedMajor.value
+      : null
+  ].filter(Boolean).join(' · ')
+)
+
+const clearCohortFilters = () => {
+  selectedYearLevel.value = ALL_OPTION
+  selectedMajor.value = ALL_OPTION
 }
 
 /* =========================
@@ -201,6 +279,15 @@ const loadStudentSkills = async () => {
     students.value = Array.isArray(data.students) ? data.students : []
     availableYears.value = Array.isArray(data.availableYears) ? data.availableYears : []
     totalFaculty.value = Number(data.totalFaculty || 0)
+    population.value = Array.isArray(data.population) ? data.population : []
+
+    // เปลี่ยนปีแล้วสาขา/ชั้นปีที่เลือกไว้อาจไม่มีแล้ว ให้กลับไปเป็น "ทั้งหมด"
+    if (!yearLevelOptions.value.some(option => option.value === selectedYearLevel.value)) {
+      selectedYearLevel.value = ALL_OPTION
+    }
+    if (!majorOptions.value.some(option => option.value === selectedMajor.value)) {
+      selectedMajor.value = ALL_OPTION
+    }
 
     if (!selectedYear.value || !availableYears.value.includes(Number(selectedYear.value))) {
       selectedYear.value = Number(data.defaultYear || data.selectedYear || availableYears.value[0])
@@ -267,13 +354,23 @@ const scoreMatchesFilter = (score) => {
 /* =========================
    Selected period data
 ========================= */
-const semesterStudents = computed(() => students.value)
+// นักศึกษาในช่วงเวลาที่เลือก หลังกรองชั้นปี/สาขา (ใช้กับทุกส่วนของหน้า)
+const semesterStudents = computed(() => students.value.filter(matchesCohort))
 
 const studentsEvaluated = computed(() => semesterStudents.value.length)
 
+// จำนวนนักศึกษาทั้งหมดในกลุ่มที่เลือก (รวมคนที่ยังไม่มีข้อมูล skill)
+const studentPopulation = computed(() => {
+  if (!population.value.length) return totalFaculty.value
+
+  return population.value
+    .filter(matchesCohort)
+    .reduce((sum, item) => sum + Number(item.count || 0), 0)
+})
+
 const facultyPercentage = computed(() => {
-  if (totalFaculty.value === 0) return '0.0'
-  return ((studentsEvaluated.value / totalFaculty.value) * 100).toFixed(1)
+  if (studentPopulation.value === 0) return '0.0'
+  return Math.min(100, (studentsEvaluated.value / studentPopulation.value) * 100).toFixed(1)
 })
 
 const averageSkillScore = computed(() => {
@@ -285,10 +382,10 @@ const averageSkillScore = computed(() => {
   return (studentAverages.reduce((sum, value) => sum + value, 0) / studentAverages.length).toFixed(2)
 })
 
-const facultySkillAverages = computed(() => {
+const skillAveragesOf = (list) => {
   const result = {}
   skillKeys.forEach(skill => {
-    const values = semesterStudents.value
+    const values = list
       .map(student => skillValueOf(student, skill.key))
       .filter(value => value !== null)
 
@@ -297,7 +394,13 @@ const facultySkillAverages = computed(() => {
       : null
   })
   return result
-})
+}
+
+// ค่าเฉลี่ยของกลุ่มที่เลือก (radar หลัก, Top / Growth Area)
+const facultySkillAverages = computed(() => skillAveragesOf(semesterStudents.value))
+
+// ค่าเฉลี่ยทั้งคณะ (ไม่กรองชั้นปี/สาขา) ใช้เทียบในหน้ารายละเอียดนักศึกษา
+const wholeFacultySkillAverages = computed(() => skillAveragesOf(students.value))
 
 /* =========================
    Radar calculation
@@ -325,6 +428,182 @@ const buildRadarPoints = (scores) => {
 
 const actualRadarPoints = computed(() =>
   buildRadarPoints(skillKeys.map(skill => facultySkillAverages.value[skill.key]))
+)
+
+const radarVertex = (score, index) => {
+  const ratio = Math.max(0, Math.min(5, score)) / 5
+  const outer = radarOuterPoints[index]
+
+  return {
+    x: radarCenter.x + (outer.x - radarCenter.x) * ratio,
+    y: radarCenter.y + (outer.y - radarCenter.y) * ratio
+  }
+}
+
+/* =========================
+   Radar view: ภาพรวม / แยกชั้นปี / แยกสาขา / แยกสาขา × ชั้นปี
+   แบบแยกกลุ่มวาดกลุ่มที่เลือกซ้อนบน radar หลัก สูงสุด 3 กลุ่มพร้อมกัน
+   (เกิน 3 สีจะแยกกันไม่ออก โดยเฉพาะคนตาบอดสี) ตัวเลขทุกกลุ่มดูได้ในตาราง
+========================= */
+const radarView = ref('OVERALL')
+
+const radarViewOptions = computed(() => [
+  { value: 'OVERALL', label: t.value.adminStudentSkills.radarViewOverall },
+  { value: 'YEAR', label: t.value.adminStudentSkills.radarViewByYear },
+  { value: 'MAJOR', label: t.value.adminStudentSkills.radarViewByMajor },
+  { value: 'MAJOR_YEAR', label: t.value.adminStudentSkills.radarViewByMajorYear }
+])
+
+const YEAR_GROUP_ORDER = ['1', '2', '3', '4', '5+', 'UNKNOWN']
+
+const majorLabel = (major) => major || t.value.adminStudentSkills.majorNotSpecified
+
+// เรียงสาขาตามตัวอักษร และให้ "ไม่ระบุสาขา" อยู่ท้ายสุด
+const compareMajors = (a, b) => {
+  if (a === b) return 0
+  if (!a) return 1
+  if (!b) return -1
+  return a.localeCompare(b, 'th')
+}
+
+const skillShortLabel = (skillKey) => ({
+  arts_culture_traditions: t.value.adminStudentSkills.skillShortArtsCultureTraditions,
+  volunteerism: t.value.adminStudentSkills.skillShortVolunteerism,
+  academics: t.value.adminStudentSkills.skillShortAcademics,
+  internationalization: t.value.adminStudentSkills.skillShortInternationalization,
+  health_promotion: t.value.adminStudentSkills.skillShortHealthPromotion,
+  nature_environmental_conservation: t.value.adminStudentSkills.skillShortNatureEnvironmentalConservation
+}[skillKey])
+
+// ใช้นักศึกษาหลังกรองชั้นปี/สาขาด้านบน เช่น กรองสาขาเคมี + ดูแยกชั้นปี = เคมีแต่ละชั้นปี
+const radarGroups = computed(() => {
+  if (radarView.value === 'OVERALL') return []
+
+  const groups = new Map()
+
+  for (const student of semesterStudents.value) {
+    const year = yearLevelGroup(student.yearLevel)
+    const major = student.major || ''
+    const key = radarView.value === 'YEAR'
+      ? year
+      : radarView.value === 'MAJOR' ? major : `${major}|${year}`
+
+    if (!groups.has(key)) groups.set(key, { key, year, major, students: [] })
+    groups.get(key).students.push(student)
+  }
+
+  return [...groups.values()]
+    .sort((a, b) =>
+      (radarView.value === 'YEAR' ? 0 : compareMajors(a.major, b.major)) ||
+      YEAR_GROUP_ORDER.indexOf(a.year) - YEAR_GROUP_ORDER.indexOf(b.year)
+    )
+    .map(group => {
+      const averages = skillAveragesOf(group.students)
+      const studentAverages = group.students
+        .map(student => averageOfSkills(student))
+        .filter(value => value !== null)
+
+      let title = majorLabel(group.major)
+      if (radarView.value === 'YEAR') title = yearLevelLabel(group.year)
+      if (radarView.value === 'MAJOR_YEAR') title = `${majorLabel(group.major)} · ${yearLevelLabel(group.year)}`
+
+      return {
+        key: group.key,
+        title,
+        count: group.students.length,
+        averages,
+        average: studentAverages.length
+          ? studentAverages.reduce((sum, value) => sum + value, 0) / studentAverages.length
+          : null,
+        points: buildRadarPoints(skillKeys.map(skill => averages[skill.key] ?? 0)),
+        // จุดเฉพาะ skill ที่มีข้อมูล ใช้แสดงค่าเมื่อชี้เมาส์
+        vertices: skillKeys
+          .map((skill, index) => ({ skill, index, score: averages[skill.key] }))
+          .filter(item => item.score !== null)
+          .map(item => ({
+            key: item.skill.key,
+            label: skillDisplay(item.skill.label),
+            score: item.score,
+            ...radarVertex(item.score, item.index)
+          }))
+      }
+    })
+})
+
+// สีตาม "กลุ่ม" ไม่ใช่ตามลำดับ: เอากลุ่มหนึ่งออก กลุ่มที่เหลือยังสีเดิม
+// ชุดสีนี้ผ่านการตรวจสีสำหรับคนตาบอดสีแบบทุกคู่ รวมกับสีเขียวของ benchmark (#22a06b)
+const RADAR_GROUP_LIMIT = 3
+const RADAR_GROUP_COLORS = ['#2a78d6', '#eb6834', '#4a3aa7']
+
+// key ของกลุ่มที่แสดงบน radar -> ช่องสี (0-2)
+const groupSlots = ref({})
+
+const selectDefaultRadarGroups = () => {
+  const largest = [...radarGroups.value]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, RADAR_GROUP_LIMIT)
+
+  groupSlots.value = Object.fromEntries(largest.map((group, index) => [group.key, index]))
+}
+
+// เปลี่ยนมุมมอง: เริ่มจากกลุ่มที่มีนักศึกษามากที่สุด 3 กลุ่ม
+watch(radarView, selectDefaultRadarGroups)
+
+// ข้อมูล/ตัวกรองเปลี่ยน: เก็บกลุ่มที่ยังมีอยู่ไว้พร้อมสีเดิม
+// JSON แยก [] กับ [''] (กลุ่ม "ไม่ระบุสาขา") ออกจากกันได้ ต่างจาก join
+watch(
+  () => JSON.stringify(radarGroups.value.map(group => group.key)),
+  () => {
+    const available = new Set(radarGroups.value.map(group => group.key))
+    const kept = Object.entries(groupSlots.value).filter(([key]) => available.has(key))
+
+    if (kept.length) {
+      groupSlots.value = Object.fromEntries(kept)
+    } else {
+      selectDefaultRadarGroups()
+    }
+  }
+)
+
+const radarGroupLimitReached = computed(() =>
+  Object.keys(groupSlots.value).length >= RADAR_GROUP_LIMIT
+)
+
+const groupColor = (key) => RADAR_GROUP_COLORS[groupSlots.value[key]]
+
+const toggleRadarGroup = (key) => {
+  const slots = { ...groupSlots.value }
+
+  if (key in slots) {
+    delete slots[key]
+  } else {
+    const used = new Set(Object.values(slots))
+    const free = RADAR_GROUP_COLORS.findIndex((_color, slot) => !used.has(slot))
+    if (free === -1) return
+    slots[key] = free
+  }
+
+  groupSlots.value = slots
+}
+
+// วาดตามลำดับช่องสี ให้ซ้อนกันเหมือนเดิมทุกครั้ง
+const selectedRadarGroups = computed(() =>
+  radarGroups.value
+    .filter(group => group.key in groupSlots.value)
+    .sort((a, b) => groupSlots.value[a.key] - groupSlots.value[b.key])
+    .map(group => ({ ...group, color: groupColor(group.key) }))
+)
+
+// tooltip ของแต่ละแกนแสดงค่าของทุกกลุ่มที่เลือก จุดที่ซ้อนกันจึงยังอ่านค่าได้ครบ
+const radarAxisTooltips = computed(() =>
+  Object.fromEntries(
+    skillKeys.map(skill => [
+      skill.key,
+      `${skillDisplay(skill.label)} — ` + selectedRadarGroups.value
+        .map(group => `${group.title} ${group.averages[skill.key] !== null ? group.averages[skill.key].toFixed(2) : '—'}`)
+        .join(' · ')
+    ])
+  )
 )
 
 // Benchmark เริ่มต้น 4.0 / 5 ทุก skill
@@ -447,9 +726,34 @@ const selectedStudentRadarPoints = computed(() => {
 
 const selectedFacultyRadarPoints = computed(() =>
   buildRadarPoints(
-    skillKeys.map(skill => facultySkillAverages.value[skill.key] ?? 0)
+    skillKeys.map(skill => wholeFacultySkillAverages.value[skill.key] ?? 0)
   )
 )
+
+// นักศึกษาทุกคนในสาขาเดียวกัน (ในปี/ภาคเรียนที่เลือก ไม่ขึ้นกับตัวกรองด้านบน) รวมคนที่เลือกด้วย
+const selectedMajorStudents = computed(() => {
+  if (!selectedStudent.value) return []
+
+  const major = selectedStudent.value.major || ''
+  return students.value.filter(student => (student.major || '') === major)
+})
+
+const selectedMajorAverages = computed(() => skillAveragesOf(selectedMajorStudents.value))
+
+const selectedMajorRadarPoints = computed(() =>
+  buildRadarPoints(
+    skillKeys.map(skill => selectedMajorAverages.value[skill.key] ?? 0)
+  )
+)
+
+const selectedMajorLabel = computed(() =>
+  selectedStudent.value ? majorLabel(selectedStudent.value.major) : ''
+)
+
+// Skill Gap เทียบกับค่าเฉลี่ยสาขา (ค่าเริ่มต้น) หรือค่าเฉลี่ยคณะ
+const gapBasis = ref('MAJOR')
+
+const formatScore = (value) => (value === null || value === undefined ? '—' : value.toFixed(1))
 
 const selectedStudentAverage = computed(() => {
   if (!selectedStudent.value) return null
@@ -480,21 +784,25 @@ const recommendationBySkill = computed(() => ({
 const selectedSkillGaps = computed(() => {
   if (!selectedStudent.value) return []
 
+  const basisAverages = gapBasis.value === 'MAJOR'
+    ? selectedMajorAverages.value
+    : wholeFacultySkillAverages.value
+
   return skillKeys
     .map(skill => {
       const studentScore = skillValueOf(selectedStudent.value, skill.key)
-      const facultyScore = Number(facultySkillAverages.value[skill.key] ?? 0)
+      const compareScore = Number(basisAverages[skill.key] ?? 0)
 
       // ไม่มีข้อมูลของนักศึกษาคนนี้ = ไม่เอาไปสรุปว่าเป็น skill gap
-      if (studentScore === null || facultyScore <= 0) return null
+      if (studentScore === null || compareScore <= 0) return null
 
-      const difference = studentScore - facultyScore
-      const percentDifference = (difference / facultyScore) * 100
+      const difference = studentScore - compareScore
+      const percentDifference = (difference / compareScore) * 100
 
       return {
         ...skill,
         studentScore,
-        facultyScore,
+        compareScore,
         difference,
         percentDifference,
         recommendation: recommendationBySkill.value[skill.key]
@@ -504,7 +812,7 @@ const selectedSkillGaps = computed(() => {
     .sort((a, b) => a.difference - b.difference)
 })
 
-// แสดง Skill Gap ที่ต่ำกว่าค่าเฉลี่ยคณะทั้งหมด
+// แสดง Skill Gap ที่ต่ำกว่าค่าเฉลี่ยที่เลือกเทียบทั้งหมด
 // ไม่ตัดเหลือแค่ 3 รายการ เพื่อให้ผู้ใช้เห็นครบทุก Skill ที่มีช่องว่าง
 const selectedTopGaps = computed(() => selectedSkillGaps.value)
 
@@ -680,6 +988,60 @@ onBeforeUnmount(() => {
 
 
     <!-- =========================
+         Class year / Major filter (ใช้กับทั้งหน้า)
+    ========================== -->
+
+    <section class="cohort-bar">
+
+      <div class="cohort-bar-title">
+        <Users :size="16" />
+        <span>{{ t.adminStudentSkills.cohortFilterTitle }}</span>
+      </div>
+
+      <label class="cohort-field">
+        <span>{{ t.adminStudentSkills.yearLevelFilterLabel }}</span>
+        <select v-model="selectedYearLevel">
+          <option :value="ALL_OPTION">{{ t.adminStudentSkills.allYearLevels }}</option>
+          <option
+            v-for="option in yearLevelOptions"
+            :key="option.value"
+            :value="option.value"
+          >
+            {{ option.label }}
+          </option>
+        </select>
+      </label>
+
+      <label class="cohort-field">
+        <span>{{ t.adminStudentSkills.majorFilterLabel }}</span>
+        <select v-model="selectedMajor">
+          <option :value="ALL_OPTION">{{ t.adminStudentSkills.allMajors }}</option>
+          <option
+            v-for="option in majorOptions"
+            :key="option.value || '__none__'"
+            :value="option.value"
+          >
+            {{ option.label }}
+          </option>
+        </select>
+      </label>
+
+      <button
+        v-if="cohortFilterActive"
+        class="cohort-clear"
+        type="button"
+        @click="clearCohortFilters"
+      >
+        <X :size="13" />
+        {{ t.adminStudentSkills.clearCohortFilters }}
+      </button>
+
+      <span class="cohort-hint">{{ t.adminStudentSkills.yearLevelHint }}</span>
+
+    </section>
+
+
+    <!-- =========================
          Summary Cards
     ========================== -->
 
@@ -732,7 +1094,7 @@ onBeforeUnmount(() => {
           </strong>
 
           <span class="summary-sub">
-            {{ facultyPercentage ?? '—' }}% {{ t.adminStudentSkills.ofTotalFaculty }}
+            {{ facultyPercentage ?? '—' }}% {{ cohortFilterActive ? `${t.adminStudentSkills.ofSelectedGroup} (${studentPopulation})` : t.adminStudentSkills.ofTotalFaculty }}
           </span>
 
         </div>
@@ -757,8 +1119,9 @@ onBeforeUnmount(() => {
 
         <div class="card-header">
 
-          <div>
+          <div class="radar-title">
             <h2>{{ t.adminStudentSkills.facultyRadar }}</h2>
+            <span v-if="cohortFilterActive" class="cohort-chip">{{ cohortLabel }}</span>
           </div>
 
           <div class="report-controls">
@@ -803,6 +1166,23 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
+        </div>
+
+        <!-- View: ภาพรวม / แยกกลุ่ม -->
+
+        <div class="radar-view-switch" role="group" :aria-label="t.adminStudentSkills.radarViewLabel">
+          <span class="radar-view-label">{{ t.adminStudentSkills.radarViewLabel }}</span>
+          <button
+            v-for="option in radarViewOptions"
+            :key="option.value"
+            type="button"
+            class="radar-view-option"
+            :class="{ active: radarView === option.value }"
+            :aria-pressed="radarView === option.value"
+            @click="radarView = option.value"
+          >
+            {{ option.label }}
+          </button>
         </div>
 
         <!-- Radar -->
@@ -889,10 +1269,21 @@ onBeforeUnmount(() => {
                ========================== -->
 
                <polygon
-               v-if="showActual"
+               v-if="radarView === 'OVERALL' && showActual"
                :points="actualRadarPoints"
                class="radar-area actual-area"
                />
+
+               <!-- แยกกลุ่ม: 1 รูปต่อกลุ่มที่เลือก (สูงสุด 3) สีตามกลุ่ม -->
+               <template v-if="radarView !== 'OVERALL'">
+                 <polygon
+                   v-for="group in selectedRadarGroups"
+                   :key="`area-${group.key}`"
+                   :points="group.points"
+                   class="group-area"
+                   :style="{ stroke: group.color, fill: group.color }"
+                 />
+               </template>
 
 
                <!-- =========================
@@ -905,6 +1296,44 @@ onBeforeUnmount(() => {
                :points="benchmarkRadarPoints"
                class="benchmark-area"
                />
+
+               <!-- จุดของแต่ละกลุ่ม: ชี้เมาส์เพื่อดูค่า
+                    วงรับเมาส์ (ใหญ่) ของทุกกลุ่มอยู่ใต้จุดที่มองเห็นทั้งหมด
+                    ชี้ที่จุดไหนจึงได้ค่าของจุดนั้นเสมอ แม้จุดของหลายกลุ่มอยู่ใกล้กัน -->
+               <template v-if="radarView !== 'OVERALL'">
+                 <g
+                   v-for="group in selectedRadarGroups"
+                   :key="`hits-${group.key}`"
+                 >
+                   <circle
+                     v-for="vertex in group.vertices"
+                     :key="vertex.key"
+                     :cx="vertex.x"
+                     :cy="vertex.y"
+                     r="12"
+                     class="group-point-hit"
+                   >
+                     <title>{{ radarAxisTooltips[vertex.key] }}</title>
+                   </circle>
+                 </g>
+
+                 <g
+                   v-for="group in selectedRadarGroups"
+                   :key="`points-${group.key}`"
+                 >
+                   <circle
+                     v-for="vertex in group.vertices"
+                     :key="vertex.key"
+                     :cx="vertex.x"
+                     :cy="vertex.y"
+                     r="4.5"
+                     class="group-point"
+                     :style="{ fill: group.color }"
+                   >
+                     <title>{{ radarAxisTooltips[vertex.key] }}</title>
+                   </circle>
+                 </g>
+               </template>
 
 
                <!-- Center -->
@@ -943,7 +1372,90 @@ onBeforeUnmount(() => {
 
         <!-- Legend -->
 
-        <div class="radar-legend">
+        <div v-if="radarView !== 'OVERALL'" class="radar-group-legend">
+
+          <p v-if="!radarGroups.length" class="radar-group-hint">
+            {{ t.adminStudentSkills.noStudentData }}
+          </p>
+
+          <template v-else>
+            <p class="radar-group-hint">{{ t.adminStudentSkills.radarGroupHint }}</p>
+
+            <div class="radar-group-chips">
+              <button
+                v-for="group in radarGroups"
+                :key="group.key"
+                type="button"
+                class="radar-group-chip"
+                :class="{ selected: group.key in groupSlots }"
+                :disabled="!(group.key in groupSlots) && radarGroupLimitReached"
+                :aria-pressed="group.key in groupSlots"
+                @click="toggleRadarGroup(group.key)"
+              >
+                <span
+                  class="radar-group-swatch"
+                  :style="group.key in groupSlots ? { background: groupColor(group.key) } : null"
+                ></span>
+                {{ group.title }}
+                <small>({{ group.count }})</small>
+              </button>
+            </div>
+          </template>
+
+          <button
+            class="legend-button"
+            :class="{ inactive: !showBenchmark }"
+            @click="showBenchmark = !showBenchmark"
+          >
+            <span class="legend-dot benchmark" :class="{ inactive: !showBenchmark }"></span>
+            {{ t.adminStudentSkills.benchmarkLevel }}
+          </button>
+
+          <!-- ตารางตัวเลขของทุกกลุ่ม (ดูค่าจริงได้โดยไม่ต้องชี้เมาส์) -->
+          <details v-if="radarGroups.length" class="radar-table-view">
+            <summary>{{ t.adminStudentSkills.showGroupTable }}</summary>
+
+            <div class="radar-table-scroll">
+              <table class="radar-group-table">
+                <thead>
+                  <tr>
+                    <th>{{ t.adminStudentSkills.groupColumn }}</th>
+                    <th>{{ t.adminStudentSkills.studentsColumn }}</th>
+                    <th
+                      v-for="skill in skillKeys"
+                      :key="skill.key"
+                      :title="skillDisplay(skill.label)"
+                    >
+                      {{ skillShortLabel(skill.key) }}
+                    </th>
+                    <th>{{ t.adminStudentSkills.avgShort }}</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  <tr v-for="group in radarGroups" :key="group.key">
+                    <td class="group-name">
+                      <span
+                        v-if="group.key in groupSlots"
+                        class="radar-group-swatch"
+                        :style="{ background: groupColor(group.key) }"
+                      ></span>
+                      {{ group.title }}
+                    </td>
+                    <td>{{ group.count }}</td>
+                    <td v-for="skill in skillKeys" :key="skill.key">
+                      {{ group.averages[skill.key] !== null ? group.averages[skill.key].toFixed(2) : '—' }}
+                    </td>
+                    <td><strong>{{ group.average !== null ? group.average.toFixed(2) : '—' }}</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+        </div>
+
+        <div v-else class="radar-legend">
 
                <button
                class="legend-button"
@@ -990,7 +1502,7 @@ onBeforeUnmount(() => {
           </div>
 
           <p>
-            {{ t.adminStudentSkills.facultyAverage }}: {{ topArea ? topArea.score.toFixed(2) : t.adminStudentSkills.notAvailable }}<template v-if="topArea"> / 5.0</template>
+            {{ cohortFilterActive ? t.adminStudentSkills.groupAverage : t.adminStudentSkills.facultyAverage }}: {{ topArea ? topArea.score.toFixed(2) : t.adminStudentSkills.notAvailable }}<template v-if="topArea"> / 5.0</template>
           </p>
 
 
@@ -1170,6 +1682,14 @@ onBeforeUnmount(() => {
               </th>
 
               <th>
+                {{ t.adminStudentSkills.yearLevelColumn }}
+              </th>
+
+              <th>
+                {{ t.adminStudentSkills.major }}
+              </th>
+
+              <th>
                 {{ t.adminStudentSkills.primarySkill }}
               </th>
 
@@ -1195,7 +1715,7 @@ onBeforeUnmount(() => {
             <tr v-if="filteredStudents.length === 0">
 
               <td
-                colspan="6"
+                colspan="8"
                 class="empty-row"
               >
                 {{ t.adminStudentSkills.noStudentData }}
@@ -1215,6 +1735,14 @@ onBeforeUnmount(() => {
 
               <td>
                 {{ student.id }}
+              </td>
+
+              <td>
+                {{ yearLevelLabel(yearLevelGroup(student.yearLevel)) }}
+              </td>
+
+              <td>
+                {{ student.major || '—' }}
               </td>
 
               <td>
@@ -1322,7 +1850,8 @@ onBeforeUnmount(() => {
               <h3>{{ selectedStudent.name }}</h3>
               <div class="student-meta-row">
                 <span class="student-meta-chip">{{ t.adminStudentSkills.idLabel }}: {{ selectedStudent.id }}</span>
-                <span class="student-meta-chip">{{ t.adminStudentSkills.major }}: {{ selectedStudent.major ?? '—' }}</span>
+                <span class="student-meta-chip">{{ yearLevelLabel(yearLevelGroup(selectedStudent.yearLevel)) }}</span>
+                <span class="student-meta-chip">{{ t.adminStudentSkills.major }}: {{ selectedStudent.major || '—' }}</span>
                 <span class="student-meta-chip">{{ selectedStudent.periodLabel || selectedStudent.semester }}</span>
                 <span class="student-meta-chip">{{ t.adminStudentSkills.joinedPrefix }} {{ selectedStudent.activityCount ?? 0 }} {{ t.adminStudentSkills.activitiesUnit }}</span>
               </div>
@@ -1351,6 +1880,10 @@ onBeforeUnmount(() => {
 
               <div class="detail-legend">
                 <span><i class="legend-swatch student"></i> {{ t.adminStudentSkills.student }}</span>
+                <span :title="selectedMajorLabel">
+                  <i class="legend-swatch major"></i>
+                  {{ t.adminStudentSkills.majorAvgShort }} ({{ selectedMajorStudents.length }})
+                </span>
                 <span><i class="legend-swatch faculty"></i> {{ t.adminStudentSkills.facultyAvgShort }}</span>
               </div>
             </div>
@@ -1372,6 +1905,7 @@ onBeforeUnmount(() => {
                 <line x1="250" y1="195" x2="120" y2="120" class="radar-axis" />
 
                 <polygon :points="selectedFacultyRadarPoints" class="student-faculty-area" />
+                <polygon :points="selectedMajorRadarPoints" class="student-major-area" />
                 <polygon :points="selectedStudentRadarPoints" class="student-profile-area" />
 
                 <text
@@ -1398,7 +1932,13 @@ onBeforeUnmount(() => {
                 :key="skill.key"
                 class="student-score-item"
               >
-                <span>{{ skillDisplay(skill.label) }}</span>
+                <div class="score-item-text">
+                  <span>{{ skillDisplay(skill.label) }}</span>
+                  <small>
+                    <i class="legend-swatch major"></i>{{ formatScore(selectedMajorAverages[skill.key]) }}
+                    <i class="legend-swatch faculty"></i>{{ formatScore(wholeFacultySkillAverages[skill.key]) }}
+                  </small>
+                </div>
                 <strong>{{ skillValueOf(selectedStudent, skill.key) !== null ? skillValueOf(selectedStudent, skill.key).toFixed(1) : t.adminStudentSkills.notAvailable }}</strong>
               </div>
             </div>
@@ -1422,7 +1962,27 @@ onBeforeUnmount(() => {
             <section class="detail-panel skill-gap-panel">
               <div class="gap-heading">
                 <h4>{{ t.adminStudentSkills.skillGapAnalysis }}</h4>
-                <p>{{ t.adminStudentSkills.skillGapSub }}</p>
+                <p>{{ gapBasis === 'MAJOR' ? t.adminStudentSkills.skillGapSubMajor : t.adminStudentSkills.skillGapSub }}</p>
+              </div>
+
+              <div class="gap-basis-switch" role="group" :aria-label="t.adminStudentSkills.gapCompareLabel">
+                <span>{{ t.adminStudentSkills.gapCompareLabel }}</span>
+                <button
+                  type="button"
+                  :class="{ active: gapBasis === 'MAJOR' }"
+                  :aria-pressed="gapBasis === 'MAJOR'"
+                  @click="gapBasis = 'MAJOR'"
+                >
+                  {{ t.adminStudentSkills.gapCompareMajor }}
+                </button>
+                <button
+                  type="button"
+                  :class="{ active: gapBasis === 'FACULTY' }"
+                  :aria-pressed="gapBasis === 'FACULTY'"
+                  @click="gapBasis = 'FACULTY'"
+                >
+                  {{ t.adminStudentSkills.gapCompareFaculty }}
+                </button>
               </div>
 
               <div v-if="selectedTopGaps.length" class="gap-list">
@@ -1436,7 +1996,7 @@ onBeforeUnmount(() => {
                     <div>
                       <strong>{{ skillDisplay(gap.label) }}</strong>
                       <span>
-                        {{ Math.abs(gap.percentDifference).toFixed(0) }}% {{ t.adminStudentSkills.belowFacultyAverage }}
+                        {{ Math.abs(gap.percentDifference).toFixed(0) }}% {{ gapBasis === 'MAJOR' ? t.adminStudentSkills.belowMajorAverage : t.adminStudentSkills.belowFacultyAverage }}
                       </span>
                     </div>
                     <AlertTriangle v-if="gap.difference <= -0.5" :size="16" />
@@ -1445,7 +2005,7 @@ onBeforeUnmount(() => {
 
                   <div class="gap-comparison">
                     <span>{{ t.adminStudentSkills.student }} {{ gap.studentScore.toFixed(1) }}</span>
-                    <span>{{ t.adminStudentSkills.faculty }} {{ gap.facultyScore.toFixed(1) }}</span>
+                    <span>{{ gapBasis === 'MAJOR' ? t.adminStudentSkills.major : t.adminStudentSkills.faculty }} {{ gap.compareScore.toFixed(1) }}</span>
                   </div>
 
                   <div class="gap-recommendation">
@@ -1458,7 +2018,7 @@ onBeforeUnmount(() => {
               <div v-else class="no-gap-state">
                 <CheckCircle :size="22" />
                 <strong>{{ t.adminStudentSkills.noSignificantGaps }}</strong>
-                <span>{{ t.adminStudentSkills.noGapSub }}</span>
+                <span>{{ gapBasis === 'MAJOR' ? t.adminStudentSkills.noGapSubMajor : t.adminStudentSkills.noGapSub }}</span>
               </div>
             </section>
           </aside>
@@ -1596,6 +2156,102 @@ onBeforeUnmount(() => {
 /* =========================
    Summary
 ========================= */
+
+/* =========================
+   Class year / Major filter
+========================= */
+
+.cohort-bar {
+  margin-bottom: 18px;
+  padding: 12px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  border: 1px solid #e0e7f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.cohort-bar-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #1d3268;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.cohort-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #66758c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cohort-field select {
+  min-width: 150px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #d4dbe7;
+  border-radius: 7px;
+  outline: none;
+  background: #fff;
+  color: #1d3268;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cohort-field select:focus {
+  border-color: #76aaf1;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+.cohort-clear {
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #f1f4f9;
+  color: #55708f;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cohort-clear:hover {
+  background: #e6ecf5;
+}
+
+.cohort-hint {
+  margin-left: auto;
+  color: #94a1b1;
+  font-size: 10px;
+}
+
+.radar-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cohort-chip {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #1264d8;
+  font-size: 11px;
+  font-weight: 700;
+}
 
 .summary-grid {
   display: grid;
@@ -1855,6 +2511,184 @@ onBeforeUnmount(() => {
 /* =========================
    Radar
 ========================= */
+
+/* =========================
+   Radar view switch + small multiples
+========================= */
+
+.radar-view-switch {
+  padding: 0 14px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.radar-view-label {
+  margin-right: 2px;
+  color: #66758c;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.radar-view-option {
+  padding: 5px 10px;
+  border: 1px solid #d4dbe7;
+  border-radius: 999px;
+  background: #fff;
+  color: #47566e;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.radar-view-option:hover {
+  background: #f3f6ff;
+}
+
+.radar-view-option.active {
+  border-color: #3264ed;
+  background: #eef3ff;
+  color: #1d3f9e;
+}
+
+/* กลุ่มบน radar หลัก: เส้น 2px + พื้นจาง ๆ ให้เห็นรูปที่ซ้อนกัน */
+.group-area {
+  fill-opacity: 0.08;
+  stroke-width: 2;
+}
+
+.group-point-hit {
+  fill: transparent;
+  cursor: default;
+}
+
+.group-point {
+  stroke: #fff;
+  stroke-width: 2;
+  cursor: default;
+}
+
+/* ไม่ให้ตารางตัวเลข (min-width 680px) ดันการ์ดให้กว้างเกินคอลัมน์ในจอแคบ */
+.radar-card {
+  min-width: 0;
+}
+
+.radar-group-legend {
+  padding: 0 14px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.radar-group-hint {
+  margin: 0;
+  color: #7f8ca2;
+  font-size: 11px;
+  text-align: center;
+}
+
+.radar-group-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.radar-group-chip {
+  padding: 5px 10px;
+  border: 1px solid #d4dbe7;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  color: #6b7a90;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.radar-group-chip small {
+  color: #94a1b1;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.radar-group-chip:not(:disabled):hover {
+  background: #f3f6ff;
+}
+
+.radar-group-chip.selected {
+  border-color: #b9c8e6;
+  background: #f5f8ff;
+  color: #1d3268;
+}
+
+.radar-group-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.radar-group-swatch {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border: 1.5px solid #c5ccd8;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.radar-group-chip.selected .radar-group-swatch,
+.group-name .radar-group-swatch {
+  border: 0;
+}
+
+.group-name .radar-group-swatch {
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+.radar-table-view {
+  align-self: stretch;
+  margin: 4px 0 0;
+  border: 1px solid #e3e8f0;
+  border-radius: 8px;
+}
+
+.radar-table-view summary {
+  padding: 8px 12px;
+  color: #315de6;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.radar-table-scroll {
+  overflow-x: auto;
+}
+
+/* ไม่ใช้ table-layout: fixed ของตารางหลัก ไม่งั้นทุก column กว้างเท่ากันจนชื่อกลุ่มล้นทับตัวเลข */
+.radar-group-table {
+  min-width: 680px;
+  table-layout: auto;
+}
+
+.radar-group-table th,
+.radar-group-table td {
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+.radar-group-table .group-name {
+  min-width: 160px;
+  color: #1d3268;
+  font-weight: 700;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
 .radar-container {
   height: 350px;
@@ -2222,6 +3056,11 @@ table {
   table-layout: fixed;
 }
 
+/* 8 columns: เลื่อนแนวนอนได้เมื่อจอแคบ แทนที่ข้อความจะทับกัน */
+.table-wrapper table {
+  min-width: 980px;
+}
+
 
 th {
   padding: 9px 16px;
@@ -2467,6 +3306,20 @@ td {
 
   .student-skills-page {
     padding: 20px 15px;
+  }
+
+  .cohort-field {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .cohort-field select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .cohort-hint {
+    margin-left: 0;
   }
 
   .students-header {
@@ -2772,6 +3625,11 @@ td {
   background: #2367d1;
 }
 
+/* ค่าเฉลี่ยสาขา: ส้ม ผ่านการตรวจสีทุกคู่กับเขียว (นักศึกษา) และน้ำเงิน (คณะ) */
+.legend-swatch.major {
+  background: #eb6834;
+}
+
 .detail-radar-wrap {
   min-height: 360px;
   display: flex;
@@ -2796,6 +3654,64 @@ td {
   fill: rgba(35, 103, 209, 0.10);
   stroke: #2367d1;
   stroke-width: 2;
+}
+
+.student-major-area {
+  fill: rgba(235, 104, 52, 0.08);
+  stroke: #eb6834;
+  stroke-width: 2;
+}
+
+.score-item-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.score-item-text small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #7f8ca2;
+  font-size: 11px;
+}
+
+.score-item-text small .legend-swatch {
+  width: 7px;
+  height: 7px;
+  margin-left: 4px;
+}
+
+.score-item-text small .legend-swatch:first-child {
+  margin-left: 0;
+}
+
+.gap-basis-switch {
+  margin: 10px 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #66758c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.gap-basis-switch button {
+  padding: 4px 10px;
+  border: 1px solid #d4dbe7;
+  border-radius: 999px;
+  background: #fff;
+  color: #47566e;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.gap-basis-switch button.active {
+  border-color: #3264ed;
+  background: #eef3ff;
+  color: #1d3f9e;
 }
 
 .student-score-grid {

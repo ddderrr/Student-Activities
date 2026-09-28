@@ -608,6 +608,57 @@ def normalize_student_skill_semester(semester: str) -> str:
     return aliases[normalized]
 
 
+def student_entry_year_be(student_id: str) -> int | None:
+    """
+    ปีที่เข้าศึกษา (พ.ศ.) จากรหัสนักศึกษา 2 หลักแรก เช่น 67xxxxxxx = 2567
+    คืน None ถ้ารหัสไม่ได้ขึ้นต้นด้วยตัวเลข 2 หลัก
+    """
+    prefix = str(student_id or "").strip()[:2]
+
+    # isascii กันตัวเลขแบบอื่น (เช่น ²) ที่ isdigit ผ่านแต่ int() แปลงไม่ได้
+    if len(prefix) != 2 or not (prefix.isascii() and prefix.isdigit()):
+        return None
+
+    return 2500 + int(prefix)
+
+
+def report_academic_year_be(
+    report_year: int,
+    semester: str,
+    today: date,
+) -> int:
+    """
+    ปีการศึกษา (พ.ศ.) ที่ใช้คิดชั้นปีในรายงาน โดยถือว่าปีการศึกษาใหม่เริ่มเดือนกรกฎาคม
+    (ตรงกับ Semester 2 = ก.ค.-ธ.ค. ของหน้า Student Skills)
+    - SEMESTER_1 (ม.ค.-มิ.ย.) = ปีการศึกษาที่เริ่มในปีก่อนหน้า
+    - SEMESTER_2 (ก.ค.-ธ.ค.) = ปีการศึกษาที่เริ่มในปีนั้น
+    - ALL = ชั้นปีล่าสุดของปีนั้น (ถ้าเป็นปีปัจจุบันและยังไม่ถึง ก.ค. = ชั้นปีปัจจุบัน)
+    """
+    if semester == "SEMESTER_1":
+        return report_year + 542
+
+    if semester == "SEMESTER_2":
+        return report_year + 543
+
+    if report_year == today.year and today.month < 7:
+        return report_year + 542
+
+    return report_year + 543
+
+
+def student_year_level(entry_year_be: int | None, academic_year_be: int) -> int | None:
+    """
+    ชั้นปีของนักศึกษาในปีการศึกษานั้น เช่น เข้าปี 2567 ปีการศึกษา 2569 = ชั้นปี 3
+    คืน None ถ้าไม่ทราบปีที่เข้า หรือยังไม่ได้เข้าเรียนในปีการศึกษานั้น
+    """
+    if entry_year_be is None:
+        return None
+
+    level = academic_year_be - entry_year_be + 1
+
+    return level if level >= 1 else None
+
+
 def get_student_skill_benchmarks(db: Session) -> dict[str, float]:
     rows = {
         row.skill_key: row.score_x100 / 100
@@ -775,6 +826,11 @@ def get_admin_student_skills(
         add_row(row, "external")
 
     period_label = student_skill_period_label(selected_year, selected_semester)
+    academic_year = report_academic_year_be(
+        selected_year,
+        selected_semester,
+        now_value.date(),
+    )
     students = []
     for entry in grouped.values():
         skills = {}
@@ -788,6 +844,10 @@ def get_admin_student_skills(
             "id": entry["id"],
             "name": entry["name"],
             "major": entry["major"],
+            "yearLevel": student_year_level(
+                student_entry_year_be(entry["id"]),
+                academic_year,
+            ),
             "semester": period_label,  # kept for existing frontend compatibility
             "periodLabel": period_label,
             "year": selected_year,
@@ -800,6 +860,27 @@ def get_admin_student_skills(
     students.sort(key=lambda item: item["id"])
     benchmarks = get_student_skill_benchmarks(db)
 
+    # จำนวนนักศึกษาทั้งหมดแยกตามชั้นปี (ในปีการศึกษาที่ใช้) และสาขา
+    # ให้หน้าเว็บคำนวณ "% ของนักศึกษา" ได้ถูกต้องเมื่อกรองตามชั้นปี/สาขา
+    population_counts: dict[tuple[int | None, str], int] = {}
+
+    for student_id, major in db.query(Student.student_id, Student.major).all():
+        entry_year = student_entry_year_be(student_id)
+        level = student_year_level(entry_year, academic_year)
+
+        # ยังไม่ได้เข้าเรียนในปีนั้นจึงไม่นับ ยกเว้นคนที่มีข้อมูล skill ในรายงานนี้
+        # (เช่นกิจกรรมภายนอกก่อนเข้าเรียน) ให้นับตรงกับรายชื่อด้านบนที่แสดงเป็น "ไม่ทราบชั้นปี"
+        if entry_year is not None and level is None and student_id not in grouped:
+            continue
+
+        key = (level, major or "")
+        population_counts[key] = population_counts.get(key, 0) + 1
+
+    population = [
+        {"yearLevel": level, "major": major, "count": count}
+        for (level, major), count in population_counts.items()
+    ]
+
     return {
         "years": available_years,
         "availableYears": available_years,
@@ -810,6 +891,7 @@ def get_admin_student_skills(
         "periodOptions": ["ALL", "SEMESTER_1", "SEMESTER_2"],
         "totalFaculty": total_students,
         "totalFacultyBySemester": {period_label: total_students},
+        "population": population,
         "benchmarkScores": [benchmarks[key] for key in PARTICIPANT_SKILL_DEFINITIONS],
         "benchmarkBySkill": benchmarks,
         "skillDefinitions": [

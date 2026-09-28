@@ -14,7 +14,9 @@ COPY . .
 
 EXPOSE 5173
 
-CMD ["node_modules/.bin/vite", "--host", "0.0.0.0", "--port", "5173", "--strictPort"]
+# ถ้า frontend/src ยังไม่ถูก mount (เช่น Docker start container ก่อนที่ drive D: จะพร้อมหลังเปิดเครื่อง)
+# ให้ออกไปก่อน แล้ว restart policy จะเริ่มใหม่ ไม่งั้น Vite จะรันต่อโดยไม่มีโค้ดให้เสิร์ฟ
+CMD ["sh", "-c", "if [ ! -f src/main.js ]; then echo 'frontend/src is not mounted yet, retrying...'; sleep 3; exit 1; fi; exec node_modules/.bin/vite --host 0.0.0.0 --port 5173 --strictPort"]
 
 
 # ---------- build ----------
