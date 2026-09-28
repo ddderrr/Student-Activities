@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import {
@@ -16,7 +16,17 @@ import {
 
 import { useLanguage } from '../../composables/useLanguage'
 
-const sidebarOpen = ref(true)
+// สถานะเปิด/ปิดอยู่ที่ App.vue (มือถือเป็น drawer ต้องคุมจาก layout)
+const props = defineProps({
+  collapsed: {
+    type: Boolean,
+    default: false
+  }
+})
+
+const emit = defineEmits(['toggle'])
+
+const sidebarOpen = computed(() => !props.collapsed)
 
 const router = useRouter()
 const route = useRoute()
@@ -69,7 +79,7 @@ const menuItems = computed(() => [
 ========================= */
 
 const toggleSidebar = () => {
-  sidebarOpen.value = !sidebarOpen.value
+  emit('toggle')
 }
 
 
