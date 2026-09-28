@@ -1,37 +1,111 @@
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useLanguage } from '../../composables/useLanguage'
+import {
+  clearAdminSession,
+  fetchAdminBypassStatus,
+  setAdminSession,
+  verifyAdminSession
+} from '../../constants/currentAdmin'
 
 import {
   GraduationCap,
-  BriefcaseBusiness,
-  LockKeyhole,
-  Eye,
-  EyeOff,
+  Mail,
   ArrowRight,
-  Undo2
+  Undo2,
+  TriangleAlert
 } from 'lucide-vue-next'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useLanguage()
 
-const username = ref('')
-const password = ref('')
-const rememberMe = ref(false)
-const showPassword = ref(false)
-
 /*
-  MOCK ADMIN LOGIN
-  ยังไม่ตรวจ Username / Password
+  ADMIN LOGIN (โหมด bypass สำหรับพัฒนา)
+  เลือกหรือพิมพ์อีเมลจากรายชื่อแอดมินทดสอบที่ backend ส่งมา ไม่ต้องใส่รหัสผ่าน
+  เปลี่ยนเป็น login จริงทีหลัง: แก้หน้านี้ + constants/currentAdmin.js
 */
-const loginAdmin = () => {
-  router.push('/admin/dashboard')
+
+const loading = ref(true)
+const bypassEnabled = ref(false)
+const backendError = ref(false)
+const accounts = ref([])
+const email = ref('')
+const errorMessage = ref('')
+const submitting = ref(false)
+
+const unauthorized = computed(() => route.query.reason === 'unauthorized')
+
+const majorLabel = (account) =>
+  account.is_central ? t.value.adminLogin.centralMajor : account.major
+
+const loadBypassStatus = async () => {
+  loading.value = true
+  backendError.value = false
+
+  try {
+    const status = await fetchAdminBypassStatus()
+    bypassEnabled.value = status.enabled
+    accounts.value = status.accounts || []
+
+    if (!status.enabled) {
+      clearAdminSession()
+    }
+  } catch {
+    backendError.value = true
+  } finally {
+    loading.value = false
+  }
+}
+
+const chooseAccount = (account) => {
+  email.value = account.email
+  errorMessage.value = ''
+}
+
+const loginAdmin = async () => {
+  errorMessage.value = ''
+
+  const normalized = email.value.trim().toLowerCase()
+  const account = accounts.value.find((item) => item.email === normalized)
+
+  if (!account) {
+    errorMessage.value = t.value.adminLogin.unknownEmail
+    return
+  }
+
+  submitting.value = true
+
+  try {
+    setAdminSession(account)
+    const admin = await verifyAdminSession()
+
+    if (!admin) {
+      errorMessage.value = t.value.adminLogin.unknownEmail
+      await loadBypassStatus()
+      return
+    }
+
+    const redirect = typeof route.query.redirect === 'string' &&
+      route.query.redirect.startsWith('/admin/')
+      ? route.query.redirect
+      : '/admin/dashboard'
+
+    router.push(redirect)
+  } catch {
+    clearAdminSession()
+    errorMessage.value = t.value.adminLogin.backendUnavailable
+  } finally {
+    submitting.value = false
+  }
 }
 
 const goBack = () => {
   router.push('/')
 }
+
+onMounted(loadBypassStatus)
 </script>
 
 
@@ -74,101 +148,120 @@ const goBack = () => {
         </div>
 
 
+        <p v-if="loading" class="status-text">
+          {{ t.adminLogin.loading }}
+        </p>
+
+
+        <!-- ต่อ backend ไม่ได้ -->
+        <div v-else-if="backendError" class="notice notice-error" role="alert">
+          <TriangleAlert :size="18" />
+          <div>
+            <strong>{{ t.adminLogin.backendUnavailable }}</strong>
+            <button class="retry-btn" type="button" @click="loadBypassStatus">
+              {{ t.adminLogin.retry }}
+            </button>
+          </div>
+        </div>
+
+
+        <!-- bypass ปิดอยู่ -->
+        <div
+          v-else-if="!bypassEnabled"
+          class="notice notice-warning"
+          role="alert"
+          data-testid="bypass-disabled"
+        >
+          <TriangleAlert :size="18" />
+          <div>
+            <strong>{{ t.adminLogin.bypassDisabledTitle }}</strong>
+            <p>{{ t.adminLogin.bypassDisabledStep1 }}</p>
+            <code>ADMIN_BYPASS_ENABLED=true</code>
+            <p>{{ t.adminLogin.bypassDisabledStep2 }}</p>
+            <code>docker compose up -d backend</code>
+            <button class="retry-btn" type="button" @click="loadBypassStatus">
+              {{ t.adminLogin.retry }}
+            </button>
+          </div>
+        </div>
+
+
         <!-- Form -->
-        <form @submit.prevent="loginAdmin">
+        <form v-else @submit.prevent="loginAdmin">
+
+          <div class="notice notice-info">
+            <TriangleAlert :size="18" />
+            <p>{{ t.adminLogin.bypassNotice }}</p>
+          </div>
+
+          <p v-if="unauthorized" class="error-text" role="alert">
+            {{ t.adminLogin.sessionExpired }}
+          </p>
 
           <div class="form-group">
 
-            <label>
-              {{ t.adminLogin.usernameLabel }}
+            <label for="admin-email">
+              {{ t.adminLogin.emailLabel }}
             </label>
 
             <div class="input-wrapper">
 
-              <BriefcaseBusiness
+              <Mail
                 class="input-icon"
                 :size="17"
               />
 
               <input
-                v-model="username"
-                type="text"
+                id="admin-email"
+                v-model="email"
+                type="email"
+                list="admin-email-options"
+                autocomplete="off"
+                :placeholder="t.adminLogin.emailPlaceholder"
               />
+
+              <datalist id="admin-email-options">
+                <option
+                  v-for="account in accounts"
+                  :key="account.email"
+                  :value="account.email"
+                >
+                  {{ majorLabel(account) }}
+                </option>
+              </datalist>
 
             </div>
 
           </div>
 
 
-          <div class="form-group">
+          <p class="accounts-title">{{ t.adminLogin.accountsTitle }}</p>
 
-            <label>{{ t.adminLogin.passwordLabel }}</label>
-
-            <div class="input-wrapper">
-
-              <LockKeyhole
-                class="input-icon"
-                :size="17"
-              />
-
-              <input
-                v-model="password"
-                :type="showPassword ? 'text' : 'password'"
-              />
-
-              <button
-                class="eye-btn"
-                type="button"
-                @click="showPassword = !showPassword"
-              >
-
-                <EyeOff
-                  v-if="showPassword"
-                  :size="17"
-                />
-
-                <Eye
-                  v-else
-                  :size="17"
-                />
-
-              </button>
-
-            </div>
-
-          </div>
-
-
-          <div class="login-options">
-
-            <label class="remember">
-
-              <input
-                v-model="rememberMe"
-                type="checkbox"
-              />
-
-              <span>
-                {{ t.adminLogin.rememberMe }}
-              </span>
-
-            </label>
-
-
-            <a
-              href="#"
-              @click.prevent
+          <div class="account-list">
+            <button
+              v-for="account in accounts"
+              :key="account.email"
+              type="button"
+              class="account-option"
+              :class="{ selected: email.trim().toLowerCase() === account.email }"
+              @click="chooseAccount(account)"
             >
-              {{ t.adminLogin.forgotPassword }}
-            </a>
-
+              <strong>{{ account.email }}</strong>
+              <small>{{ majorLabel(account) }}</small>
+            </button>
           </div>
+
+
+          <p v-if="errorMessage" class="error-text" role="alert">
+            {{ errorMessage }}
+          </p>
 
 
           <!-- Login -->
           <button
             class="sign-in-btn"
             type="submit"
+            :disabled="submitting"
           >
 
             {{ t.adminLogin.signInButton }}
@@ -176,22 +269,6 @@ const goBack = () => {
             <ArrowRight :size="20" />
 
           </button>
-
-
-          <p class="support-text">
-
-            {{ t.adminLogin.newToPortal }}
-
-            <a
-              href="#"
-              @click.prevent
-            >
-              {{ t.adminLogin.contactSupport }}
-            </a>
-
-            {{ t.adminLogin.forAccess }}
-
-          </p>
 
         </form>
 
@@ -312,7 +389,7 @@ const goBack = () => {
   align-items: center;
   gap: 14px;
 
-  margin-bottom: 100px;
+  margin-bottom: 48px;
 }
 
 .admin-icon {
@@ -433,59 +510,6 @@ const goBack = () => {
   color: #8c929c;
 }
 
-.eye-btn {
-  position: absolute;
-
-  top: 50%;
-  right: 14px;
-
-  transform: translateY(-50%);
-
-  border: none;
-  background: none;
-
-  color: #8c929c;
-
-  cursor: pointer;
-}
-
-
-/* =========================
-   Options
-========================= */
-
-.login-options {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  margin: 4px 0 32px;
-}
-
-.remember {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-
-  font-size: 13px;
-
-  cursor: pointer;
-}
-
-.remember input {
-  width: 17px;
-  height: 17px;
-}
-
-.login-options a {
-  color: #071442;
-
-  font-size: 13px;
-
-  text-decoration: none;
-}
-
-
 /* =========================
    Login button
 ========================= */
@@ -522,27 +546,6 @@ const goBack = () => {
 
 
 /* =========================
-   Support
-========================= */
-
-.support-text {
-  margin-top: 43px;
-
-  text-align: center;
-
-  font-size: 14px;
-
-  color: #555;
-}
-
-.support-text a {
-  color: #168243;
-
-  text-decoration: none;
-}
-
-
-/* =========================
    Responsive
 ========================= */
 
@@ -559,7 +562,7 @@ const goBack = () => {
   }
 
   .admin-title {
-    margin-bottom: 70px;
+    margin-bottom: 36px;
   }
 
 }
@@ -582,5 +585,160 @@ const goBack = () => {
     font-size: 22px;
   }
 
+}
+
+
+/* =========================
+   Bypass notice / accounts
+========================= */
+
+.status-text {
+  color: #777b85;
+  font-size: 14px;
+}
+
+.notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+
+  margin-bottom: 24px;
+  padding: 14px 16px;
+
+  border-radius: 8px;
+
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.notice svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.notice p {
+  margin: 0;
+}
+
+.notice strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.notice code {
+  display: block;
+
+  margin: 6px 0 10px;
+  padding: 7px 10px;
+
+  border-radius: 6px;
+
+  background: rgba(0, 0, 0, 0.06);
+
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.notice-info {
+  background: #f5eafa;
+  color: #6b2a80;
+}
+
+.notice-warning {
+  background: #fff7e6;
+  color: #7a4b00;
+  border: 1px solid #f5d38b;
+}
+
+.notice-error {
+  background: #fdecec;
+  color: #8a1c1c;
+}
+
+.retry-btn {
+  margin-top: 4px;
+  padding: 6px 14px;
+
+  border: 1px solid currentColor;
+  border-radius: 6px;
+
+  background: transparent;
+  color: inherit;
+
+  font-size: 13px;
+  font-family: inherit;
+
+  cursor: pointer;
+}
+
+.accounts-title {
+  margin: 0 0 9px;
+
+  font-size: 13px;
+  color: #374151;
+}
+
+.account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  margin-bottom: 24px;
+}
+
+.account-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+
+  width: 100%;
+  padding: 10px 14px;
+
+  border: 1px solid #d8dee9;
+  border-radius: 7px;
+
+  background: #f8fafc;
+
+  font-family: inherit;
+  text-align: left;
+
+  cursor: pointer;
+
+  transition: 0.2s;
+}
+
+.account-option strong {
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.account-option small {
+  color: #777b85;
+  font-size: 12.5px;
+}
+
+.account-option:hover,
+.account-option.selected {
+  border-color: #a60bd5;
+  background: #ffffff;
+}
+
+.account-option.selected {
+  box-shadow: 0 0 0 3px rgba(166, 11, 213, 0.08);
+}
+
+.error-text {
+  margin: -8px 0 18px;
+
+  color: #b42318;
+  font-size: 13px;
+}
+
+.sign-in-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
 }
 </style>

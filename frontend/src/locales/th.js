@@ -18,7 +18,8 @@ export default {
     studentSkills: 'ทักษะนักศึกษา',
     approvals: 'การอนุมัติ',
 
-    adminRole: 'ผู้ดูแลระบบ | คณะวิทยาศาสตร์',
+    centralAdmin: 'แอดมินกลาง · ทุกสาขา',
+    majorPrefix: 'สาขา',
 
     openSidebar: 'เปิดแถบเมนู',
     closeSidebar: 'ปิดแถบเมนู'
@@ -313,6 +314,7 @@ export default {
   },
 
   studentActivities: {
+    openEvidenceFailed: 'เปิดไฟล์หลักฐานไม่สำเร็จ',
     pageTitle: 'กิจกรรมของฉัน',
     pageSubtitle: 'กิจกรรมของคณะที่คุณเข้าร่วมและกิจกรรมภายนอกที่ได้รับอนุมัติ',
     searchPlaceholder: 'ค้นหากิจกรรมของฉัน...',
@@ -781,14 +783,20 @@ export default {
   adminLogin: {
     title: 'เข้าสู่ระบบผู้ดูแลระบบ',
     subtitle: 'คณะวิทยาศาสตร์',
-    usernameLabel: 'รหัสประจำตัวมหาวิทยาลัยหรืออีเมล',
-    passwordLabel: 'รหัสผ่าน',
-    rememberMe: 'จดจำฉันไว้',
-    forgotPassword: 'ลืมรหัสผ่าน?',
     signInButton: 'เข้าสู่ระบบ',
-    newToPortal: 'เพิ่งใช้งานระบบนี้เป็นครั้งแรก?',
-    contactSupport: 'ติดต่อฝ่ายไอที',
-    forAccess: 'เพื่อขอสิทธิ์การเข้าใช้งาน'
+    loading: 'กำลังโหลด...',
+    bypassNotice: 'โหมดทดสอบ: เลือกหรือพิมพ์อีเมลแอดมินทดสอบ ไม่ต้องใส่รหัสผ่าน',
+    emailLabel: 'อีเมลแอดมิน',
+    emailPlaceholder: 'เช่น central@test.local',
+    accountsTitle: 'บัญชีแอดมินทดสอบ',
+    centralMajor: 'แอดมินกลาง (ทุกสาขา)',
+    unknownEmail: 'ไม่พบอีเมลนี้ในรายชื่อแอดมินทดสอบ',
+    sessionExpired: 'กรุณาเลือกอีเมลแอดมินใหม่อีกครั้ง',
+    backendUnavailable: 'เชื่อมต่อ backend ไม่ได้ ตรวจสอบว่า backend รันอยู่',
+    retry: 'ลองอีกครั้ง',
+    bypassDisabledTitle: 'โหมดทดสอบแอดมิน (bypass) ยังไม่ได้เปิด จึงเข้าหน้า admin ไม่ได้',
+    bypassDisabledStep1: '1. เพิ่มบรรทัดนี้ในไฟล์ .env ที่ root ของโปรเจกต์',
+    bypassDisabledStep2: '2. รีสตาร์ท backend แล้วกด "ลองอีกครั้ง"'
   },
 
   studentLogin: {

@@ -14,6 +14,29 @@ export function studentHeaders(extra = {}) {
   }
 }
 
+// ไฟล์หลักฐานต้องแนบ X-Student-Id จึงเปิดด้วย <a href> ตรง ๆ ไม่ได้: โหลดเป็น blob แล้วเปิดในแท็บใหม่
+// เปิดแท็บก่อน await เพื่อไม่ให้ browser บล็อก popup
+export async function openStudentFile(url) {
+  const tab = window.open('', '_blank')
+
+  try {
+    const response = await fetch(url, { headers: studentHeaders() })
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+    const blobUrl = URL.createObjectURL(await response.blob())
+
+    if (tab) {
+      tab.location.href = blobUrl
+    } else {
+      window.location.href = blobUrl
+    }
+  } catch (error) {
+    tab?.close()
+    throw error
+  }
+}
+
 export const OTHER_CATEGORY_VALUE = 'อื่น ๆ'
 
 export const EXTERNAL_ACTIVITY_CATEGORIES = [

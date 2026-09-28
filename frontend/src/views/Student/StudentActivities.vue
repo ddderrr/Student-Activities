@@ -22,6 +22,7 @@ import {
 
 import {
   API_BASE,
+  openStudentFile,
   studentHeaders
 } from '../../constants/currentStudent'
 
@@ -192,6 +193,14 @@ const toEvidenceFiles = (files) =>
     name: file.original_name,
     url: `${API_BASE}${file.url}`
   }))
+
+const openEvidenceFile = async (file) => {
+  try {
+    await openStudentFile(file.url)
+  } catch {
+    window.alert(t.value.studentActivities.openEvidenceFailed)
+  }
+}
 
 
 const toSubmissionView = (item) => ({
@@ -1304,10 +1313,9 @@ onBeforeUnmount(() => {
                 >
                   <a
                     class="evidence-link"
-                    :href="file.url"
-                    target="_blank"
-                    rel="noopener"
+                    href="#"
                     :title="file.name"
+                    @click.prevent="openEvidenceFile(file)"
                   >
                     <FileText :size="13" />
                     <span>{{ file.name }}</span>

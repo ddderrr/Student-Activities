@@ -12,6 +12,7 @@ import {
 } from 'lucide-vue-next'
 import { PARTICIPANT_SKILLS, STAFF_SKILLS } from '../../constants/activitySkills'
 import { useLanguage } from '../../composables/useLanguage'
+import { adminFetch } from '../../constants/currentAdmin'
 
 const { t } = useLanguage()
 
@@ -169,8 +170,8 @@ async function fetchParticipants() {
 
   try {
     const [participantsResponse, activityResponse] = await Promise.all([
-      fetch(`${API_BASE}/api/activities/${activityId.value}/participants`),
-      fetch(`${API_BASE}/api/activities/${activityId.value}`)
+      adminFetch(`${API_BASE}/api/activities/${activityId.value}/participants`),
+      adminFetch(`${API_BASE}/api/activities/${activityId.value}`)
     ])
 
     if (!participantsResponse.ok || !activityResponse.ok) {
@@ -243,7 +244,7 @@ async function saveRow() {
   saveMessage.value = ''
 
   try {
-    const response = await fetch(
+    const response = await adminFetch(
       `${API_BASE}/api/activities/${activityId.value}/participants/${rowId}`,
       {
         method: 'PATCH',
@@ -297,7 +298,7 @@ async function removeParticipant(student) {
   saveMessage.value = ''
 
   try {
-    const response = await fetch(
+    const response = await adminFetch(
       `${API_BASE}/api/activities/${activityId.value}/participants/${encodeURIComponent(student.student_id)}`,
       { method: 'DELETE' }
     )

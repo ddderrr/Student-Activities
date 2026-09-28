@@ -15,6 +15,10 @@ import {
 } from 'lucide-vue-next'
 
 import { useLanguage } from '../../composables/useLanguage'
+import {
+  clearAdminSession,
+  getAdminSession
+} from '../../constants/currentAdmin'
 
 // สถานะเปิด/ปิดอยู่ที่ App.vue (มือถือเป็น drawer ต้องคุมจาก layout)
 const props = defineProps({
@@ -100,7 +104,31 @@ const goToSettings = () => {
    Logout
 ========================= */
 
+// แอดมินที่เลือกไว้ตอน login (โหมด bypass) router guard ตรวจกับ backend ก่อนเข้าทุกหน้าแล้ว
+// อ่านใหม่ทุกครั้งที่เปลี่ยนหน้า เผื่อสลับแอดมินโดยที่ sidebar ยังไม่ถูก unmount
+const currentAdmin = computed(() => {
+  void route.fullPath
+  return getAdminSession()
+})
+
+const adminEmail = computed(() => currentAdmin.value?.email || '')
+
+const adminMajor = computed(() => {
+  const admin = currentAdmin.value
+
+  if (!admin) return ''
+
+  return admin.is_central
+    ? t.value.adminSidebar.centralAdmin
+    : `${t.value.adminSidebar.majorPrefix} ${admin.major}`
+})
+
+const adminInitials = computed(() =>
+  (adminEmail.value || 'AD').slice(0, 2).toUpperCase()
+)
+
 const logout = () => {
+  clearAdminSession()
   router.push('/admin/login')
 }
 </script>
@@ -257,18 +285,18 @@ const logout = () => {
       <div class="profile-card">
 
         <span class="profile-avatar">
-          SC
+          {{ adminInitials }}
         </span>
 
 
         <div class="profile-info">
 
-          <strong>
-            Dr. Sarah Chen
+          <strong :title="adminEmail" data-testid="admin-email">
+            {{ adminEmail }}
           </strong>
 
-          <small>
-            {{ t.adminSidebar.adminRole }}
+          <small :title="adminMajor" data-testid="admin-major">
+            {{ adminMajor }}
           </small>
 
         </div>
@@ -670,6 +698,19 @@ const logout = () => {
   overflow: hidden;
 
   text-overflow: ellipsis;
+}
+
+
+/* อีเมลและสาขาของแอดมินต้องอ่านได้ครบ จึงให้ขึ้นบรรทัดใหม่แทนการตัดด้วย ... */
+.profile-info [data-testid="admin-email"],
+.profile-info [data-testid="admin-major"] {
+  white-space: normal;
+
+  overflow-wrap: anywhere;
+}
+
+.profile-info [data-testid="admin-email"] {
+  font-size: 12px;
 }
 
 

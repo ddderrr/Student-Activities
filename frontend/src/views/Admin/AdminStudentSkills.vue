@@ -14,6 +14,7 @@ import {
 } from 'lucide-vue-next'
 
 import { useLanguage } from '../../composables/useLanguage'
+import { adminFetch } from '../../constants/currentAdmin'
 
 const { t, currentLanguage } = useLanguage()
 const API_BASE = 'http://localhost:8000'
@@ -181,7 +182,7 @@ const loadStudentSkills = async () => {
     if (selectedYear.value) params.set('year', selectedYear.value)
     params.set('semester', selectedPeriod.value)
 
-    const response = await fetch(`${API_BASE}/api/admin/student-skills?${params.toString()}`)
+    const response = await adminFetch(`${API_BASE}/api/admin/student-skills?${params.toString()}`)
     const data = await response.json()
 
     if (!response.ok) {
@@ -343,7 +344,7 @@ const saveBenchmarkSettings = async () => {
   benchmarkError.value = ''
   try {
     const scores = Object.fromEntries(skillKeys.map((skill, index) => [skill.key, values[index]]))
-    const response = await fetch(`${API_BASE}/api/admin/student-skills/benchmark`, {
+    const response = await adminFetch(`${API_BASE}/api/admin/student-skills/benchmark`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scores })
@@ -552,7 +553,7 @@ const openActivityHistory = async (student) => {
   activityHistoryLoading.value = true
 
   try {
-    const response = await fetch(`${API_BASE}/api/admin/students/${student.id}/activities`)
+    const response = await adminFetch(`${API_BASE}/api/admin/students/${student.id}/activities`)
 
     if (!response.ok) throw new Error(t.value.adminStudentSkills.activityHistoryError)
 
