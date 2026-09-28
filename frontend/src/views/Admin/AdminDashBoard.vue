@@ -2,6 +2,7 @@
 import { ref, computed, reactive, onMounted } from 'vue'
 import { CalendarDays, Users, CheckCircle, TrendingUp } from 'lucide-vue-next'
 import { useLanguage } from '../../composables/useLanguage'
+import { adminFetch } from '../../constants/currentAdmin'
 
 const { t } = useLanguage()
 const API_BASE = 'http://127.0.0.1:8000'
@@ -136,7 +137,7 @@ const fetchDashboardSummary = async () => {
     params.set('months', selectedMonthNumbers.value.join(','))
   }
 
-  const response = await fetch(`${API_BASE}/api/admin/dashboard?${params.toString()}`)
+  const response = await adminFetch(`${API_BASE}/api/admin/dashboard?${params.toString()}`)
   if (!response.ok) throw new Error('Cannot load dashboard summary')
 
   const data = await response.json()
@@ -185,8 +186,8 @@ const fetchDashboard = async () => {
     //    อยู่แล้ว ไม่ต้องยิง /api/activities/{id} ทีละกิจกรรม
     // 2) กิจกรรมภายนอกที่อนุมัติแล้ว นับรวมใน "การเติบโตของกิจกรรม" ด้วย
     const [activitiesResponse, externalResponse] = await Promise.all([
-      fetch(`${API_BASE}/api/activities`),
-      fetch(`${API_BASE}/api/admin/dashboard/external-activities`)
+      adminFetch(`${API_BASE}/api/activities`),
+      adminFetch(`${API_BASE}/api/admin/dashboard/external-activities`)
     ])
     if (!activitiesResponse.ok) throw new Error('Cannot load activities')
     const activitiesPayload = await activitiesResponse.json()

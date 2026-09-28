@@ -26,6 +26,7 @@ import {
   defaultSkillLevels
 } from '../../constants/activitySkills'
 import { useLanguage } from '../../composables/useLanguage'
+import { adminFetch } from '../../constants/currentAdmin'
 
 const API_BASE = 'http://127.0.0.1:8000'
 const router = useRouter()
@@ -277,7 +278,7 @@ async function createActivity() {
     let response
 
     try {
-      response = await fetch(`${API_BASE}/api/activities`, {
+      response = await adminFetch(`${API_BASE}/api/activities`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

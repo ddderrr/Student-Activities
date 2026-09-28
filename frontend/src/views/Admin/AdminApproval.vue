@@ -20,6 +20,7 @@ import {
   STAFF_SKILLS
 } from '../../constants/activitySkills'
 import { useLanguage } from '../../composables/useLanguage'
+import { adminFetch, fetchAdminFileUrl } from '../../constants/currentAdmin'
 
 const { t } = useLanguage()
 
@@ -87,6 +88,28 @@ const reviewOpen = ref(false)
 const reviewLoading = ref(false)
 const reviewError = ref('')
 
+// ไฟล์หลักฐานต้องแนบ header แอดมิน จึงโหลดเป็น blob URL ก่อน (evidence id -> blob URL)
+const evidenceUrls = ref({})
+
+async function loadEvidenceUrls(files) {
+  const entries = await Promise.all(
+    files.map(async (file) => {
+      try {
+        return [file.id, await fetchAdminFileUrl(`${API_BASE}${file.url}`)]
+      } catch {
+        return [file.id, null]
+      }
+    })
+  )
+
+  evidenceUrls.value = Object.fromEntries(entries.filter(([, url]) => url))
+}
+
+function releaseEvidenceUrls() {
+  Object.values(evidenceUrls.value).forEach((url) => URL.revokeObjectURL(url))
+  evidenceUrls.value = {}
+}
+
 // Skill Mapping ที่นักศึกษาตั้งมา (แสดงอย่างเดียว admin ไม่ต้องแก้)
 const reviewSkillRows = computed(() => {
   if (!reviewItem.value) return []
@@ -113,15 +136,17 @@ async function openReview(request) {
   reviewLoading.value = true
   reviewError.value = ''
   reviewItem.value = null
+  releaseEvidenceUrls()
   successMessage.value = ''
 
   try {
-    const response = await fetch(`${API_BASE}/api/external-activities/${request.id}`)
+    const response = await adminFetch(`${API_BASE}/api/external-activities/${request.id}`)
     const data = await response.json().catch(() => null)
 
     if (!response.ok) throw new Error(data?.detail || t.value.adminApproval.loadDetailError)
 
     reviewItem.value = data
+    loadEvidenceUrls(data.evidence_files || [])
   } catch (error) {
     reviewError.value = error.message || t.value.adminApproval.loadDetailError
   } finally {
@@ -132,6 +157,7 @@ async function openReview(request) {
 function closeReview() {
   reviewOpen.value = false
   reviewItem.value = null
+  releaseEvidenceUrls()
 }
 
 /* =========================
@@ -175,7 +201,7 @@ async function openDecision(request, status) {
   decisionSkillLoading.value = true
 
   try {
-    const response = await fetch(`${API_BASE}/api/external-activities/${request.id}`)
+    const response = await adminFetch(`${API_BASE}/api/external-activities/${request.id}`)
     const data = await response.json().catch(() => null)
 
     if (response.ok) decisionSkillItem.value = data
@@ -211,7 +237,7 @@ async function confirmDecision() {
     : `${API_BASE}/api/requests/${request.id}`
 
   try {
-    const response = await fetch(endpoint, {
+    const response = await adminFetch(endpoint, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(
@@ -325,7 +351,7 @@ function formatDateOnly(value) {
 
 async function fetchStats() {
   try {
-    const response = await fetch(`${API_BASE}/api/requests/stats`)
+    const response = await adminFetch(`${API_BASE}/api/requests/stats`)
     if (!response.ok) return
     stats.value = await response.json()
   } catch {
@@ -347,7 +373,7 @@ async function fetchRequests() {
 
     if (filterType.value) params.set('request_type', filterType.value)
 
-    const response = await fetch(`${API_BASE}/api/requests?${params}`)
+    const response = await adminFetch(`${API_BASE}/api/requests?${params}`)
 
     if (!response.ok) throw new Error(t.value.adminApproval.loadRequestsError)
 
@@ -388,7 +414,7 @@ async function decideRequest(request, status) {
   actionError.value = ''
 
   try {
-    const response = await fetch(`${API_BASE}/api/requests/${request.id}`, {
+    const response = await adminFetch(`${API_BASE}/api/requests/${request.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status })
@@ -725,14 +751,15 @@ async function decideRequest(request, status) {
                 <a
                   v-for="file in reviewEvidenceImages"
                   :key="`image-${file.id}`"
-                  :href="`${API_BASE}${file.url}`"
+                  :href="evidenceUrls[file.id]"
                   target="_blank"
                   rel="noopener"
                   :title="file.original_name"
                 >
                   <img
+                    v-if="evidenceUrls[file.id]"
                     class="evidence-preview"
-                    :src="`${API_BASE}${file.url}`"
+                    :src="evidenceUrls[file.id]"
                     :alt="file.original_name"
                     loading="lazy"
                   />
@@ -743,7 +770,7 @@ async function decideRequest(request, status) {
                 <li v-for="file in reviewEvidenceFiles" :key="file.id">
                   <a
                     class="evidence-file"
-                    :href="`${API_BASE}${file.url}`"
+                    :href="evidenceUrls[file.id]"
                     target="_blank"
                     rel="noopener"
                   >

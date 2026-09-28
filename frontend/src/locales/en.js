@@ -18,7 +18,8 @@ export default {
     studentSkills: 'Student Skills',
     approvals: 'Approvals',
 
-    adminRole: 'Admin | Science Faculty',
+    centralAdmin: 'Central admin · All majors',
+    majorPrefix: 'Major:',
 
     openSidebar: 'Open sidebar',
     closeSidebar: 'Close sidebar'
@@ -312,6 +313,7 @@ export default {
   },
 
   studentActivities: {
+    openEvidenceFailed: 'Could not open the evidence file.',
     pageTitle: 'My Activities',
     pageSubtitle: 'Faculty activities you joined and approved external activities.',
     searchPlaceholder: 'Search my activities...',
@@ -780,14 +782,20 @@ export default {
   adminLogin: {
     title: 'Admin Login',
     subtitle: 'Faculty of Science',
-    usernameLabel: 'University ID or Email',
-    passwordLabel: 'Password',
-    rememberMe: 'Remember Me',
-    forgotPassword: 'Forgot Password?',
     signInButton: 'Sign In',
-    newToPortal: 'New to the portal?',
-    contactSupport: 'Contact IT Support',
-    forAccess: 'for access.'
+    loading: 'Loading...',
+    bypassNotice: 'Test mode: pick or type a test admin email. No password needed.',
+    emailLabel: 'Admin email',
+    emailPlaceholder: 'e.g. central@test.local',
+    accountsTitle: 'Test admin accounts',
+    centralMajor: 'Central admin (all majors)',
+    unknownEmail: 'This email is not in the test admin list.',
+    sessionExpired: 'Please choose an admin email again.',
+    backendUnavailable: 'Cannot reach the backend. Check that it is running.',
+    retry: 'Try again',
+    bypassDisabledTitle: 'Admin test mode (bypass) is not enabled, so admin pages are unavailable.',
+    bypassDisabledStep1: '1. Add this line to the .env file in the project root',
+    bypassDisabledStep2: '2. Restart the backend, then click "Try again"'
   },
 
   studentLogin: {

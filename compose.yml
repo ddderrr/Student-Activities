@@ -28,6 +28,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       TZ: Asia/Bangkok
+      # โหมดทดสอบแอดมิน (เลือกอีเมลโดยไม่ต้องใส่รหัสผ่าน) เปิดได้เฉพาะตอนพัฒนา ค่าเริ่มต้นคือปิด
+      ADMIN_BYPASS_ENABLED: ${ADMIN_BYPASS_ENABLED:-false}
 
     # frontend เรียก API ที่ http://127.0.0.1:8000 (hardcode ไว้ในโค้ด)
     # bind แค่ 127.0.0.1 เพราะ API ยังไม่มีระบบ login ไม่ควรเปิดให้เครื่องอื่นใน network เข้าถึง

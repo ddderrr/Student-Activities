@@ -35,6 +35,7 @@ import {
   skillLevelsFromSaved
 } from '../../constants/activitySkills'
 import { useLanguage } from '../../composables/useLanguage'
+import { adminFetch } from '../../constants/currentAdmin'
 
 const { t } = useLanguage()
 
@@ -343,7 +344,7 @@ async function fetchPendingEvaluations() {
       page_size: '1'
     })
 
-    const response = await fetch(`${API_BASE}/api/requests?${params}`)
+    const response = await adminFetch(`${API_BASE}/api/requests?${params}`)
     if (!response.ok) throw new Error('ไม่สามารถโหลดจำนวนคำขอที่รออนุมัติได้')
 
     const data = await response.json()
@@ -437,7 +438,7 @@ async function fetchActivities() {
   tableLoading.value = true
 
   try {
-    const response = await fetch(`${API_BASE}/api/activities`)
+    const response = await adminFetch(`${API_BASE}/api/activities`)
     const data = await response.json()
 
     if (!response.ok) {
@@ -519,7 +520,7 @@ function closeEditActivityModal() {
 }
 
 async function patchActivity(activityId, payload) {
-  const response = await fetch(
+  const response = await adminFetch(
     `${API_BASE}/api/activities/${activityId}`,
     {
       method: 'PATCH',
@@ -619,7 +620,7 @@ async function deleteActivity(activity) {
   activityActionLoadingId.value = activity.id
 
   try {
-    const response = await fetch(
+    const response = await adminFetch(
       `${API_BASE}/api/activities/${activity.id}`,
       {
         method: 'DELETE'
@@ -733,7 +734,7 @@ async function addStudentManually() {
   addStudentSuccess.value = ''
 
   try {
-    const response = await fetch(
+    const response = await adminFetch(
       `${API_BASE}/api/activities/${selectedActivity.value.id}/participants/import/confirm`,
       {
         method: 'POST',
@@ -1007,7 +1008,7 @@ async function previewParticipantsImport() {
       const formData = new FormData()
       formData.append('file', file)
 
-      const response = await fetch(
+      const response = await adminFetch(
         `${API_BASE}/api/activities/${selectedActivity.value.id}/participants/import/preview`,
         {
           method: 'POST',
@@ -1070,7 +1071,7 @@ async function confirmParticipantsImport() {
   importSuccess.value = ''
 
   try {
-    const response = await fetch(
+    const response = await adminFetch(
       `${API_BASE}/api/activities/${selectedActivity.value.id}/participants/import/confirm`,
       {
         method: 'POST',
