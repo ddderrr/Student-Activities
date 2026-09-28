@@ -4,31 +4,117 @@ import {
   BarChart3,
   CalendarDays,
   Download,
+  Info,
   LoaderCircle,
-  RefreshCw
+  RefreshCw,
+  UserCog,
+  Users
 } from 'lucide-vue-next'
 import {
   API_BASE,
   studentHeaders
 } from '../../constants/currentStudent'
+import { SKILLS_BY_ROLE } from '../../constants/activitySkills'
 import { useLanguage } from '../../composables/useLanguage'
 
-const { t } = useLanguage()
+const { t, currentLanguage } = useLanguage()
+
+// โหมดการดู skill: participant = skill จากการเข้าร่วม, staff = skill จากการเป็นผู้จัด
+const DEFAULT_TRACK = 'participant'
 
 const loading = ref(true)
+const trackLoading = ref(false)
 const exporting = ref(false)
 const errorMessage = ref('')
 const exportOpen = ref(false)
 const exportIncludeChart = ref(true)
 const exportAction = ref('')
 
+// track = โหมดของข้อมูลที่แสดงอยู่ตอนนี้, pendingTrack = โหมดที่กำลังโหลด
+const track = ref(DEFAULT_TRACK)
+const pendingTrack = ref('')
+let loadRequestId = 0
+
 const student = ref(null)
-const skillDefinitions = ref([])
+const apiSkillDefinitions = ref([])
 const periodDefinitions = ref([])
 const periods = ref({})
 const selectedPeriod = ref('')
 const showMySkills = ref(true)
 const showFacultyAverage = ref(true)
+
+const trackOptions = computed(() => [
+  {
+    key: 'participant',
+    label: t.value.studentSkills.participantSkillsOption,
+    icon: Users
+  },
+  {
+    key: 'staff',
+    label: t.value.studentSkills.staffSkillsOption,
+    icon: UserCog
+  }
+])
+
+const isStaffTrack = computed(() => track.value === 'staff')
+
+const activeTrackLabel = computed(() =>
+  trackOptions.value.find((option) => option.key === track.value)
+    ?.label || track.value
+)
+
+// ข้อความที่เปลี่ยนตามโหมด (participant / staff)
+const trackText = computed(() => {
+  const text = t.value.studentSkills
+
+  return isStaffTrack.value
+    ? {
+        radarChartTitle: text.radarChartTitleStaff,
+        noDataInPeriod: text.noDataInPeriodStaff,
+        activitiesUsedTitle: text.activitiesUsedTitleStaff,
+        noActivityData: text.noActivityDataStaff,
+        noActivityDataSubtitle: text.noActivityDataSubtitleStaff
+      }
+    : {
+        radarChartTitle: text.radarChartTitle,
+        noDataInPeriod: text.noDataInPeriod,
+        activitiesUsedTitle: text.activitiesUsedTitle,
+        noActivityData: text.noActivityData,
+        noActivityDataSubtitle: text.noActivityDataSubtitle
+      }
+})
+
+// metadata (label, คำอธิบายภาษาไทย, icon) ของ skill ใน track ปัจจุบัน
+const trackSkillMeta = computed(() =>
+  SKILLS_BY_ROLE[track.value] || []
+)
+
+// ใช้ลำดับจาก API (skillDefinitions) แล้วเติม metadata จาก activitySkills.js
+// ถ้า API ไม่ส่ง skillDefinitions มา ใช้ชุดของ track จาก activitySkills.js แทน
+const skillDefinitions = computed(() => {
+  const metaByKey = Object.fromEntries(
+    trackSkillMeta.value.map((meta) => [meta.key, meta])
+  )
+  const source = apiSkillDefinitions.value.length
+    ? apiSkillDefinitions.value
+    : trackSkillMeta.value
+
+  return source.map((definition) => {
+    const meta = metaByKey[definition.key] || {}
+
+    return {
+      key: definition.key,
+      label: definition.label || meta.label || definition.key,
+      description: meta.description || '',
+      icon: meta.icon || null
+    }
+  })
+})
+
+// คำอธิบายใน activitySkills.js เป็นภาษาไทย แสดงเฉพาะตอนใช้ภาษาไทย
+const showSkillDescription = computed(() =>
+  currentLanguage.value === 'TH'
+)
 
 const currentPeriod = computed(() =>
   periods.value[selectedPeriod.value] || {
@@ -103,53 +189,81 @@ const skillItems = computed(() =>
   }))
 )
 
-const leftSkills = computed(() => skillItems.value.slice(0, 3))
-const rightSkills = computed(() => skillItems.value.slice(3, 6))
+// แบ่ง skill ครึ่งซ้าย / ครึ่งขวาของ radar ตามจำนวน skill จริงของ track
+const leftSkills = computed(() =>
+  skillItems.value.slice(0, Math.ceil(skillItems.value.length / 2))
+)
+const rightSkills = computed(() =>
+  skillItems.value.slice(Math.ceil(skillItems.value.length / 2))
+)
 
-const radarPoints = computed(() => {
-  const items = skillItems.value
-  if (!items.length) return ''
+const RADAR_CENTER = 150
+const RADAR_RADIUS = 112
+const RADAR_LABEL_RADIUS = 137
+const RADAR_GRID_LEVELS = [1, 0.8, 0.6, 0.4, 0.2]
 
-  const center = 150
-  const radius = 112
+// จำนวนแกนของ radar = จำนวน skill ของ track (อย่างน้อย 3 แกน)
+const radarAxisCount = computed(() =>
+  Math.max(
+    3,
+    skillDefinitions.value.length || trackSkillMeta.value.length
+  )
+)
 
-  return items.map((item, index) => {
-    const value = Number(item.value ?? 0)
-    const ratio = Math.max(0, Math.min(5, value)) / 5
-    const angle =
-      (-90 + index * (360 / items.length)) *
-      Math.PI / 180
+function radarAngle(index, count) {
+  return (-90 + index * (360 / count)) * Math.PI / 180
+}
 
-    return [
-      center + Math.cos(angle) * radius * ratio,
-      center + Math.sin(angle) * radius * ratio
-    ].join(',')
-  }).join(' ')
-})
+function radarPoint(index, count, ratio, radius = RADAR_RADIUS) {
+  const angle = radarAngle(index, count)
 
-const facultyRadarPoints = computed(() => {
-  const items = skillDefinitions.value
-  if (!items.length) return ''
+  return [
+    RADAR_CENTER + Math.cos(angle) * radius * ratio,
+    RADAR_CENTER + Math.sin(angle) * radius * ratio
+  ]
+}
 
-  const center = 150
-  const radius = 112
+function skillRatio(value) {
+  return Math.max(0, Math.min(5, Number(value ?? 0))) / 5
+}
 
-  return items.map((item, index) => {
-    const value = Number(
-      facultySkills.value[item.key] ?? 0
+function polygonPoints(values) {
+  if (!values.length) return ''
+
+  return values
+    .map((value, index) =>
+      radarPoint(index, values.length, skillRatio(value)).join(',')
     )
-    const ratio =
-      Math.max(0, Math.min(5, value)) / 5
-    const angle =
-      (-90 + index * (360 / items.length)) *
-      Math.PI / 180
+    .join(' ')
+}
 
-    return [
-      center + Math.cos(angle) * radius * ratio,
-      center + Math.sin(angle) * radius * ratio
-    ].join(',')
-  }).join(' ')
-})
+const radarGridPolygons = computed(() =>
+  RADAR_GRID_LEVELS.map((level) =>
+    Array.from({ length: radarAxisCount.value }, (_, index) =>
+      radarPoint(index, radarAxisCount.value, level).join(',')
+    ).join(' ')
+  )
+)
+
+const radarAxes = computed(() =>
+  Array.from({ length: radarAxisCount.value }, (_, index) => {
+    const [x, y] = radarPoint(index, radarAxisCount.value, 1)
+
+    return { index, x, y }
+  })
+)
+
+const radarPoints = computed(() =>
+  polygonPoints(skillItems.value.map((item) => item.value))
+)
+
+const facultyRadarPoints = computed(() =>
+  polygonPoints(
+    skillDefinitions.value.map(
+      (item) => facultySkills.value[item.key]
+    )
+  )
+)
 
 const hasFacultyData = computed(() =>
   skillDefinitions.value.some(
@@ -159,22 +273,60 @@ const hasFacultyData = computed(() =>
   )
 )
 
+// ตัด label ยาวเป็นหลายบรรทัด (สูงสุด 3) บรรทัดละไม่เกิน RADAR_LABEL_MAX_CHARS
+// ให้ label ด้านซ้าย/ขวาไม่ล้นออกนอกกรอบ radar ไปทับการ์ด skill ข้าง ๆ
+// ภาษาไทยไม่เว้นวรรคระหว่างคำ จึงตัดคำด้วย Intl.Segmenter
+const RADAR_LABEL_MAX_CHARS = 14
+const RADAR_LABEL_MAX_LINES = 3
+
+const thaiWordSegmenter = typeof Intl !== 'undefined' && Intl.Segmenter
+  ? new Intl.Segmenter('th', { granularity: 'word' })
+  : null
+
+function splitRadarLabel(label) {
+  const text = String(label || '')
+
+  if (text.length <= RADAR_LABEL_MAX_CHARS) return [text]
+
+  const hasSpaces = /\s/.test(text)
+  const words = hasSpaces || !thaiWordSegmenter
+    ? text.split(/\s+/)
+    : [...thaiWordSegmenter.segment(text)].map((part) => part.segment)
+  const joiner = hasSpaces ? ' ' : ''
+  const lines = []
+
+  for (const word of words) {
+    const last = lines[lines.length - 1]
+
+    if (last !== undefined && `${last}${joiner}${word}`.length <= RADAR_LABEL_MAX_CHARS) {
+      lines[lines.length - 1] = `${last}${joiner}${word}`
+    } else if (lines.length < RADAR_LABEL_MAX_LINES) {
+      lines.push(word)
+    } else {
+      lines[lines.length - 1] = `${last}${joiner}${word}`
+    }
+  }
+
+  return lines
+}
+
 const radarLabels = computed(() => {
   const items = skillItems.value
   if (!items.length) return []
 
-  const center = 150
-  const radius = 137
-
   return items.map((item, index) => {
-    const angle =
-      (-90 + index * (360 / items.length)) *
-      Math.PI / 180
+    const [x, y] = radarPoint(
+      index,
+      items.length,
+      1,
+      RADAR_LABEL_RADIUS
+    )
 
     return {
       ...item,
-      x: center + Math.cos(angle) * radius,
-      y: center + Math.sin(angle) * radius
+      x,
+      y,
+      lines: splitRadarLabel(item.label)
     }
   })
 })
@@ -227,21 +379,41 @@ function statusLabel(status) {
   return labels[status] || status || '-'
 }
 
-function skillLabel(key) {
-  return (
-    skillDefinitions.value.find(
-      (item) => item.key === key
-    )?.label || key
-  )
+// skill ของกิจกรรม เรียงตามลำดับ skill ของ track ปัจจุบัน
+// และแสดงเฉพาะ skill ที่อยู่ใน track นี้
+function activitySkillChips(activity) {
+  const skills = activity?.skills || {}
+
+  return skillDefinitions.value
+    .filter(
+      (definition) =>
+        skills[definition.key] !== null &&
+        skills[definition.key] !== undefined
+    )
+    .map((definition) => ({
+      key: definition.key,
+      label: definition.label,
+      description: definition.description,
+      level: skills[definition.key]
+    }))
 }
 
-async function loadSkills() {
-  loading.value = true
+async function loadSkills(requestedTrack = track.value) {
+  const requestId = ++loadRequestId
+  const isInitialLoad = !student.value
+
+  if (isInitialLoad) {
+    loading.value = true
+  } else {
+    trackLoading.value = true
+  }
+
+  pendingTrack.value = requestedTrack
   errorMessage.value = ''
 
   try {
     const response = await fetch(
-      `${API_BASE}/api/student/me/skills`,
+      `${API_BASE}/api/student/me/skills?track=${encodeURIComponent(requestedTrack)}`,
       {
         headers: studentHeaders()
       }
@@ -255,26 +427,49 @@ async function loadSkills() {
       )
     }
 
+    // มีการสลับโหมดใหม่ระหว่างรอ ให้ใช้ผลของคำขอล่าสุดเท่านั้น
+    if (requestId !== loadRequestId) return
+
+    const previousPeriod = selectedPeriod.value
+    const nextPeriods = data.periods || {}
+
     student.value = data.student || null
-    skillDefinitions.value =
+    track.value = data.track || requestedTrack
+    apiSkillDefinitions.value =
       data.skillDefinitions || []
     periodDefinitions.value =
       data.periodDefinitions || []
-    periods.value = data.periods || {}
+    periods.value = nextPeriods
+
+    // คงช่วงเวลาที่เลือกไว้ ถ้ายังมีอยู่ในข้อมูลของโหมดใหม่
     selectedPeriod.value =
-      data.defaultPeriod ||
-      data.periodDefinitions?.[0]?.key ||
-      ''
+      previousPeriod && nextPeriods[previousPeriod]
+        ? previousPeriod
+        : data.defaultPeriod ||
+          data.periodDefinitions?.[0]?.key ||
+          ''
 
     syncPeriodControls(selectedPeriod.value)
   } catch (error) {
+    if (requestId !== loadRequestId) return
+
     errorMessage.value =
       error instanceof TypeError
         ? `${t.value.studentSkills.connectionError} (${API_BASE})`
         : error.message
   } finally {
-    loading.value = false
+    if (requestId === loadRequestId) {
+      loading.value = false
+      trackLoading.value = false
+      pendingTrack.value = ''
+    }
   }
+}
+
+function selectTrack(nextTrack) {
+  if (nextTrack === (pendingTrack.value || track.value)) return
+
+  loadSkills(nextTrack)
 }
 
 function openExportModal() {
@@ -294,7 +489,7 @@ async function fetchTranscriptPdf() {
     : 'false'
 
   const response = await fetch(
-    `${API_BASE}/api/student/me/skills/export?period=${encodeURIComponent(selectedPeriod.value)}&include_chart=${includeChart}`,
+    `${API_BASE}/api/student/me/skills/export?period=${encodeURIComponent(selectedPeriod.value)}&include_chart=${includeChart}&track=${encodeURIComponent(track.value)}`,
     {
       headers: studentHeaders()
     }
@@ -328,7 +523,7 @@ function filenameFromDisposition(disposition) {
 
   return (
     match?.[1] ||
-    `skill-transcript-${selectedPeriod.value}.pdf`
+    `skill-transcript-${track.value}-${selectedPeriod.value}.pdf`
   )
 }
 
@@ -426,7 +621,7 @@ async function printTranscript() {
     exportAction.value = ''
   }
 }
-onMounted(loadSkills)
+onMounted(() => loadSkills())
 </script>
 
 <template>
@@ -442,7 +637,7 @@ onMounted(loadSkills)
     >
       <span>{{ errorMessage }}</span>
 
-      <button type="button" @click="loadSkills">
+      <button type="button" @click="loadSkills()">
         <RefreshCw :size="15" />
         {{ t.studentSkills.retry }}
       </button>
@@ -462,30 +657,72 @@ onMounted(loadSkills)
           </p>
         </div>
 
-        <!-- เลือกปี + ช่วงเวลา แบบเดียวกับหน้า Admin -->
-        <div class="period-controls">
-          <select
-            v-model="selectedYear"
-            class="period-select year-select"
+        <div class="heading-controls">
+          <!-- สลับโหมด: skill ผู้เข้าร่วม / skill ผู้จัด (staff) -->
+          <div
+            class="track-toggle"
+            role="group"
+            :aria-label="t.studentSkills.skillTrackLabel"
+            :aria-busy="trackLoading ? 'true' : 'false'"
           >
-            <option
-              v-for="year in yearOptions"
-              :key="year"
-              :value="year"
+            <button
+              v-for="option in trackOptions"
+              :key="option.key"
+              type="button"
+              class="track-option"
+              :class="{
+                active: option.key === (pendingTrack || track)
+              }"
+              :aria-pressed="option.key === (pendingTrack || track) ? 'true' : 'false'"
+              @click="selectTrack(option.key)"
             >
-              ปี {{ year }}
-            </option>
-          </select>
+              <LoaderCircle
+                v-if="trackLoading && pendingTrack === option.key"
+                class="spin"
+                :size="14"
+              />
+              <component
+                :is="option.icon"
+                v-else
+                :size="14"
+              />
+              <span>{{ option.label }}</span>
+            </button>
+          </div>
 
-          <select
-            v-model="selectedSemester"
-            class="period-select semester-select"
-          >
-            <option value="all">ทั้งปี</option>
-            <option value="1">เทอม 1</option>
-            <option value="2">เทอม 2</option>
-          </select>
+          <!-- เลือกปี + ช่วงเวลา แบบเดียวกับหน้า Admin -->
+          <div class="period-controls">
+            <select
+              v-model="selectedYear"
+              class="period-select year-select"
+            >
+              <option
+                v-for="year in yearOptions"
+                :key="year"
+                :value="year"
+              >
+                ปี {{ year }}
+              </option>
+            </select>
+
+            <select
+              v-model="selectedSemester"
+              class="period-select semester-select"
+            >
+              <option value="all">ทั้งปี</option>
+              <option value="1">เทอม 1</option>
+              <option value="2">เทอม 2</option>
+            </select>
+          </div>
         </div>
+      </div>
+
+      <div
+        v-if="isStaffTrack"
+        class="track-hint"
+      >
+        <Info :size="15" />
+        <span>{{ t.studentSkills.staffTrackHint }}</span>
       </div>
 
       <div
@@ -495,12 +732,15 @@ onMounted(loadSkills)
         {{ errorMessage }}
       </div>
 
-      <div class="overview-card">
+      <div
+        class="overview-card"
+        :class="{ refreshing: trackLoading }"
+      >
         <div class="section-title">
           <BarChart3 :size="18" />
 
           <span>
-            {{ t.studentSkills.radarChartTitle }}
+            {{ trackText.radarChartTitle }}
           </span>
 
           <span
@@ -518,9 +758,23 @@ onMounted(loadSkills)
               v-for="skill in leftSkills"
               :key="skill.key"
               class="skill-card"
+              :title="skill.description || skill.label"
             >
               <div class="skill-card-top">
-                <span>{{ skill.label }}</span>
+                <span class="skill-card-name">
+                  <component
+                    :is="skill.icon"
+                    v-if="skill.icon"
+                    class="skill-card-icon"
+                    :size="15"
+                  />
+                  <span>
+                    {{ skill.label }}
+                    <small v-if="showSkillDescription && skill.description">
+                      {{ skill.description }}
+                    </small>
+                  </span>
+                </span>
 
                 <strong>
                   {{ formatLevel(skill.value) }} / 5
@@ -541,71 +795,26 @@ onMounted(loadSkills)
           <!-- RADAR -->
           <div class="radar-area">
             <div class="radar-wrap">
+              <!-- เว้นขอบซ้าย/ขวา 30 หน่วยไว้ให้ label ด้านข้าง (radar อยู่กลางที่ 150,150 เหมือนเดิม) -->
               <svg
-                viewBox="0 0 300 300"
+                viewBox="-30 -6 360 312"
                 class="radar"
               >
+                <!-- grid + แกน สร้างตามจำนวน skill ของ track -->
                 <polygon
-                  points="150,38 247,94 247,206 150,262 53,206 53,94"
-                  class="grid"
-                />
-                <polygon
-                  points="150,60 228,105 228,195 150,240 72,195 72,105"
-                  class="grid"
-                />
-                <polygon
-                  points="150,83 208,116 208,184 150,217 92,184 92,116"
-                  class="grid"
-                />
-                <polygon
-                  points="150,105 189,128 189,172 150,195 111,172 111,128"
-                  class="grid"
-                />
-                <polygon
-                  points="150,128 169,139 169,161 150,172 131,161 131,139"
+                  v-for="(points, index) in radarGridPolygons"
+                  :key="`grid-${index}`"
+                  :points="points"
                   class="grid"
                 />
 
                 <line
-                  x1="150"
-                  y1="150"
-                  x2="150"
-                  y2="38"
-                  class="axis"
-                />
-                <line
-                  x1="150"
-                  y1="150"
-                  x2="247"
-                  y2="94"
-                  class="axis"
-                />
-                <line
-                  x1="150"
-                  y1="150"
-                  x2="247"
-                  y2="206"
-                  class="axis"
-                />
-                <line
-                  x1="150"
-                  y1="150"
-                  x2="150"
-                  y2="262"
-                  class="axis"
-                />
-                <line
-                  x1="150"
-                  y1="150"
-                  x2="53"
-                  y2="206"
-                  class="axis"
-                />
-                <line
-                  x1="150"
-                  y1="150"
-                  x2="53"
-                  y2="94"
+                  v-for="axis in radarAxes"
+                  :key="`axis-${axis.index}`"
+                  :x1="RADAR_CENTER"
+                  :y1="RADAR_CENTER"
+                  :x2="axis.x"
+                  :y2="axis.y"
                   class="axis"
                 />
 
@@ -632,7 +841,15 @@ onMounted(loadSkills)
                     dominant-baseline="middle"
                     class="radar-label"
                   >
-                    {{ label.label }}
+                    <title>{{ label.description || label.label }}</title>
+                    <tspan
+                      v-for="(line, lineIndex) in label.lines"
+                      :key="lineIndex"
+                      :x="label.x"
+                      :dy="lineIndex === 0
+                        ? `${-(label.lines.length - 1) * 0.6}em`
+                        : '1.2em'"
+                    >{{ line }}</tspan>
                   </text>
                 </g>
               </svg>
@@ -666,7 +883,7 @@ onMounted(loadSkills)
                 <strong>{{ t.studentSkills.skillRadar }}</strong>
 
                 <span>
-                  {{ t.studentSkills.noDataInPeriod }}
+                  {{ trackText.noDataInPeriod }}
                 </span>
               </div>
             </div>
@@ -678,9 +895,23 @@ onMounted(loadSkills)
               v-for="skill in rightSkills"
               :key="skill.key"
               class="skill-card"
+              :title="skill.description || skill.label"
             >
               <div class="skill-card-top">
-                <span>{{ skill.label }}</span>
+                <span class="skill-card-name">
+                  <component
+                    :is="skill.icon"
+                    v-if="skill.icon"
+                    class="skill-card-icon"
+                    :size="15"
+                  />
+                  <span>
+                    {{ skill.label }}
+                    <small v-if="showSkillDescription && skill.description">
+                      {{ skill.description }}
+                    </small>
+                  </span>
+                </span>
 
                 <strong>
                   {{ formatLevel(skill.value) }} / 5
@@ -701,13 +932,16 @@ onMounted(loadSkills)
       </div>
 
       <!-- ACTIVITIES -->
-      <div class="activity-card">
+      <div
+        class="activity-card"
+        :class="{ refreshing: trackLoading }"
+      >
         <div class="activity-title">
           <div class="activity-title-left">
             <CalendarDays :size="17" />
 
             <span>
-              {{ t.studentSkills.activitiesUsedTitle }}
+              {{ trackText.activitiesUsedTitle }}
             </span>
           </div>
 
@@ -750,12 +984,13 @@ onMounted(loadSkills)
                   <td>
                     <div class="skill-tags">
                       <span
-                        v-for="(level, key) in activity.skills"
-                        :key="key"
+                        v-for="chip in activitySkillChips(activity)"
+                        :key="chip.key"
                         class="skill-tag"
+                        :title="chip.description || chip.label"
                       >
-                        {{ skillLabel(key) }}
-                        {{ level }}/5
+                        {{ chip.label }}
+                        {{ chip.level }}/5
                       </span>
                     </div>
                   </td>
@@ -778,11 +1013,11 @@ onMounted(loadSkills)
                   <td colspan="5">
                     <div class="empty-table">
                       <strong>
-                        {{ t.studentSkills.noActivityData }}
+                        {{ trackText.noActivityData }}
                       </strong>
 
                       <span>
-                        {{ t.studentSkills.noActivityDataSubtitle }}
+                        {{ trackText.noActivityDataSubtitle }}
                       </span>
                     </div>
                   </td>
@@ -798,7 +1033,7 @@ onMounted(loadSkills)
         <button
           class="export-button"
           type="button"
-          :disabled="exporting"
+          :disabled="exporting || trackLoading"
           @click="openExportModal"
         >
           <Download :size="15" />
@@ -837,6 +1072,13 @@ onMounted(loadSkills)
             <span>{{ t.studentSkills.selectedPeriodLabel }}</span>
             <strong>
               {{ currentPeriod.label || '-' }}
+            </strong>
+          </div>
+
+          <div class="export-period-box export-track-box">
+            <span>{{ t.studentSkills.skillTrackLabel }}</span>
+            <strong>
+              {{ activeTrackLabel }}
             </strong>
           </div>
 
@@ -996,6 +1238,87 @@ onMounted(loadSkills)
   color: #33415f;
 }
 
+/* =========================
+   SKILL TRACK TOGGLE
+========================= */
+
+.heading-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.track-toggle {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid #d7deeb;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.track-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #33415f;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .18s ease, color .18s ease;
+}
+
+.track-option:hover {
+  background: #f4f7fb;
+}
+
+.track-option.active {
+  background: #172d78;
+  color: #fff;
+}
+
+.track-option:focus-visible {
+  outline: 2px solid #356fe5;
+  outline-offset: 1px;
+}
+
+.track-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #d6e0f5;
+  border-radius: 8px;
+  background: #eef3ff;
+  color: #315bb0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.track-hint svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.overview-card,
+.activity-card {
+  transition: opacity .18s ease;
+}
+
+.overview-card.refreshing,
+.activity-card.refreshing {
+  opacity: .55;
+}
+
 .overview-card {
   width: 100%;
   min-height: 440px;
@@ -1066,6 +1389,27 @@ onMounted(loadSkills)
 .skill-card-top strong {
   flex: none;
   color: #172d78;
+}
+
+.skill-card-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+}
+
+.skill-card-icon {
+  flex: none;
+  margin-top: 1px;
+  color: #172d78;
+}
+
+.skill-card-name small {
+  display: block;
+  margin-top: 3px;
+  color: #8793aa;
+  font-size: 10px;
+  font-weight: 500;
 }
 
 .progress-track {
@@ -1510,6 +1854,10 @@ td {
   font-size: 12px;
 }
 
+.export-track-box {
+  margin-top: 10px;
+}
+
 .export-section {
   padding: 20px 22px;
 }
@@ -1619,6 +1967,24 @@ td {
   .page-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .heading-controls {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .track-toggle {
+    display: flex;
+    width: 100%;
+  }
+
+  .track-option {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 8px;
+    white-space: normal;
+    text-align: center;
   }
 
   .period-controls {

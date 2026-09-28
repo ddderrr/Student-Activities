@@ -7,6 +7,9 @@
 ข้อมูล demo แยกจากข้อมูลจริงได้เสมอ และคำสั่ง --remove ลบเฉพาะส่วนนี้:
 - รหัสนักศึกษา demo รูปแบบ YY0519NNN (หลักที่ 3-6 เป็น 0519)
 - ชื่อกิจกรรม demo ขึ้นต้นด้วย "[Demo] "
+
+นักศึกษาจำลองของหน้าฝั่งนักศึกษา (MOCK_STUDENT_ID ใน frontend/src/constants/currentStudent.js)
+จะถูกเพิ่มเข้ากิจกรรม demo ด้วย หน้า My Skills จึงมีข้อมูลให้ดู (--remove ลบแค่การเข้าร่วม ไม่ลบตัวนักศึกษา)
 """
 
 import random
@@ -31,6 +34,18 @@ MAJORS = [
 ]
 
 STUDENTS_PER_MAJOR_PER_YEAR = 3
+
+# ต้องตรงกับ MOCK_STUDENT_ID ใน frontend/src/constants/currentStudent.js
+MOCK_STUDENT_ID = "670510659"
+MOCK_STUDENT_MAJOR = "เคมี"
+# (กิจกรรม, บทบาท)
+MOCK_STUDENT_ACTIVITIES = [
+    ("nature_camp", "participant"),
+    ("science_seminar", "participant"),
+    ("community_volunteer", "participant"),
+    ("exchange_program", "participant"),
+    ("lanna_exhibition", "organizer"),
+]
 
 FIRST_NAMES = [
     "กฤต", "ขวัญ", "จิรา", "ชนัญ", "ณัฐ", "ดารา", "ธนา", "นภา", "ปวีณ์", "พิม",
@@ -207,12 +222,39 @@ def seed_demo_data(db: Session, today: date | None = None) -> dict:
                     )
                     membership_count += 1
 
+    # นักศึกษาจำลองของหน้าฝั่งนักศึกษา: สร้างแบบเดียวกับ backend ถ้ายังไม่มี และเติมสาขาถ้ายังว่าง
+    mock_student = db.get(Student, MOCK_STUDENT_ID)
+    if not mock_student:
+        mock_student = Student(
+            student_id=MOCK_STUDENT_ID,
+            first_name="Demo",
+            last_name="Student",
+            email="",
+            faculty="Faculty of Science",
+            major=MOCK_STUDENT_MAJOR,
+        )
+        db.add(mock_student)
+    elif not mock_student.major:
+        mock_student.major = MOCK_STUDENT_MAJOR
+
+    db.flush()
+
+    for key, role in MOCK_STUDENT_ACTIVITIES:
+        db.add(
+            ActivityMember(
+                activity_id=activities[key].id,
+                student_id=MOCK_STUDENT_ID,
+                role=role,
+            )
+        )
+
     db.commit()
 
     return {
         "students": student_count,
         "activities": len(activities),
         "memberships": membership_count,
+        "mock_student_activities": len(MOCK_STUDENT_ACTIVITIES),
         "year": year,
     }
 
@@ -228,7 +270,8 @@ def main() -> None:
         print(
             f"เพิ่มข้อมูล demo แล้ว: นักศึกษา {result['students']} คน, "
             f"กิจกรรม {result['activities']} กิจกรรม, "
-            f"การเข้าร่วม {result['memberships']} รายการ (ปี {result['year']})"
+            f"การเข้าร่วม {result['memberships']} รายการ (ปี {result['year']}) "
+            f"+ นักศึกษาจำลอง {MOCK_STUDENT_ID} เข้าร่วม {result['mock_student_activities']} กิจกรรม"
         )
 
 

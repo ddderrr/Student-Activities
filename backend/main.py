@@ -659,14 +659,47 @@ def student_year_level(entry_year_be: int | None, academic_year_be: int) -> int 
     return level if level >= 1 else None
 
 
-def get_student_skill_benchmarks(db: Session) -> dict[str, float]:
+# โหมดดู skill ในหน้า Student Skills (admin) และ My Skills (นักศึกษา)
+# บทบาทในกิจกรรม -> ชุด skill ที่ได้: participant ได้ participant skills, organizer ได้ staff skills
+SKILL_TRACKS = {
+    "participant": {
+        "member_role": "participant",
+        "target_role": "participant",
+        "definitions": PARTICIPANT_SKILL_DEFINITIONS,
+        "label": "Participant Skills",
+    },
+    "staff": {
+        "member_role": "organizer",
+        "target_role": "staff",
+        "definitions": STAFF_SKILL_DEFINITIONS,
+        "label": "Staff Skills",
+    },
+}
+
+
+def normalize_skill_track(track: str | None) -> str:
+    normalized = (track or "participant").strip().lower()
+
+    if normalized not in SKILL_TRACKS:
+        raise HTTPException(
+            status_code=400,
+            detail="track ต้องเป็น participant หรือ staff",
+        )
+
+    return normalized
+
+
+def get_student_skill_benchmarks(
+    db: Session,
+    track: str = "participant",
+) -> dict[str, float]:
     rows = {
         row.skill_key: row.score_x100 / 100
         for row in db.query(StudentSkillBenchmark).all()
     }
     return {
         key: float(rows.get(key, 4.0))
-        for key in PARTICIPANT_SKILL_DEFINITIONS
+        for key in SKILL_TRACKS[track]["definitions"]
     }
 
 
@@ -677,14 +710,18 @@ class StudentSkillBenchmarkUpdate(BaseModel):
 @app.put("/api/admin/student-skills/benchmark")
 def update_student_skill_benchmark(
     payload: StudentSkillBenchmarkUpdate,
+    track: str = "participant",
     db: Session = Depends(get_db),
     _admin: AdminContext = Depends(require_central_admin),
 ):
-    expected = set(PARTICIPANT_SKILL_DEFINITIONS)
+    track = normalize_skill_track(track)
+    definitions = SKILL_TRACKS[track]["definitions"]
+
+    expected = set(definitions)
     received = set(payload.scores)
     unknown = received - expected
     if unknown:
-        raise HTTPException(status_code=400, detail=f"Unknown participant skill: {', '.join(sorted(unknown))}")
+        raise HTTPException(status_code=400, detail=f"Unknown {track} skill: {', '.join(sorted(unknown))}")
 
     for key, raw_score in payload.scores.items():
         score = float(raw_score)
@@ -699,9 +736,10 @@ def update_student_skill_benchmark(
             row.score_x100 = round(score * 100)
 
     db.commit()
-    benchmarks = get_student_skill_benchmarks(db)
+    benchmarks = get_student_skill_benchmarks(db, track)
     return {
-        "benchmarkScores": [benchmarks[key] for key in PARTICIPANT_SKILL_DEFINITIONS],
+        "track": track,
+        "benchmarkScores": [benchmarks[key] for key in definitions],
         "benchmarkBySkill": benchmarks,
     }
 
@@ -711,6 +749,7 @@ def get_admin_student_skills(
     year: int | None = None,
     semester: str = "ALL",
     major: str | None = None,
+    track: str = "participant",
     db: Session = Depends(get_db),
     admin: AdminContext = Depends(get_current_admin),
 ):
@@ -721,9 +760,15 @@ def get_admin_student_skills(
     This prevents students with many activities from having more weight in the faculty radar.
 
     `major`: แอดมินกลางเลือก filter สาขาได้จากหน้า Student Skills (ดู resolve_branch_filter)
+    track=participant (ค่าเริ่มต้น): skill ที่ได้จากการเป็นผู้เข้าร่วม
+    track=staff: skill ที่ได้จากการเป็นผู้จัด (organizer)
     """
     admin = resolve_branch_filter(admin, major)
     selected_semester = normalize_student_skill_semester(semester)
+    track = normalize_skill_track(track)
+    member_role = SKILL_TRACKS[track]["member_role"]
+    target_role = SKILL_TRACKS[track]["target_role"]
+    definitions = SKILL_TRACKS[track]["definitions"]
     now_value = datetime.now()
 
     total_students = (
@@ -740,7 +785,7 @@ def get_admin_student_skills(
     }
     external_years = {
         int(value) for (value,) in db.query(func.extract("year", ExternalActivity.start_date))
-        .filter(ExternalActivity.status == "approved", ExternalActivity.role == "participant")
+        .filter(ExternalActivity.status == "approved", ExternalActivity.role == member_role)
         .distinct().all() if value is not None
     }
     available_years = sorted(internal_years | external_years | {now_value.year}, reverse=True)
@@ -761,8 +806,8 @@ def get_admin_student_skills(
         .join(Activity, Activity.id == ActivityMember.activity_id)
         .join(ActivitySkill, ActivitySkill.activity_id == Activity.id)
         .filter(
-            ActivityMember.role == "participant",
-            ActivitySkill.target_role == "participant",
+            ActivityMember.role == member_role,
+            ActivitySkill.target_role == target_role,
             Activity.status != "cancelled",
             func.extract("year", Activity.start_at) == selected_year,
         ),
@@ -784,8 +829,8 @@ def get_admin_student_skills(
         .join(ExternalActivitySkill, ExternalActivitySkill.external_activity_id == ExternalActivity.id)
         .filter(
             ExternalActivity.status == "approved",
-            ExternalActivity.role == "participant",
-            ExternalActivitySkill.target_role == "participant",
+            ExternalActivity.role == member_role,
+            ExternalActivitySkill.target_role == target_role,
             func.extract("year", ExternalActivity.start_date) == selected_year,
         ),
         admin,
@@ -797,7 +842,7 @@ def get_admin_student_skills(
 
     def add_row(row, source: str):
         student_id, first_name, last_name, major, activity_id, start_at, skill_key, level = row
-        if start_at is None or skill_key not in PARTICIPANT_SKILL_DEFINITIONS:
+        if start_at is None or skill_key not in definitions:
             return
         sem_no = student_skill_semester_number(start_at)
         if selected_semester == "SEMESTER_1" and sem_no != 1:
@@ -810,8 +855,8 @@ def get_admin_student_skills(
                 "id": student_id,
                 "name": f"{first_name} {last_name}".strip(),
                 "major": major or "",
-                "skill_values": {key: [] for key in PARTICIPANT_SKILL_DEFINITIONS},
-                "skill_activity_ids": {key: set() for key in PARTICIPANT_SKILL_DEFINITIONS},
+                "skill_values": {key: [] for key in definitions},
+                "skill_activity_ids": {key: set() for key in definitions},
                 "activity_ids": set(),
             }
         evidence_id = f"{source}:{activity_id}"
@@ -835,7 +880,7 @@ def get_admin_student_skills(
     for entry in grouped.values():
         skills = {}
         skill_activity_counts = {}
-        for skill_key in PARTICIPANT_SKILL_DEFINITIONS:
+        for skill_key in definitions:
             values = entry["skill_values"][skill_key]
             skills[skill_key] = round(sum(values) / len(values), 2) if values else None
             skill_activity_counts[skill_key] = len(entry["skill_activity_ids"][skill_key])
@@ -858,13 +903,19 @@ def get_admin_student_skills(
         })
 
     students.sort(key=lambda item: item["id"])
-    benchmarks = get_student_skill_benchmarks(db)
+    benchmarks = get_student_skill_benchmarks(db, track)
 
     # จำนวนนักศึกษาทั้งหมดแยกตามชั้นปี (ในปีการศึกษาที่ใช้) และสาขา
     # ให้หน้าเว็บคำนวณ "% ของนักศึกษา" ได้ถูกต้องเมื่อกรองตามชั้นปี/สาขา
+    # นับเฉพาะนักศึกษาที่แอดมินคนนี้เห็น (แอดมินสาขาเห็นแค่สาขาตัวเอง)
     population_counts: dict[tuple[int | None, str], int] = {}
 
-    for student_id, major in db.query(Student.student_id, Student.major).all():
+    population_rows = scope_student_query(
+        db.query(Student.student_id, Student.major),
+        admin,
+    ).all()
+
+    for student_id, major in population_rows:
         entry_year = student_entry_year_be(student_id)
         level = student_year_level(entry_year, academic_year)
 
@@ -892,11 +943,12 @@ def get_admin_student_skills(
         "totalFaculty": total_students,
         "totalFacultyBySemester": {period_label: total_students},
         "population": population,
-        "benchmarkScores": [benchmarks[key] for key in PARTICIPANT_SKILL_DEFINITIONS],
+        "track": track,
+        "benchmarkScores": [benchmarks[key] for key in definitions],
         "benchmarkBySkill": benchmarks,
         "skillDefinitions": [
             {"key": key, "label": label}
-            for key, label in PARTICIPANT_SKILL_DEFINITIONS.items()
+            for key, label in definitions.items()
         ],
         "students": students,
     }
@@ -3601,6 +3653,7 @@ def faculty_skill_average_for_period(
     db: Session,
     year: int,
     semester: int | None,
+    track: str = "participant",
 ) -> dict:
     """
     ค่าเฉลี่ยทักษะของคณะ ใช้หลักเดียวกับหน้า Admin:
@@ -3610,12 +3663,15 @@ def faculty_skill_average_for_period(
     ทำแบบ student-first เพื่อไม่ให้นักศึกษาที่มีกิจกรรมเยอะ
     มีน้ำหนักมากกว่าคนอื่น
     """
+    member_role = SKILL_TRACKS[track]["member_role"]
+    target_role = SKILL_TRACKS[track]["target_role"]
+    definitions = SKILL_TRACKS[track]["definitions"]
     grouped: dict[str, dict[str, list[float]]] = {}
 
     def add_value(student_id, when, skill_key, level):
         if when is None or when.year != year:
             return
-        if skill_key not in PARTICIPANT_SKILL_DEFINITIONS:
+        if skill_key not in definitions:
             return
 
         sem_no = 1 if when.month <= 6 else 2
@@ -3625,7 +3681,7 @@ def faculty_skill_average_for_period(
         if student_id not in grouped:
             grouped[student_id] = {
                 key: []
-                for key in PARTICIPANT_SKILL_DEFINITIONS
+                for key in definitions
             }
 
         grouped[student_id][skill_key].append(float(level))
@@ -3650,8 +3706,8 @@ def faculty_skill_average_for_period(
             ActivitySkill.activity_id == Activity.id,
         )
         .filter(
-            ActivityMember.role == "participant",
-            ActivitySkill.target_role == "participant",
+            ActivityMember.role == member_role,
+            ActivitySkill.target_role == target_role,
             Activity.status != "cancelled",
             func.extract("year", Activity.start_at) == year,
         )
@@ -3675,8 +3731,8 @@ def faculty_skill_average_for_period(
         )
         .filter(
             ExternalActivity.status == "approved",
-            ExternalActivity.role == "participant",
-            ExternalActivitySkill.target_role == "participant",
+            ExternalActivity.role == member_role,
+            ExternalActivitySkill.target_role == target_role,
             func.extract("year", ExternalActivity.start_date) == year,
         )
         .all()
@@ -3690,7 +3746,7 @@ def faculty_skill_average_for_period(
 
     faculty_values = {
         key: []
-        for key in PARTICIPANT_SKILL_DEFINITIONS
+        for key in definitions
     }
 
     for student_skills in grouped.values():
@@ -3713,6 +3769,7 @@ def faculty_skill_average_for_period(
 def student_skill_periods(
     student: Student,
     db: Session,
+    track: str = "participant",
 ) -> dict:
     """
     สร้างข้อมูล My Skills จาก source เดียวกันทั้ง Radar และตาราง
@@ -3723,13 +3780,16 @@ def student_skill_periods(
     - semester-2-YYYY = ก.ค.-ธ.ค.
 
     คะแนนแต่ละ skill = ค่าเฉลี่ย level ของกิจกรรมทั้งหมดใน period
-    ที่ให้ skill นั้นกับ role participant
+    ที่ให้ skill นั้นกับ role ของ track (participant หรือ organizer -> staff skills)
     """
+    member_role = SKILL_TRACKS[track]["member_role"]
+    target_role = SKILL_TRACKS[track]["target_role"]
+    definitions = SKILL_TRACKS[track]["definitions"]
 
     activity_map: dict[tuple[str, int], dict] = {}
 
     # กิจกรรมที่สร้างโดย Admin:
-    # นับเฉพาะกรณีที่นักศึกษาเป็น participant และ skill เป็น participant
+    # นับเฉพาะกรณีที่บทบาทของนักศึกษาและ skill ตรงกับ track
     # และไม่นับกิจกรรมที่ถูกยกเลิก (cancelled)
     rows = (
         db.query(
@@ -3751,8 +3811,8 @@ def student_skill_periods(
         )
         .filter(
             ActivityMember.student_id == student.student_id,
-            ActivityMember.role == "participant",
-            ActivitySkill.target_role == "participant",
+            ActivityMember.role == member_role,
+            ActivitySkill.target_role == target_role,
             Activity.status != "cancelled",
         )
         .all()
@@ -3767,7 +3827,7 @@ def student_skill_periods(
         skill_key,
         level,
     ) in rows:
-        if start_at is None or skill_key not in PARTICIPANT_SKILL_DEFINITIONS:
+        if start_at is None or skill_key not in definitions:
             continue
 
         key = ("activity", activity_id)
@@ -3786,7 +3846,7 @@ def student_skill_periods(
         activity_map[key]["skills"][skill_key] = int(level)
 
     # กิจกรรมภายนอก:
-    # นับเฉพาะ approved + participant เท่านั้น
+    # นับเฉพาะ approved + บทบาทตรงกับ track เท่านั้น
     external_rows = (
         db.query(
             ExternalActivity.id,
@@ -3804,8 +3864,8 @@ def student_skill_periods(
         .filter(
             ExternalActivity.student_id == student.student_id,
             ExternalActivity.status == "approved",
-            ExternalActivity.role == "participant",
-            ExternalActivitySkill.target_role == "participant",
+            ExternalActivity.role == member_role,
+            ExternalActivitySkill.target_role == target_role,
         )
         .all()
     )
@@ -3819,7 +3879,7 @@ def student_skill_periods(
         skill_key,
         level,
     ) in external_rows:
-        if start_date is None or skill_key not in PARTICIPANT_SKILL_DEFINITIONS:
+        if start_date is None or skill_key not in definitions:
             continue
 
         key = ("external_activity", external_id)
@@ -3907,7 +3967,7 @@ def student_skill_periods(
 
         values = {
             skill_key: []
-            for skill_key in PARTICIPANT_SKILL_DEFINITIONS
+            for skill_key in definitions
         }
 
         for activity in period_activities:
@@ -3928,6 +3988,7 @@ def student_skill_periods(
             db=db,
             year=period["year"],
             semester=period["semester"],
+            track=track,
         )
 
         periods[period["key"]] = {
@@ -3956,6 +4017,7 @@ def student_skill_periods(
 
 @app.get("/api/student/me/skills")
 def get_my_skills(
+    track: str = "participant",
     student: Student = Depends(get_current_student),
     db: Session = Depends(get_db),
 ):
@@ -3964,8 +4026,11 @@ def get_my_skills(
 
     Radar + ตารางกิจกรรมใช้ source เดียวกัน จึงไม่มีกรณี
     กิจกรรมถูกนำไปคำนวณแต่ไม่ปรากฏในตาราง
+
+    track=participant (ค่าเริ่มต้น) หรือ staff (skill จากการเป็นผู้จัด)
     """
-    period_data = student_skill_periods(student, db)
+    track = normalize_skill_track(track)
+    period_data = student_skill_periods(student, db, track)
 
     return {
         "student": {
@@ -3976,12 +4041,13 @@ def get_my_skills(
             "faculty": student.faculty,
             "major": student.major,
         },
+        "track": track,
         "skillDefinitions": [
             {
                 "key": key,
                 "label": label,
             }
-            for key, label in PARTICIPANT_SKILL_DEFINITIONS.items()
+            for key, label in SKILL_TRACKS[track]["definitions"].items()
         ],
         **period_data,
     }
@@ -4019,10 +4085,11 @@ def build_skill_radar_pdf(
     skills: dict,
     font_name: str,
     faculty_skills: dict | None = None,
+    definitions: dict | None = None,
 ) -> Drawing:
     """
     Radar chart สำหรับ PDF transcript
-    ใช้ 6 skill definitions ชุดเดียวกับหน้า Student
+    ใช้ 6 skill definitions ชุดเดียวกับหน้า Student (participant หรือ staff)
     """
     width = 150 * mm
     height = 92 * mm
@@ -4032,7 +4099,7 @@ def build_skill_radar_pdf(
     center_y = height / 2 - 2 * mm
     radius = 31 * mm
 
-    skill_items = list(PARTICIPANT_SKILL_DEFINITIONS.items())
+    skill_items = list((definitions or PARTICIPANT_SKILL_DEFINITIONS).items())
     count = len(skill_items)
 
     # Grid 1-5
@@ -4170,16 +4237,19 @@ def build_skill_radar_pdf(
 def export_my_skills_pdf(
     period: str | None = None,
     include_chart: bool = True,
+    track: str = "participant",
     student: Student = Depends(get_current_student),
     db: Session = Depends(get_db),
 ):
     """
-    สร้าง PDF ตาม period ที่หน้า Student เลือกอยู่
+    สร้าง PDF ตาม period และโหมด skill (track) ที่หน้า Student เลือกอยู่
 
     include_chart=true  -> transcript พร้อม Radar Chart
     include_chart=false -> transcript แบบตาราง ไม่มี Radar Chart
     """
-    period_data = student_skill_periods(student, db)
+    track = normalize_skill_track(track)
+    definitions = SKILL_TRACKS[track]["definitions"]
+    period_data = student_skill_periods(student, db, track)
     selected_key = period or period_data["defaultPeriod"]
     selected = period_data["periods"].get(selected_key)
 
@@ -4238,7 +4308,8 @@ def export_my_skills_pdf(
             (
                 f"{student.first_name} {student.last_name} "
                 f"| ID: {student.student_id} "
-                f"| Period: {selected['label']}"
+                f"| Period: {selected['label']} "
+                f"| {SKILL_TRACKS[track]['label']}"
             ),
             body_style,
         ),
@@ -4252,13 +4323,14 @@ def export_my_skills_pdf(
                 selected["skills"],
                 font_name,
                 selected.get("facultyAverage", {}),
+                definitions,
             )
         )
         story.append(Spacer(1, 4 * mm))
 
     skill_rows = [["Skill", "Average / 5"]]
 
-    for skill_key, label in PARTICIPANT_SKILL_DEFINITIONS.items():
+    for skill_key, label in definitions.items():
         value = selected["skills"].get(skill_key)
 
         skill_rows.append(
@@ -4298,7 +4370,7 @@ def export_my_skills_pdf(
     for activity in selected["activities"]:
         skills_text = ", ".join(
             (
-                f"{PARTICIPANT_SKILL_DEFINITIONS.get(key, key)} "
+                f"{definitions.get(key, key)} "
                 f"{level}/5"
             )
             for key, level in activity["skills"].items()

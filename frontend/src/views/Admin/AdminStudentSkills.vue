@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 
 import {
   Search,
@@ -24,16 +24,35 @@ const API_BASE = 'http://localhost:8000'
 
 /* =========================
    Skill definitions
-   ดึงคะแนนจริงจาก participant skill ของกิจกรรม
+   participant = skill จากการเป็นผู้เข้าร่วม, staff = skill จากการเป็นผู้จัด (organizer)
+   key ต้องตรงกับ PARTICIPANT_SKILL_DEFINITIONS / STAFF_SKILL_DEFINITIONS ใน backend/main.py
 ========================= */
-const skillKeys = [
-  { key: 'arts_culture_traditions', label: 'Arts, Culture, and Traditions' },
-  { key: 'volunteerism', label: 'Volunteerism' },
-  { key: 'academics', label: 'Academics' },
-  { key: 'internationalization', label: 'Internationalization' },
-  { key: 'health_promotion', label: 'Health Promotion' },
-  { key: 'nature_environmental_conservation', label: 'Nature & Environmental Conservation' }
-]
+const SKILL_KEYS_BY_TRACK = {
+  participant: [
+    { key: 'arts_culture_traditions', label: 'Arts, Culture, and Traditions' },
+    { key: 'volunteerism', label: 'Volunteerism' },
+    { key: 'academics', label: 'Academics' },
+    { key: 'internationalization', label: 'Internationalization' },
+    { key: 'health_promotion', label: 'Health Promotion' },
+    { key: 'nature_environmental_conservation', label: 'Nature & Environmental Conservation' }
+  ],
+  staff: [
+    { key: 'creative_leadership', label: 'Creative Leadership' },
+    { key: 'innovation', label: 'Innovation' },
+    { key: 'entrepreneurship', label: 'Entrepreneurship' },
+    { key: 'promote_equality', label: 'Promote Equality' },
+    { key: 'academic', label: 'Academic' },
+    { key: 'nature_environmental', label: 'Nature and Environmental' }
+  ]
+}
+
+// skillTrack = โหมดที่เลือก (อาจยังโหลดอยู่), loadedTrack = โหมดของข้อมูลที่แสดงอยู่จริง
+// benchmark และป้ายต่าง ๆ ใช้ loadedTrack เพื่อไม่ให้บันทึก/แสดงผิดชุดระหว่างกำลังสลับ
+const skillTrack = ref('participant')
+const loadedTrack = ref('participant')
+
+// array เดียวที่ทั้งหน้าใช้ เปลี่ยนเนื้อหาตามโหมด (reactive จึงคำนวณใหม่ทุกที่อัตโนมัติ)
+const skillKeys = reactive([...SKILL_KEYS_BY_TRACK.participant])
 
 const skillDisplay = (label) => {
   // ใช้คำแปลเดิมได้ถ้ามี key ตรงกัน ไม่งั้นแสดง label จาก backend/domain ตรง ๆ
@@ -49,7 +68,13 @@ const skillDisplay = (label) => {
     Academics: 'skillAcademics',
     Internationalization: 'skillInternationalization',
     'Health Promotion': 'skillHealthPromotion',
-    'Nature & Environmental Conservation': 'skillNatureEnvironmentalConservation'
+    'Nature & Environmental Conservation': 'skillNatureEnvironmentalConservation',
+    'Creative Leadership': 'skillCreativeLeadership',
+    Innovation: 'skillInnovation',
+    Entrepreneurship: 'skillEntrepreneurship',
+    'Promote Equality': 'skillPromoteEquality',
+    Academic: 'skillAcademic',
+    'Nature and Environmental': 'skillNatureEnvironmental'
   }
 
   const key = keyMap[label]
@@ -73,14 +98,31 @@ const radarLabelPositions = [
   { x: 105, y: 115, anchor: 'end', align: 'center' }
 ]
 
+// ภาษาไทยไม่เว้นวรรคระหว่างคำ จึงตัดคำด้วย Intl.Segmenter แทนการแยกด้วยช่องว่าง
+const thaiWordSegmenter = typeof Intl !== 'undefined' && Intl.Segmenter
+  ? new Intl.Segmenter('th', { granularity: 'word' })
+  : null
+
+const radarLabelWords = (text) => {
+  if (/\s/.test(text) || !thaiWordSegmenter || text.length <= RADAR_LABEL_MAX_CHARS) {
+    return { words: text.split(/\s+/), joiner: ' ' }
+  }
+
+  return {
+    words: [...thaiWordSegmenter.segment(text)].map(part => part.segment),
+    joiner: ''
+  }
+}
+
 const wrapRadarLabel = (label) => {
   const lines = []
+  const { words, joiner } = radarLabelWords(String(label))
 
-  for (const word of String(label).split(/\s+/)) {
+  for (const word of words) {
     const last = lines[lines.length - 1]
 
-    if (last && `${last} ${word}`.length <= RADAR_LABEL_MAX_CHARS) {
-      lines[lines.length - 1] = `${last} ${word}`
+    if (last && `${last}${joiner}${word}`.length <= RADAR_LABEL_MAX_CHARS) {
+      lines[lines.length - 1] = `${last}${joiner}${word}`
     } else {
       lines.push(word)
     }
@@ -242,10 +284,10 @@ const filterOpen = ref(false)
 const selectedSkill = ref('All Skills')
 const selectedScore = ref('All Scores')
 
-const skillOptions = [
+const skillOptions = computed(() => [
   'All Skills',
   ...skillKeys.map((skill) => skill.label)
-]
+])
 
 const scoreOptions = [
   'All Scores',
@@ -257,7 +299,11 @@ const scoreOptions = [
 /* =========================
    Fetch real data
 ========================= */
+// กันผลลัพธ์เก่ามาทับ เมื่อสลับโหมด/ปีเร็ว ๆ แล้ว response กลับมาไม่ตรงลำดับ
+let latestLoadId = 0
+
 const loadStudentSkills = async () => {
+  const loadId = ++latestLoadId
   loading.value = true
   error.value = ''
 
@@ -268,15 +314,26 @@ const loadStudentSkills = async () => {
     if (selectedBranch.value !== ALL_BRANCHES_VALUE) {
       params.set('major', selectedBranch.value)
     }
+    params.set('track', skillTrack.value)
 
     const response = await adminFetch(`${API_BASE}/api/admin/student-skills?${params.toString()}`)
     const data = await response.json()
+
+    if (loadId !== latestLoadId) return
 
     if (!response.ok) {
       throw new Error(data.detail || t.value.adminStudentSkills.loadErrorFallback)
     }
 
+    // เปลี่ยนชุด skill พร้อมกับข้อมูลใหม่ ไม่ให้ key ของโหมดหนึ่งไปอ่านข้อมูลของอีกโหมด
+    loadedTrack.value = data.track || skillTrack.value
+    skillKeys.splice(0, skillKeys.length, ...SKILL_KEYS_BY_TRACK[loadedTrack.value])
     students.value = Array.isArray(data.students) ? data.students : []
+
+    // หน้ารายละเอียดนักศึกษาที่เปิดค้างไว้ ให้ใช้ข้อมูลชุดใหม่ของคนเดิม (ถ้าไม่มีในชุดนี้ให้ปิด)
+    if (selectedStudent.value) {
+      selectedStudent.value = students.value.find(student => student.id === selectedStudent.value.id) || null
+    }
     availableYears.value = Array.isArray(data.availableYears) ? data.availableYears : []
     totalFaculty.value = Number(data.totalFaculty || 0)
     population.value = Array.isArray(data.population) ? data.population : []
@@ -299,12 +356,29 @@ const loadStudentSkills = async () => {
       benchmarkScores.value = data.benchmarkScores.map(score => Number(score) || 4)
     }
   } catch (err) {
+    if (loadId !== latestLoadId) return
     console.error('Student Skills API Error:', err)
     error.value = err.message || t.value.adminStudentSkills.loadErrorFallback
     students.value = []
+    // โหลดโหมดใหม่ไม่สำเร็จ: กลับไปที่โหมดของข้อมูลเดิม และให้กดเลือกซ้ำเพื่อลองใหม่ได้
+    skillTrack.value = loadedTrack.value
   } finally {
-    loading.value = false
+    if (loadId === latestLoadId) loading.value = false
   }
+}
+
+const skillTrackOptions = computed(() => [
+  { value: 'participant', label: t.value.adminStudentSkills.skillTrackParticipant },
+  { value: 'staff', label: t.value.adminStudentSkills.skillTrackStaff }
+])
+
+const selectSkillTrack = async (track) => {
+  if (track === skillTrack.value && track === loadedTrack.value) return
+
+  skillTrack.value = track
+  // ตัวกรอง "ทักษะเด่น" เป็นชื่อ skill ของอีกชุด จึงล้างทิ้ง
+  selectedSkill.value = 'All Skills'
+  await loadStudentSkills()
 }
 
 /* =========================
@@ -472,7 +546,13 @@ const skillShortLabel = (skillKey) => ({
   academics: t.value.adminStudentSkills.skillShortAcademics,
   internationalization: t.value.adminStudentSkills.skillShortInternationalization,
   health_promotion: t.value.adminStudentSkills.skillShortHealthPromotion,
-  nature_environmental_conservation: t.value.adminStudentSkills.skillShortNatureEnvironmentalConservation
+  nature_environmental_conservation: t.value.adminStudentSkills.skillShortNatureEnvironmentalConservation,
+  creative_leadership: t.value.adminStudentSkills.skillShortCreativeLeadership,
+  innovation: t.value.adminStudentSkills.skillShortInnovation,
+  entrepreneurship: t.value.adminStudentSkills.skillShortEntrepreneurship,
+  promote_equality: t.value.adminStudentSkills.skillShortPromoteEquality,
+  academic: t.value.adminStudentSkills.skillShortAcademic,
+  nature_environmental: t.value.adminStudentSkills.skillShortNatureEnvironmental
 }[skillKey])
 
 // ใช้นักศึกษาหลังกรองชั้นปี/สาขาด้านบน เช่น กรองสาขาเคมี + ดูแยกชั้นปี = เคมีแต่ละชั้นปี
@@ -616,10 +696,18 @@ const benchmarkSaving = ref(false)
 const benchmarkError = ref('')
 
 const openBenchmarkSettings = () => {
+  // ระหว่างกำลังสลับโหมด ค่า benchmark ยังเป็นของโหมดเดิม จึงยังไม่ให้เปิด
+  if (loading.value) return
+
   benchmarkDraft.value = [...benchmarkScores.value]
   benchmarkError.value = ''
   benchmarkModalOpen.value = true
 }
+
+// โหมดของข้อมูลเปลี่ยน (เช่นสลับโหมดขณะเปิดหน้าต่างค้างไว้) ปิดหน้าต่าง ไม่ให้บันทึกค่าของอีกชุด
+watch(loadedTrack, () => {
+  benchmarkModalOpen.value = false
+})
 
 const saveBenchmarkSettings = async () => {
   const values = benchmarkDraft.value.map(value => Number(value))
@@ -628,17 +716,23 @@ const saveBenchmarkSettings = async () => {
     return
   }
 
+  // ใช้โหมดและ key ชุดเดียวกับที่แสดงในหน้าต่างตอนกดบันทึก
+  const track = loadedTrack.value
+  const scores = Object.fromEntries(skillKeys.map((skill, index) => [skill.key, values[index]]))
+
   benchmarkSaving.value = true
   benchmarkError.value = ''
   try {
-    const scores = Object.fromEntries(skillKeys.map((skill, index) => [skill.key, values[index]]))
-    const response = await adminFetch(`${API_BASE}/api/admin/student-skills/benchmark`, {
+    const response = await adminFetch(`${API_BASE}/api/admin/student-skills/benchmark?track=${track}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scores })
     })
     const data = await response.json()
     if (!response.ok) throw new Error(data.detail || t.value.adminStudentSkills.saveBenchmarkErrorFallback)
+
+    // สลับโหมดไประหว่างรอ: บันทึกลงชุดเดิมสำเร็จแล้ว แต่ไม่เอาค่ามาทับ benchmark ของชุดที่แสดงอยู่
+    if (track !== loadedTrack.value) return
 
     benchmarkScores.value = data.benchmarkScores.map(Number)
     benchmarkDraft.value = [...benchmarkScores.value]
@@ -676,7 +770,13 @@ const growthActionPlan = computed(() => {
     academics: t.value.adminStudentSkills.growthPlanAcademics,
     internationalization: t.value.adminStudentSkills.growthPlanInternationalization,
     health_promotion: t.value.adminStudentSkills.growthPlanHealthPromotion,
-    nature_environmental_conservation: t.value.adminStudentSkills.growthPlanNatureEnvironmentalConservation
+    nature_environmental_conservation: t.value.adminStudentSkills.growthPlanNatureEnvironmentalConservation,
+    creative_leadership: t.value.adminStudentSkills.growthPlanCreativeLeadership,
+    innovation: t.value.adminStudentSkills.growthPlanInnovation,
+    entrepreneurship: t.value.adminStudentSkills.growthPlanEntrepreneurship,
+    promote_equality: t.value.adminStudentSkills.growthPlanPromoteEquality,
+    academic: t.value.adminStudentSkills.growthPlanAcademic,
+    nature_environmental: t.value.adminStudentSkills.growthPlanNatureEnvironmental
   }
 
   return plans[area] ?? '—'
@@ -778,7 +878,13 @@ const recommendationBySkill = computed(() => ({
   academics: t.value.adminStudentSkills.recommendationAcademics,
   internationalization: t.value.adminStudentSkills.recommendationInternationalization,
   health_promotion: t.value.adminStudentSkills.recommendationHealthPromotion,
-  nature_environmental_conservation: t.value.adminStudentSkills.recommendationNatureEnvironmentalConservation
+  nature_environmental_conservation: t.value.adminStudentSkills.recommendationNatureEnvironmentalConservation,
+  creative_leadership: t.value.adminStudentSkills.recommendationCreativeLeadership,
+  innovation: t.value.adminStudentSkills.recommendationInnovation,
+  entrepreneurship: t.value.adminStudentSkills.recommendationEntrepreneurship,
+  promote_equality: t.value.adminStudentSkills.recommendationPromoteEquality,
+  academic: t.value.adminStudentSkills.recommendationAcademic,
+  nature_environmental: t.value.adminStudentSkills.recommendationNatureEnvironmental
 }))
 
 const selectedSkillGaps = computed(() => {
@@ -998,6 +1104,22 @@ onBeforeUnmount(() => {
         <span>{{ t.adminStudentSkills.cohortFilterTitle }}</span>
       </div>
 
+      <!-- โหมด skill: ผู้เข้าร่วม / ผู้จัด (staff) ใช้กับทั้งหน้า -->
+      <div class="skill-track-switch" role="group" :aria-label="t.adminStudentSkills.skillTrackLabel">
+        <span>{{ t.adminStudentSkills.skillTrackLabel }}</span>
+        <button
+          v-for="option in skillTrackOptions"
+          :key="option.value"
+          type="button"
+          :class="{ active: skillTrack === option.value }"
+          :aria-pressed="skillTrack === option.value"
+          :disabled="loading && skillTrack !== option.value"
+          @click="selectSkillTrack(option.value)"
+        >
+          {{ option.label }}
+        </button>
+      </div>
+
       <label class="cohort-field">
         <span>{{ t.adminStudentSkills.yearLevelFilterLabel }}</span>
         <select v-model="selectedYearLevel">
@@ -1037,6 +1159,10 @@ onBeforeUnmount(() => {
       </button>
 
       <span class="cohort-hint">{{ t.adminStudentSkills.yearLevelHint }}</span>
+
+      <p v-if="loadedTrack === 'staff'" class="skill-track-hint">
+        {{ t.adminStudentSkills.skillTrackStaffHint }}
+      </p>
 
     </section>
 
@@ -1121,6 +1247,7 @@ onBeforeUnmount(() => {
 
           <div class="radar-title">
             <h2>{{ t.adminStudentSkills.facultyRadar }}</h2>
+            <span v-if="loadedTrack === 'staff'" class="cohort-chip track-chip">{{ t.adminStudentSkills.skillTrackStaff }}</span>
             <span v-if="cohortFilterActive" class="cohort-chip">{{ cohortLabel }}</span>
           </div>
 
@@ -1161,7 +1288,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <button class="benchmark-settings-button" type="button" @click="openBenchmarkSettings">
+            <button class="benchmark-settings-button" type="button" :disabled="loading" @click="openBenchmarkSettings">
               <Settings :size="14" /> {{ t.adminStudentSkills.benchmarkButton }}
             </button>
           </div>
@@ -1795,7 +1922,10 @@ onBeforeUnmount(() => {
         <div class="benchmark-modal-header">
           <div>
             <h3>{{ t.adminStudentSkills.benchmarkModalTitle }}</h3>
-            <p>{{ t.adminStudentSkills.benchmarkModalSubtitle }}</p>
+            <p>
+              {{ t.adminStudentSkills.benchmarkModalSubtitle }}
+              <strong class="benchmark-track">({{ loadedTrack === 'staff' ? t.adminStudentSkills.skillTrackStaff : t.adminStudentSkills.skillTrackParticipant }})</strong>
+            </p>
           </div>
           <button class="detail-close" type="button" @click="benchmarkModalOpen = false"><X :size="20" /></button>
         </div>
@@ -2235,6 +2365,59 @@ onBeforeUnmount(() => {
   margin-left: auto;
   color: #94a1b1;
   font-size: 10px;
+}
+
+.skill-track-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #66758c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.skill-track-switch button {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #d4dbe7;
+  border-radius: 999px;
+  background: #fff;
+  color: #47566e;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.skill-track-switch button:not(:disabled):hover {
+  background: #f3f6ff;
+}
+
+.skill-track-switch button.active {
+  border-color: #3264ed;
+  background: #eef3ff;
+  color: #1d3f9e;
+}
+
+.skill-track-switch button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.skill-track-hint {
+  width: 100%;
+  margin: 0;
+  color: #6f5bd3;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.track-chip {
+  background: #efeaff;
+  color: #6744c4;
+}
+
+.benchmark-track {
+  color: #315de6;
 }
 
 .radar-title {
@@ -3969,6 +4152,7 @@ td {
 .period-menu { width: 205px; }
 .benchmark-settings-button { padding:5px 9px; display:flex; align-items:center; gap:5px; border:1px solid #d4dbe7; border-radius:5px; background:#fff; color:#315de6; font-size:11px; font-weight:700; cursor:pointer; }
 .benchmark-settings-button:hover { background:#f3f6ff; }
+.benchmark-settings-button:disabled { opacity:.55; cursor:wait; }
 .benchmark-modal { width:min(620px, 94vw); max-height:90vh; overflow:auto; background:#fff; border-radius:14px; box-shadow:0 20px 60px rgba(20,35,70,.2); }
 .benchmark-modal-header { padding:18px 20px; display:flex; justify-content:space-between; gap:16px; border-bottom:1px solid #edf0f5; }
 .benchmark-modal-header h3 { margin:0; color:#1d3268; font-size:18px; }

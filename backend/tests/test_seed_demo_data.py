@@ -39,8 +39,19 @@ def test_seed_creates_demo_data_and_remove_keeps_real_data(db_session):
 
     result = seed_demo_data(db_session, today=date(2026, 9, 28))
 
-    assert result == {"students": 60, "activities": 8, "memberships": result["memberships"], "year": 2026}
+    assert result == {
+        "students": 60,
+        "activities": 8,
+        "memberships": result["memberships"],
+        "mock_student_activities": 5,
+        "year": 2026,
+    }
     assert result["memberships"] >= 60 * 2
+
+    # นักศึกษาจำลองของหน้าฝั่งนักศึกษาได้เข้ากิจกรรม demo และได้สาขา (เดิมว่าง)
+    mock_student = db_session.get(Student, "670510659")
+    assert mock_student.major == "เคมี"
+    assert db_session.query(ActivityMember).filter_by(student_id="670510659").count() == 5
 
     demo_students = [
         student for student in db_session.query(Student).all()
@@ -68,3 +79,5 @@ def test_seed_creates_demo_data_and_remove_keeps_real_data(db_session):
 
     assert [student.student_id for student in db_session.query(Student).all()] == ["670510659"]
     assert [activity.name for activity in db_session.query(Activity).all()] == ["Real Activity"]
+    # การเข้าร่วมกิจกรรม demo ของนักศึกษาจำลองถูกลบตามกิจกรรมไปด้วย
+    assert db_session.query(ActivityMember).filter_by(student_id="670510659").count() == 0
