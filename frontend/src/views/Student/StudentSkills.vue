@@ -43,6 +43,50 @@ const selectedPeriod = ref('')
 const showMySkills = ref(true)
 const showFacultyAverage = ref(true)
 
+// กราฟเปรียบเทียบ: major = กิจกรรมสาขา vs ค่าเฉลี่ยสาขา,
+// faculty = กิจกรรมคณะ vs ค่าเฉลี่ยคณะ (ไม่นับกิจกรรมภายนอก)
+const comparison = ref('major')
+
+const comparisonOptions = computed(() => [
+  {
+    key: 'major',
+    label: t.value.studentSkills.comparisonMajorOption
+  },
+  {
+    key: 'faculty',
+    label: t.value.studentSkills.comparisonFacultyOption
+  }
+])
+
+const isMajorComparison = computed(() => comparison.value === 'major')
+
+const comparisonText = computed(() => {
+  const text = t.value.studentSkills
+
+  return isMajorComparison.value
+    ? {
+        hint: text.comparisonMajorHint,
+        mySkillsLegend: text.mySkillsMajorLegend,
+        averageLegend: text.majorAverageLegend
+      }
+    : {
+        hint: text.comparisonFacultyHint,
+        mySkillsLegend: text.mySkillsFacultyLegend,
+        averageLegend: text.facultyAverageLegend
+      }
+})
+
+const hasStudentMajor = computed(() =>
+  Boolean((student.value?.major || '').trim())
+)
+
+const scopeLabels = computed(() => ({
+  major: t.value.studentSkills.scopeMajor,
+  faculty: t.value.studentSkills.scopeFaculty,
+  external: t.value.studentSkills.scopeExternal,
+  other_major: t.value.studentSkills.scopeOtherMajor
+}))
+
 const trackOptions = computed(() => [
   {
     key: 'participant',
@@ -123,12 +167,18 @@ const currentPeriod = computed(() =>
   }
 )
 
-const currentSkills = computed(() =>
-  currentPeriod.value.skills || {}
+const currentComparison = computed(() =>
+  currentPeriod.value.comparisons?.[comparison.value] || {}
 )
 
+// ทักษะของฉันเฉพาะกิจกรรมในขอบเขตที่เลือก (สาขา / คณะ)
+const currentSkills = computed(() =>
+  currentComparison.value.skills || {}
+)
+
+// ค่าเฉลี่ยของขอบเขตที่เลือก (ค่าเฉลี่ยสาขา / ค่าเฉลี่ยคณะ)
 const facultySkills = computed(() =>
-  currentPeriod.value.facultyAverage || {}
+  currentComparison.value.average || {}
 )
 
 const currentActivities = computed(() =>
@@ -751,6 +801,34 @@ onMounted(() => loadSkills())
           </span>
         </div>
 
+        <div class="comparison-bar">
+          <div
+            class="track-toggle comparison-toggle"
+            role="group"
+            :aria-label="t.studentSkills.comparisonLabel"
+          >
+            <button
+              v-for="option in comparisonOptions"
+              :key="option.key"
+              type="button"
+              class="track-option"
+              :class="{ active: option.key === comparison }"
+              :aria-pressed="option.key === comparison ? 'true' : 'false'"
+              @click="comparison = option.key"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+
+          <p class="comparison-hint">
+            {{
+              isMajorComparison && !hasStudentMajor
+                ? t.studentSkills.comparisonNoMajor
+                : comparisonText.hint
+            }}
+          </p>
+        </div>
+
         <div class="overview-grid">
           <!-- LEFT -->
           <div class="skill-column">
@@ -862,7 +940,7 @@ onMounted(() => loadSkills())
                   @click="showMySkills = !showMySkills"
                 >
                   <i class="legend-dot student-dot"></i>
-                  ทักษะของฉัน
+                  {{ comparisonText.mySkillsLegend }}
                 </button>
 
                 <button
@@ -872,7 +950,7 @@ onMounted(() => loadSkills())
                   @click="showFacultyAverage = !showFacultyAverage"
                 >
                   <i class="legend-line faculty-line"></i>
-                  ค่าเฉลี่ยของคณะ
+                  {{ comparisonText.averageLegend }}
                 </button>
               </div>
 
@@ -975,6 +1053,13 @@ onMounted(() => loadSkills())
                 >
                   <td class="activity-name">
                     {{ activity.title }}
+                    <span
+                      v-if="activity.scope"
+                      class="scope-badge"
+                      :class="`scope-${activity.scope}`"
+                    >
+                      {{ scopeLabels[activity.scope] || activity.scope }}
+                    </span>
                   </td>
 
                   <td>
@@ -1307,6 +1392,44 @@ onMounted(() => loadSkills())
 .track-hint svg {
   flex: none;
   margin-top: 1px;
+}
+
+.comparison-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: -10px 0 20px;
+}
+
+.comparison-hint {
+  flex: 1 1 260px;
+  margin: 0;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.scope-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #475467;
+  font-size: 9px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.scope-major {
+  background: #e8f0ff;
+  color: #2859bd;
+}
+
+.scope-faculty {
+  background: #dcfce7;
+  color: #16753a;
 }
 
 .overview-card,

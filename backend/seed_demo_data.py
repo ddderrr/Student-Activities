@@ -10,6 +10,10 @@
 
 นักศึกษาจำลองของหน้าฝั่งนักศึกษา (MOCK_STUDENT_ID ใน frontend/src/constants/currentStudent.js)
 จะถูกเพิ่มเข้ากิจกรรม demo ด้วย หน้า My Skills จึงมีข้อมูลให้ดู (--remove ลบแค่การเข้าร่วม ไม่ลบตัวนักศึกษา)
+
+กิจกรรม demo มี 2 แบบ ให้กราฟเปรียบเทียบ "กิจกรรมสาขา" / "กิจกรรมคณะ" มีข้อมูลทั้งคู่:
+- กิจกรรมคณะ (ACTIVITY_TEMPLATES): Activity.major = None
+- กิจกรรมสาขา (MAJOR_ACTIVITY_TEMPLATES): Activity.major = ชื่อสาขา
 """
 
 import random
@@ -46,6 +50,12 @@ MOCK_STUDENT_ACTIVITIES = [
     ("community_volunteer", "participant"),
     ("exchange_program", "participant"),
     ("lanna_exhibition", "organizer"),
+    # กิจกรรมของสาขาเคมี (สาขาของนักศึกษาจำลอง)
+    ("chem_open_house", "participant"),
+    ("chem_school_camp", "participant"),
+    ("chem_green_workshop", "organizer"),
+    # กิจกรรมของสาขาอื่น: ไม่นับในกราฟสาขา / คณะ (แสดงป้าย "สาขาอื่น" ในตาราง)
+    ("cs_tech_talk", "participant"),
 ]
 
 FIRST_NAMES = [
@@ -85,6 +95,47 @@ ACTIVITY_TEMPLATES = [
      {"academics": 4, "internationalization": 2, "health_promotion": 1},
      {"innovation": 5, "entrepreneurship": 4}),
 ]
+
+# กิจกรรมที่สาขาเป็นเจ้าของ (key, สาขา, ชื่อ, เดือน, participant skills, staff skills)
+MAJOR_ACTIVITY_TEMPLATES = [
+    ("chem_open_house", "เคมี", "Chemistry Open House", 3,
+     {"academics": 5, "internationalization": 2, "arts_culture_traditions": 2},
+     {"academic": 4, "innovation": 3}),
+    ("chem_school_camp", "เคมี", "ค่ายเคมีสัญจรสู่โรงเรียน", 8,
+     {"volunteerism": 4, "academics": 4, "health_promotion": 2},
+     {"creative_leadership": 4, "promote_equality": 3}),
+    ("chem_green_workshop", "เคมี", "Green Chemistry Workshop", 9,
+     {"nature_environmental_conservation": 4, "health_promotion": 3, "academics": 3},
+     {"nature_environmental": 4, "innovation": 4}),
+    ("physics_star_night", "ฟิสิกส์และวัสดุศาสตร์", "Physics Night ดูดาว", 2,
+     {"academics": 4, "nature_environmental_conservation": 3},
+     {"academic": 4, "creative_leadership": 3}),
+    ("materials_expo", "ฟิสิกส์และวัสดุศาสตร์", "Materials Innovation Expo", 8,
+     {"academics": 5, "internationalization": 3},
+     {"innovation": 5, "entrepreneurship": 3}),
+    ("cs_coding_camp", "วิทยาการคอมพิวเตอร์", "Coding Camp สำหรับน้องมัธยม", 7,
+     {"volunteerism": 4, "academics": 4},
+     {"creative_leadership": 4, "promote_equality": 3}),
+    ("cs_tech_talk", "วิทยาการคอมพิวเตอร์", "CS Tech Talk", 9,
+     {"academics": 5, "internationalization": 4},
+     {"academic": 4, "entrepreneurship": 4}),
+    ("bio_field_trip", "ชีววิทยา", "ออกภาคสนามสำรวจความหลากหลายทางชีวภาพ", 4,
+     {"nature_environmental_conservation": 5, "academics": 3},
+     {"nature_environmental": 5, "academic": 3}),
+    ("bio_health_day", "ชีววิทยา", "Bio Health Day", 8,
+     {"health_promotion": 5, "volunteerism": 3},
+     {"promote_equality": 4, "creative_leadership": 3}),
+    ("stat_data_challenge", "สถิติ", "Data Challenge สถิติ", 3,
+     {"academics": 5, "internationalization": 2},
+     {"innovation": 4, "academic": 4}),
+    ("stat_sports_day", "สถิติ", "กีฬาสถิติสัมพันธ์", 8,
+     {"health_promotion": 4, "arts_culture_traditions": 3},
+     {"creative_leadership": 4, "entrepreneurship": 2}),
+]
+
+# โอกาสที่นักศึกษาเข้าร่วมกิจกรรมของสาขาตัวเอง / ของสาขาอื่น (ต่อกิจกรรม)
+OWN_MAJOR_JOIN_CHANCE = 0.6
+OTHER_MAJOR_JOIN_CHANCE = 0.03
 
 # น้ำหนักความสนใจของแต่ละสาขา (ยิ่งมากยิ่งมีโอกาสเข้าร่วม) ให้แต่ละสาขามีรูป skill ต่างกัน
 MAJOR_INTERESTS = {
@@ -145,18 +196,19 @@ def seed_demo_data(db: Session, today: date | None = None) -> dict:
     academic_year = report_academic_year_be(year, "ALL", today)
 
     activities = {}
-    for key, name, month, participant_skills, staff_skills in ACTIVITY_TEMPLATES:
-        start_at = datetime(year, month, 10, 9, 0, 0)
+
+    def add_activity(key, name, month, participant_skills, staff_skills, major=None):
         activity = Activity(
             activity_type="Demo",
             name=f"{DEMO_ACTIVITY_PREFIX}{name}",
-            start_at=start_at,
+            start_at=datetime(year, month, 10, 9, 0, 0),
             end_at=datetime(year, month, 10, 16, 0, 0),
-            department="คณะวิทยาศาสตร์",
+            department=major or "คณะวิทยาศาสตร์",
             responsible_person="Demo Staff",
             advisor="",
             location="มหาวิทยาลัยเชียงใหม่",
             description="ข้อมูลตัวอย่างสำหรับทดสอบหน้า Student Skills",
+            major=major,
             skill_levels=[
                 ActivitySkill(skill_key=skill_key, target_role="participant", level=level)
                 for skill_key, level in participant_skills.items()
@@ -167,6 +219,12 @@ def seed_demo_data(db: Session, today: date | None = None) -> dict:
         )
         db.add(activity)
         activities[key] = activity
+
+    for key, name, month, participant_skills, staff_skills in ACTIVITY_TEMPLATES:
+        add_activity(key, name, month, participant_skills, staff_skills)
+
+    for key, major, name, month, participant_skills, staff_skills in MAJOR_ACTIVITY_TEMPLATES:
+        add_activity(key, name, month, participant_skills, staff_skills, major=major)
 
     db.flush()
 
@@ -211,6 +269,18 @@ def seed_demo_data(db: Session, today: date | None = None) -> dict:
                     pool = [key for key in eligible if key not in joined]
                     joined.append(rng.choices(pool, [weights[key] for key in pool])[0])
 
+                # กิจกรรมสาขา: ส่วนใหญ่เข้ากิจกรรมของสาขาตัวเอง บางครั้งไปร่วมกิจกรรมสาขาอื่น
+                for key, activity_major, _name, month, _p, _s in MAJOR_ACTIVITY_TEMPLATES:
+                    if level == 1 and month < 7:
+                        continue
+                    chance = (
+                        OWN_MAJOR_JOIN_CHANCE
+                        if activity_major == major
+                        else OTHER_MAJOR_JOIN_CHANCE
+                    )
+                    if rng.random() < chance:
+                        joined.append(key)
+
                 for key in joined:
                     # รุ่นพี่มีโอกาสเป็นผู้จัดมากกว่า
                     role = "organizer" if rng.random() < 0.05 * level else "participant"
@@ -254,6 +324,7 @@ def seed_demo_data(db: Session, today: date | None = None) -> dict:
     return {
         "students": student_count,
         "activities": len(activities),
+        "major_activities": len(MAJOR_ACTIVITY_TEMPLATES),
         "memberships": membership_count,
         "mock_student_activities": len(MOCK_STUDENT_ACTIVITIES),
         "year": year,
@@ -270,7 +341,8 @@ def main() -> None:
         result = seed_demo_data(db)
         print(
             f"เพิ่มข้อมูล demo แล้ว: นักศึกษา {result['students']} คน, "
-            f"กิจกรรม {result['activities']} กิจกรรม, "
+            f"กิจกรรม {result['activities']} กิจกรรม "
+            f"(กิจกรรมสาขา {result['major_activities']}), "
             f"การเข้าร่วม {result['memberships']} รายการ (ปี {result['year']}) "
             f"+ นักศึกษาจำลอง {MOCK_STUDENT_ID} เข้าร่วม {result['mock_student_activities']} กิจกรรม"
         )

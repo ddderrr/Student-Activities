@@ -329,6 +329,7 @@ const loadStudentSkills = async () => {
     loadedTrack.value = data.track || skillTrack.value
     skillKeys.splice(0, skillKeys.length, ...SKILL_KEYS_BY_TRACK[loadedTrack.value])
     students.value = Array.isArray(data.students) ? data.students : []
+    facultyActivityAverage.value = data.facultyActivityAverage || {}
 
     // หน้ารายละเอียดนักศึกษาที่เปิดค้างไว้ ให้ใช้ข้อมูลชุดใหม่ของคนเดิม (ถ้าไม่มีในชุดนี้ให้ปิด)
     if (selectedStudent.value) {
@@ -472,9 +473,6 @@ const skillAveragesOf = (list) => {
 
 // ค่าเฉลี่ยของกลุ่มที่เลือก (radar หลัก, Top / Growth Area)
 const facultySkillAverages = computed(() => skillAveragesOf(semesterStudents.value))
-
-// ค่าเฉลี่ยทั้งคณะ (ไม่กรองชั้นปี/สาขา) ใช้เทียบในหน้ารายละเอียดนักศึกษา
-const wholeFacultySkillAverages = computed(() => skillAveragesOf(students.value))
 
 /* =========================
    Radar calculation
@@ -814,21 +812,29 @@ const filteredStudents = computed(() => {
 const selectedStudent = ref(null)
 const imageErrors = ref({})
 
+// กราฟรายบุคคลสลับได้ 2 แบบ (ใช้กับ radar, คะแนนรายทักษะ และ Skill Gap):
+// MAJOR   = ทักษะจากกิจกรรมสาขาของนักศึกษา   vs ค่าเฉลี่ยกิจกรรมสาขาของนักศึกษาสาขาเดียวกัน
+// FACULTY = ทักษะจากกิจกรรมคณะของนักศึกษา vs ค่าเฉลี่ยกิจกรรมคณะของนักศึกษาทั้งคณะ
+// ไม่นับกิจกรรมภายนอกและกิจกรรมของสาขาอื่น
+const gapBasis = ref('MAJOR')
+const facultyActivityAverage = ref({})
+
+const scopedSkillsField = computed(() =>
+  gapBasis.value === 'MAJOR' ? 'majorSkills' : 'facultySkills'
+)
+
+const scopedSkillValueOf = (student, skillKey) =>
+  skillValueOf({ skills: student?.[scopedSkillsField.value] }, skillKey)
+
 const selectedStudentRadarPoints = computed(() => {
   if (!selectedStudent.value) return buildRadarPoints([0, 0, 0, 0, 0, 0])
 
   return buildRadarPoints(
     // SVG polygon needs six coordinates; missing values use center only for drawing.
     // The score cards below display these values as N/A, never as 0.
-    skillKeys.map(skill => skillValueOf(selectedStudent.value, skill.key) ?? 0)
+    skillKeys.map(skill => scopedSkillValueOf(selectedStudent.value, skill.key) ?? 0)
   )
 })
-
-const selectedFacultyRadarPoints = computed(() =>
-  buildRadarPoints(
-    skillKeys.map(skill => wholeFacultySkillAverages.value[skill.key] ?? 0)
-  )
-)
 
 // นักศึกษาทุกคนในสาขาเดียวกัน (ในปี/ภาคเรียนที่เลือก ไม่ขึ้นกับตัวกรองด้านบน) รวมคนที่เลือกด้วย
 const selectedMajorStudents = computed(() => {
@@ -838,20 +844,28 @@ const selectedMajorStudents = computed(() => {
   return students.value.filter(student => (student.major || '') === major)
 })
 
-const selectedMajorAverages = computed(() => skillAveragesOf(selectedMajorStudents.value))
+const selectedMajorAverages = computed(() =>
+  skillAveragesOf(
+    selectedMajorStudents.value.map(student => ({ skills: student.majorSkills }))
+  )
+)
 
-const selectedMajorRadarPoints = computed(() =>
+// ค่าเฉลี่ยที่ใช้เทียบตามกราฟที่เลือก
+const selectedCompareAverages = computed(() =>
+  gapBasis.value === 'MAJOR'
+    ? selectedMajorAverages.value
+    : facultyActivityAverage.value
+)
+
+const selectedCompareRadarPoints = computed(() =>
   buildRadarPoints(
-    skillKeys.map(skill => selectedMajorAverages.value[skill.key] ?? 0)
+    skillKeys.map(skill => selectedCompareAverages.value[skill.key] ?? 0)
   )
 )
 
 const selectedMajorLabel = computed(() =>
   selectedStudent.value ? majorLabel(selectedStudent.value.major) : ''
 )
-
-// Skill Gap เทียบกับค่าเฉลี่ยสาขา (ค่าเริ่มต้น) หรือค่าเฉลี่ยคณะ
-const gapBasis = ref('MAJOR')
 
 const formatScore = (value) => (value === null || value === undefined ? '—' : value.toFixed(1))
 
@@ -890,13 +904,11 @@ const recommendationBySkill = computed(() => ({
 const selectedSkillGaps = computed(() => {
   if (!selectedStudent.value) return []
 
-  const basisAverages = gapBasis.value === 'MAJOR'
-    ? selectedMajorAverages.value
-    : wholeFacultySkillAverages.value
+  const basisAverages = selectedCompareAverages.value
 
   return skillKeys
     .map(skill => {
-      const studentScore = skillValueOf(selectedStudent.value, skill.key)
+      const studentScore = scopedSkillValueOf(selectedStudent.value, skill.key)
       const compareScore = Number(basisAverages[skill.key] ?? 0)
 
       // ไม่มีข้อมูลของนักศึกษาคนนี้ = ไม่เอาไปสรุปว่าเป็น skill gap
@@ -2005,17 +2017,42 @@ onBeforeUnmount(() => {
             <div class="detail-section-heading">
               <div>
                 <h4>{{ t.adminStudentSkills.skillAnalysis }}</h4>
-                <p>{{ t.adminStudentSkills.skillAnalysisSub }}</p>
+                <p>{{ gapBasis === 'MAJOR' ? t.adminStudentSkills.skillAnalysisSubMajor : t.adminStudentSkills.skillAnalysisSubFaculty }}</p>
               </div>
 
-              <div class="detail-legend">
-                <span><i class="legend-swatch student"></i> {{ t.adminStudentSkills.student }}</span>
-                <span :title="selectedMajorLabel">
-                  <i class="legend-swatch major"></i>
-                  {{ t.adminStudentSkills.majorAvgShort }} ({{ selectedMajorStudents.length }})
-                </span>
-                <span><i class="legend-swatch faculty"></i> {{ t.adminStudentSkills.facultyAvgShort }}</span>
+              <div class="gap-basis-switch" role="group" :aria-label="t.adminStudentSkills.gapCompareLabel">
+                <span>{{ t.adminStudentSkills.gapCompareLabel }}</span>
+                <button
+                  type="button"
+                  :class="{ active: gapBasis === 'MAJOR' }"
+                  :aria-pressed="gapBasis === 'MAJOR'"
+                  @click="gapBasis = 'MAJOR'"
+                >
+                  {{ t.adminStudentSkills.gapCompareMajor }}
+                </button>
+                <button
+                  type="button"
+                  :class="{ active: gapBasis === 'FACULTY' }"
+                  :aria-pressed="gapBasis === 'FACULTY'"
+                  @click="gapBasis = 'FACULTY'"
+                >
+                  {{ t.adminStudentSkills.gapCompareFaculty }}
+                </button>
               </div>
+            </div>
+
+            <div class="detail-legend">
+              <span>
+                <i class="legend-swatch student"></i>
+                {{ gapBasis === 'MAJOR' ? t.adminStudentSkills.studentMajorActivities : t.adminStudentSkills.studentFacultyActivities }}
+              </span>
+              <span v-if="gapBasis === 'MAJOR'" :title="selectedMajorLabel">
+                <i class="legend-swatch major"></i>
+                {{ t.adminStudentSkills.majorAvgShort }} ({{ selectedMajorStudents.length }})
+              </span>
+              <span v-else>
+                <i class="legend-swatch faculty"></i> {{ t.adminStudentSkills.facultyAvgShort }}
+              </span>
             </div>
 
             <div class="detail-radar-wrap">
@@ -2034,8 +2071,10 @@ onBeforeUnmount(() => {
                 <line x1="250" y1="195" x2="120" y2="270" class="radar-axis" />
                 <line x1="250" y1="195" x2="120" y2="120" class="radar-axis" />
 
-                <polygon :points="selectedFacultyRadarPoints" class="student-faculty-area" />
-                <polygon :points="selectedMajorRadarPoints" class="student-major-area" />
+                <polygon
+                  :points="selectedCompareRadarPoints"
+                  :class="gapBasis === 'MAJOR' ? 'student-major-area' : 'student-faculty-area'"
+                />
                 <polygon :points="selectedStudentRadarPoints" class="student-profile-area" />
 
                 <text
@@ -2065,11 +2104,10 @@ onBeforeUnmount(() => {
                 <div class="score-item-text">
                   <span>{{ skillDisplay(skill.label) }}</span>
                   <small>
-                    <i class="legend-swatch major"></i>{{ formatScore(selectedMajorAverages[skill.key]) }}
-                    <i class="legend-swatch faculty"></i>{{ formatScore(wholeFacultySkillAverages[skill.key]) }}
+                    <i class="legend-swatch" :class="gapBasis === 'MAJOR' ? 'major' : 'faculty'"></i>{{ formatScore(selectedCompareAverages[skill.key]) }}
                   </small>
                 </div>
-                <strong>{{ skillValueOf(selectedStudent, skill.key) !== null ? skillValueOf(selectedStudent, skill.key).toFixed(1) : t.adminStudentSkills.notAvailable }}</strong>
+                <strong>{{ scopedSkillValueOf(selectedStudent, skill.key) !== null ? scopedSkillValueOf(selectedStudent, skill.key).toFixed(1) : t.adminStudentSkills.notAvailable }}</strong>
               </div>
             </div>
           </section>
@@ -2093,26 +2131,6 @@ onBeforeUnmount(() => {
               <div class="gap-heading">
                 <h4>{{ t.adminStudentSkills.skillGapAnalysis }}</h4>
                 <p>{{ gapBasis === 'MAJOR' ? t.adminStudentSkills.skillGapSubMajor : t.adminStudentSkills.skillGapSub }}</p>
-              </div>
-
-              <div class="gap-basis-switch" role="group" :aria-label="t.adminStudentSkills.gapCompareLabel">
-                <span>{{ t.adminStudentSkills.gapCompareLabel }}</span>
-                <button
-                  type="button"
-                  :class="{ active: gapBasis === 'MAJOR' }"
-                  :aria-pressed="gapBasis === 'MAJOR'"
-                  @click="gapBasis = 'MAJOR'"
-                >
-                  {{ t.adminStudentSkills.gapCompareMajor }}
-                </button>
-                <button
-                  type="button"
-                  :class="{ active: gapBasis === 'FACULTY' }"
-                  :aria-pressed="gapBasis === 'FACULTY'"
-                  @click="gapBasis = 'FACULTY'"
-                >
-                  {{ t.adminStudentSkills.gapCompareFaculty }}
-                </button>
               </div>
 
               <div v-if="selectedTopGaps.length" class="gap-list">
@@ -3895,6 +3913,19 @@ td {
   border-color: #3264ed;
   background: #eef3ff;
   color: #1d3f9e;
+}
+
+/* สวิตช์ สาขา / คณะ อยู่ที่หัวกราฟรายบุคคล ใช้ร่วมกับ Skill Gap */
+.detail-section-heading .gap-basis-switch {
+  flex-shrink: 0;
+  margin: 2px 0 0;
+}
+
+.radar-detail-panel > .detail-legend {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
 }
 
 .student-score-grid {
