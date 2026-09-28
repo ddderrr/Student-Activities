@@ -70,11 +70,13 @@ def create_external_activity(db_session, student_id, start_date, **overrides) ->
 
 
 def test_months_param_narrows_participants_and_activities_to_that_month(client, db_session):
+    # "กิจกรรม" ของ Dashboard นับเฉพาะกิจกรรมของคณะ (Activity) จึงใช้กิจกรรม
+    # ของคณะทั้งสองเดือนตรงนี้ (ไม่ใช้กิจกรรมภายนอก เพราะไม่ถูกนับแล้ว)
     student_a = create_student(db_session, "670510001")
     student_b = create_student(db_session, "670510002")
 
     create_activity_with_member(db_session, student_a.student_id, datetime(2026, 3, 15))
-    create_external_activity(db_session, student_b.student_id, date(2026, 5, 20))
+    create_activity_with_member(db_session, student_b.student_id, datetime(2026, 5, 20))
 
     march_only = client.get("/api/admin/dashboard?year=2026&months=3").json()
     assert march_only["totalActivities"] == 1
@@ -92,10 +94,16 @@ def test_months_param_narrows_participants_and_activities_to_that_month(client, 
     assert april_only["totalActivities"] == 0
     assert april_only["totalParticipants"] == 0
 
+    # กิจกรรมภายนอกที่อนุมัติแล้วไม่ควรถูกนับเลย ไม่ว่าจะกรองเดือนไหน
+    create_external_activity(db_session, student_a.student_id, date(2026, 3, 15))
+    unaffected = client.get("/api/admin/dashboard?year=2026&months=3").json()
+    assert unaffected["totalActivities"] == march_only["totalActivities"]
+    assert unaffected["totalParticipants"] == march_only["totalParticipants"]
+
 
 def test_months_param_overrides_semester_param(client, db_session):
     student = create_student(db_session, "670510003")
-    create_external_activity(db_session, student.student_id, date(2026, 7, 10))
+    create_activity_with_member(db_session, student.student_id, datetime(2026, 7, 10))
 
     # semester=SEMESTER_1 (Jan-Jun) would normally exclude a July activity,
     # but an explicit months= should take priority over the semester bucket.

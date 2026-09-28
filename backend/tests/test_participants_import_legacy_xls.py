@@ -1,10 +1,13 @@
 from datetime import datetime
 
 from models import Activity, ActivityMember, Student
+from tests.conftest import CS_ADMIN_EMAIL
 from tests.test_students_import_legacy_xls import (
     XLS_CONTENT_TYPE,
     build_legacy_xls,
 )
+
+CS_ADMIN_HEADERS = {"X-Admin-Email": CS_ADMIN_EMAIL}
 
 
 def create_activity(db_session) -> Activity:
@@ -160,3 +163,51 @@ def test_update_participant_role_without_email_after_import(
         .one_or_none()
     )
     assert membership.role == "organizer"
+
+
+def test_branch_admin_import_legacy_xls_keeps_students_visible_to_self(
+    client,
+    db_session,
+):
+    # กิจกรรมของคณะเห็นร่วมกันทุกแอดมิน แต่รายชื่อผู้เข้าร่วม (Student.major)
+    # ถูกกรองด้วย scope_student_query จึงต้องเช็คว่านักศึกษาที่เพิ่งถูก
+    # import ด้วยไฟล์ .xls (ไม่มี column major) ยังเห็นได้โดยแอดมินสาขาที่
+    # เป็นคน import เอง ไม่ใช่หลุดออกจาก scope ของตัวเอง
+    activity = create_activity(db_session)
+
+    content = build_legacy_xls(
+        [
+            [1, "670510670", "จักริน ชวชาติ", "คณะวิทยาศาสตร์", "10:05:00"],
+        ]
+    )
+
+    preview_response = client.post(
+        f"/api/activities/{activity.id}/participants/import/preview",
+        files={"file": ("checkin.xls", content, XLS_CONTENT_TYPE)},
+        headers=CS_ADMIN_HEADERS,
+    )
+    assert preview_response.status_code == 200
+    students = preview_response.json()["students"]
+
+    confirm_response = client.post(
+        f"/api/activities/{activity.id}/participants/import/confirm",
+        json={"students": students},
+        headers=CS_ADMIN_HEADERS,
+    )
+    assert confirm_response.status_code == 200
+
+    student = db_session.get(Student, "670510670")
+    assert student is not None
+    assert student.major == "วิทยาการคอมพิวเตอร์"
+
+    participants_response = client.get(
+        f"/api/activities/{activity.id}/participants",
+        headers=CS_ADMIN_HEADERS,
+    )
+    assert participants_response.status_code == 200
+
+    visible_ids = {
+        item["student_id"]
+        for item in participants_response.json()["students"]
+    }
+    assert "670510670" in visible_ids

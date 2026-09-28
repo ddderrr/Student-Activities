@@ -3,6 +3,8 @@ import { ref, computed, reactive, onMounted } from 'vue'
 import { CalendarDays, Users, CheckCircle, TrendingUp } from 'lucide-vue-next'
 import { useLanguage } from '../../composables/useLanguage'
 import { adminFetch } from '../../constants/currentAdmin'
+import BranchFilterSelect from '../../components/common/BranchFilterSelect.vue'
+import { ALL_BRANCHES_VALUE } from '../../constants/branches'
 
 const { t } = useLanguage()
 const API_BASE = 'http://127.0.0.1:8000'
@@ -44,6 +46,8 @@ const hasSelectedChartItem = ref(false)
 // Semester 1 = JAN-JUN, Semester 2 = JUL-DEC
 const selectedYear = ref(now.getFullYear())
 const selectedSemester = ref('ALL')
+// filter สาขา สำหรับแอดมินกลางเท่านั้น (BranchFilterSelect ซ่อนตัวเองให้แอดมินสาขา)
+const selectedBranch = ref(ALL_BRANCHES_VALUE)
 const selectedSkillRole = ref('participant')
 const loading = ref(false)
 const error = ref(null)
@@ -137,6 +141,10 @@ const fetchDashboardSummary = async () => {
     params.set('months', selectedMonthNumbers.value.join(','))
   }
 
+  if (selectedBranch.value !== ALL_BRANCHES_VALUE) {
+    params.set('major', selectedBranch.value)
+  }
+
   const response = await adminFetch(`${API_BASE}/api/admin/dashboard?${params.toString()}`)
   if (!response.ok) throw new Error('Cannot load dashboard summary')
 
@@ -170,6 +178,11 @@ const changeSemester = () => {
   return refreshSummary()
 }
 
+const changeBranch = () => {
+  resetSelectedItem()
+  return fetchDashboard()
+}
+
 const selectChartItem = (month) => {
   if (selectedItem.value === month && hasSelectedChartItem.value) return
   selectedItem.value = month
@@ -182,28 +195,35 @@ const fetchDashboard = async () => {
   error.value = null
 
   try {
-    // 1) Activity ทั้งหมดในครั้งเดียว: list มี status / staff_skills / participant_skills
-    //    อยู่แล้ว ไม่ต้องยิง /api/activities/{id} ทีละกิจกรรม
-    // 2) กิจกรรมภายนอกที่อนุมัติแล้ว นับรวมใน "การเติบโตของกิจกรรม" ด้วย
-    const [activitiesResponse, externalResponse] = await Promise.all([
-      adminFetch(`${API_BASE}/api/activities`),
-      adminFetch(`${API_BASE}/api/admin/dashboard/external-activities`)
-    ])
+    // Activity ทั้งหมดในครั้งเดียว: list มี status / staff_skills / participant_skills
+    // อยู่แล้ว ไม่ต้องยิง /api/activities/{id} ทีละกิจกรรม
+    // owned_only=true: หน้า Dashboard ไม่ควรนับกิจกรรมที่ยังไม่มีเจ้าของ
+    // (major=None) เป็นสถิติของสาขาไหนสาขาหนึ่ง ต่างจากหน้า Activities list
+    // ที่ยังให้แอดมินสาขาเห็น/จัดการกิจกรรมที่ยังไม่มีเจ้าของได้ตามเดิม
+    //
+    // "กิจกรรม" ในหน้านี้หมายถึงกิจกรรมของคณะ (Activity) เท่านั้น ไม่รวม
+    // กิจกรรมภายนอกที่นักศึกษายื่นเอง แม้จะอนุมัติแล้วก็ตาม เพื่อให้ตัวเลข/
+    // กราฟ/skill distribution ตรงกับหน้า Activities list และ KPI ฝั่ง
+    // /api/admin/dashboard เสมอ (ก่อนหน้านี้เอามารวมกันเงียบ ๆ ทำให้ตัวเลข
+    // สองหน้าไม่ตรงกัน)
+    const activitiesParams = new URLSearchParams({ owned_only: 'true' })
+    if (selectedBranch.value !== ALL_BRANCHES_VALUE) {
+      activitiesParams.set('major', selectedBranch.value)
+    }
+
+    const activitiesResponse = await adminFetch(
+      `${API_BASE}/api/activities?${activitiesParams.toString()}`
+    )
     if (!activitiesResponse.ok) throw new Error('Cannot load activities')
     const activitiesPayload = await activitiesResponse.json()
     const activities = Array.isArray(activitiesPayload.activities)
       ? activitiesPayload.activities
       : []
 
-    const externalPayload = externalResponse.ok ? await externalResponse.json() : null
-    const externalActivities = Array.isArray(externalPayload?.external_activities)
-      ? externalPayload.external_activities
-      : []
-
-    activityDetails.value = [...activities, ...externalActivities]
+    activityDetails.value = activities
 
     // ถ้าปีปัจจุบันไม่มีข้อมูลก็ยังคงเลือกได้ตามเดิม
-    // Summary จะกรองตามปี + Semester ที่ผู้ใช้เลือก (รวมกิจกรรมภายนอกแล้วฝั่ง backend)
+    // Summary จะกรองตามปี + Semester ที่ผู้ใช้เลือก
     await fetchDashboardSummary()
   } catch (err) {
     console.error('Dashboard API Error:', err)
@@ -416,6 +436,8 @@ const summaryCards = computed(() => [
       </div>
 
       <div class="history-filter-controls">
+        <BranchFilterSelect v-model="selectedBranch" @update:model-value="changeBranch" />
+
         <label class="filter-field">
           <span>{{ t.adminDashboard.academicYear }}</span>
           <select v-model.number="selectedYear" @change="changeYear">

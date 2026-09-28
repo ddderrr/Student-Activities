@@ -6,13 +6,14 @@
 """
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from admin_auth import AdminContext
-from models import ExternalActivity, Student, StudentRequest
+from models import Activity, ExternalActivity, Student, StudentRequest
 
 
 OTHER_MAJOR_DETAIL = "ไม่มีสิทธิ์เข้าถึงข้อมูลของนักศึกษานอกสาขาที่ดูแล"
+OTHER_ACTIVITY_MAJOR_DETAIL = "ไม่มีสิทธิ์เข้าถึงกิจกรรมนอกสาขาที่ดูแล"
 
 
 def student_major_condition(admin: AdminContext):
@@ -71,3 +72,68 @@ def ensure_can_assign_major(admin: AdminContext, major: str) -> None:
             status_code=403,
             detail="แอดมินสาขาเปลี่ยนสาขาของนักศึกษาเป็นสาขาอื่นไม่ได้",
         )
+
+
+def activity_major_condition(admin: AdminContext, include_unowned: bool = True):
+    """เงื่อนไข filter บน Activity (None = ไม่ต้องกรอง)
+
+    include_unowned=True (ค่าเริ่มต้น): กิจกรรมที่ major เป็น None (สร้างโดย
+    แอดมินกลาง หรือกิจกรรมเก่าก่อนมีคอลัมน์นี้) ให้ทุกแอดมินเห็นได้ ใช้กับ
+    หน้ารายการ/รายละเอียดกิจกรรมที่แอดมินสาขาควรเห็นกิจกรรมที่ยังไม่มีเจ้าของด้วย
+
+    include_unowned=False: นับเฉพาะกิจกรรมที่เป็นของสาขาตัวเองจริง ๆ ใช้กับ
+    สถิติ Dashboard ที่ไม่ควรเอากิจกรรมที่ยังไม่มีเจ้าของมานับเป็นของสาขาไหน
+    """
+    if admin.is_central:
+        return None
+
+    if include_unowned:
+        return or_(
+            Activity.major == admin.major,
+            Activity.major.is_(None),
+        )
+
+    return Activity.major == admin.major
+
+
+def scope_activity_query(query, admin: AdminContext, include_unowned: bool = True):
+    condition = activity_major_condition(admin, include_unowned=include_unowned)
+    return query if condition is None else query.filter(condition)
+
+
+def can_access_activity(admin: AdminContext, activity: Activity | None) -> bool:
+    if admin.is_central:
+        return True
+
+    if activity is None:
+        return False
+
+    return activity.major is None or activity.major == admin.major
+
+
+def ensure_can_access_activity(admin: AdminContext, activity: Activity | None) -> None:
+    if not can_access_activity(admin, activity):
+        raise HTTPException(
+            status_code=403,
+            detail=OTHER_ACTIVITY_MAJOR_DETAIL,
+        )
+
+
+def resolve_branch_filter(admin: AdminContext, major: str | None) -> AdminContext:
+    """แอดมินกลางเลือก filter สาขา (query param ?major=) ได้จากหน้า Dashboard/
+    Activities/Student Skills/Approvals -- คืน AdminContext จำลองเป็นแอดมิน
+    สาขานั้นแทน เพื่อให้ scope_*_query/ensure_can_access_* เดิมใช้ได้ตรง ๆ
+    โดยไม่ต้องเขียนเงื่อนไข major ซ้ำทุก endpoint
+
+    แอดมินสาขาเรียกมาเองอยู่แล้วถูก scope ตามสาขาตัวเองอยู่แล้ว จึงไม่รับผลจาก
+    query param นี้ (กันแอดมินสาขาสวมรอยดูสาขาอื่นผ่าน query param)
+    """
+    if not admin.is_central:
+        return admin
+
+    selected = (major or "").strip()
+
+    if not selected:
+        return admin
+
+    return AdminContext(email=admin.email, name=admin.name, major=selected)

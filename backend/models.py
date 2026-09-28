@@ -33,6 +33,10 @@ class Activity(Base):
     location = Column(String(255), nullable=False)
     description = Column(Text, nullable=False, default="")
 
+    # เจ้าของกิจกรรม (สาขา) สำหรับ major-scoping เหมือน students.major
+    # None = สร้างโดยแอดมินกลาง หรือกิจกรรมเก่าก่อนมีคอลัมน์นี้ -> เห็นได้ทุกแอดมิน
+    major = Column(String(255), nullable=True, default=None)
+
     status = Column(
         String(20),
         nullable=False,

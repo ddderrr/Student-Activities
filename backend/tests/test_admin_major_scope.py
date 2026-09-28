@@ -427,7 +427,7 @@ def approve_all_external(db_session):
 def test_dashboard_counts_only_own_major(client, db_session, data):
     approve_all_external(db_session)
 
-    # กิจกรรมของคณะ 1 รายการ มีผู้เข้าร่วมทั้งเคมีและ CS
+    # กิจกรรมของคณะ 1 รายการ (เป็นของสาขาเคมี) มีผู้เข้าร่วมทั้งเคมีและ CS
     activity = Activity(
         activity_type="Volunteer",
         name="Faculty Activity",
@@ -435,6 +435,7 @@ def test_dashboard_counts_only_own_major(client, db_session, data):
         end_at=datetime(2026, 3, 10, 12, 0, 0),
         responsible_person="Staff",
         location="Room 101",
+        major=CHEM,
     )
     db_session.add(activity)
     db_session.commit()
@@ -462,13 +463,71 @@ def test_dashboard_counts_only_own_major(client, db_session, data):
     assert chem["totalStudents"] == 2
     assert central["totalStudents"] == 4
 
-    # C001, C002 (เคมี) เท่านั้น / ทุกคน 4 คน
+    # C001, C002 (เคมี) เท่านั้น / C001, S001, C002 ทุกคน (ไม่รวมกิจกรรมภายนอก)
     assert chem["totalParticipants"] == 2
-    assert central["totalParticipants"] == 4
+    assert central["totalParticipants"] == 3
 
-    # กิจกรรมของคณะนับร่วมกัน + กิจกรรมภายนอกของสาขาตัวเอง
-    assert chem["totalActivities"] == 1 + 1
-    assert central["totalActivities"] == 1 + 3
+    # "กิจกรรม" หมายถึงกิจกรรมของคณะเท่านั้น ไม่รวมกิจกรรมภายนอกที่อนุมัติแล้ว
+    assert chem["totalActivities"] == 1
+    assert central["totalActivities"] == 1
+
+
+def test_dashboard_excludes_unowned_activity_from_branch_stats(client, db_session, data):
+    """
+    กิจกรรมที่ยังไม่มีเจ้าของ (major=None) ไม่ควรถูกนับเป็นสถิติ Dashboard ของ
+    แอดมินสาขาไหนสาขาหนึ่ง (ต่างจาก GET /api/activities ที่ยังให้แอดมินสาขา
+    เห็น/จัดการกิจกรรมที่ยังไม่มีเจ้าของได้ตามเดิม)
+    """
+    legacy_activity = Activity(
+        activity_type="Workshop",
+        name="Legacy Unowned",
+        start_at=datetime(2026, 3, 15, 9, 0, 0),
+        end_at=datetime(2026, 3, 15, 12, 0, 0),
+        responsible_person="Staff",
+        location="Room 1",
+        major=None,
+    )
+    db_session.add(legacy_activity)
+    db_session.commit()
+    db_session.add(
+        ActivityMember(
+            activity_id=legacy_activity.id,
+            student_id="C001",
+            role="participant",
+        )
+    )
+    db_session.commit()
+
+    chem = client.get("/api/admin/dashboard?year=2026", headers=CHEM_ADMIN).json()
+    central = client.get("/api/admin/dashboard?year=2026", headers=CENTRAL).json()
+
+    # ไม่มีสถิติของเคมี เพราะกิจกรรมนี้ยังไม่มีเจ้าของ
+    assert chem["totalActivities"] == 0
+    assert chem["totalParticipants"] == 0
+
+    # แอดมินกลางยังเห็น/นับกิจกรรมนี้ตามปกติ
+    assert central["totalActivities"] == 1
+    assert central["totalParticipants"] == 1
+
+    # หน้ารายการกิจกรรม (list, ค่าเริ่มต้น) แอดมินสาขายังเห็นกิจกรรมที่ยังไม่มี
+    # เจ้าของอยู่เหมือนเดิม -- เปลี่ยนแค่สถิติ Dashboard เท่านั้น
+    activities_default = client.get("/api/activities", headers=CHEM_ADMIN).json()
+    assert legacy_activity.id in {item["id"] for item in activities_default["activities"]}
+
+    # แต่ตอนขอแบบ owned_only=true (ที่หน้า Dashboard ใช้คำนวณ Activity
+    # Growth/Skill Distribution เอง) ต้องไม่เห็นกิจกรรมที่ยังไม่มีเจ้าของ
+    activities_owned_only = client.get(
+        "/api/activities?owned_only=true", headers=CHEM_ADMIN
+    ).json()
+    assert legacy_activity.id not in {
+        item["id"] for item in activities_owned_only["activities"]
+    }
+
+    # แอดมินกลางเห็นเหมือนกันทั้งสองแบบ (ไม่มี major ให้กรอง)
+    central_owned_only = client.get(
+        "/api/activities?owned_only=true", headers=CENTRAL
+    ).json()
+    assert legacy_activity.id in {item["id"] for item in central_owned_only["activities"]}
 
 
 def test_dashboard_external_activities_are_scoped(client, db_session, data):
@@ -608,6 +667,38 @@ def test_participants_are_filtered_by_major(client, faculty_activity):
     }
 
 
+def test_activity_list_participant_count_matches_detail_view(
+    client, faculty_activity
+):
+    # บั๊กเดิม: /api/activities นับสมาชิกทุกคนแบบไม่กรอง major เลย ในขณะที่
+    # /api/activities/{id}/participants กรองตาม major ของแอดมิน ทำให้หน้า
+    # list บอกว่ามี 3 คน แต่พอกดดูหน้า detail กลับเห็นแค่บางส่วน (หรือ 0 คน)
+    # ต้องนับให้ตรงกันเสมอ ไม่ว่าแอดมินที่เรียกจะเป็นแอดมินสาขาไหนก็ตาม
+    def list_participant_count(headers):
+        activities = client.get(
+            "/api/activities", headers=headers
+        ).json()["activities"]
+        activity = next(
+            item
+            for item in activities
+            if item["id"] == faculty_activity.id
+        )
+        return activity["participants"]
+
+    detail_url = f"/api/activities/{faculty_activity.id}/participants"
+
+    for headers, expected_ids in (
+        (CHEM_ADMIN, {"C001"}),
+        (CS_ADMIN, {"S001"}),
+        (CENTRAL, {"C001", "S001", "N001"}),
+    ):
+        detail_ids = participant_ids(
+            client.get(detail_url, headers=headers)
+        )
+        assert detail_ids == expected_ids
+        assert list_participant_count(headers) == len(expected_ids)
+
+
 def participant_payload(major):
     return {
         "first_name": "Edited",
@@ -673,3 +764,176 @@ def test_student_endpoints_do_not_need_admin(client, data):
     )
 
     assert response.status_code == 200
+
+
+# ------------------------------------------------------------
+# Activity major-scoping: แอดมินสาขาเห็นเฉพาะกิจกรรมของสาขาตัวเอง
+# (รวมกิจกรรมที่ยังไม่มีเจ้าของ major=None) ส่วนแอดมินกลางเห็นทุกกิจกรรม
+# ------------------------------------------------------------
+
+
+def create_activity(db_session, major=None, name="Branch Activity") -> Activity:
+    activity = Activity(
+        activity_type="Workshop",
+        name=name,
+        start_at=datetime(2026, 4, 1, 9, 0, 0),
+        end_at=datetime(2026, 4, 1, 12, 0, 0),
+        responsible_person="Staff",
+        location="Room 1",
+        major=major,
+    )
+    db_session.add(activity)
+    db_session.commit()
+    db_session.refresh(activity)
+    return activity
+
+
+def activity_ids(response):
+    assert response.status_code == 200, response.text
+    return {item["id"] for item in response.json()["activities"]}
+
+
+def test_branch_admin_cannot_see_other_branch_activity(client, db_session):
+    chem_activity = create_activity(db_session, major=CHEM, name="Chem Only")
+    cs_activity = create_activity(db_session, major=CS, name="CS Only")
+
+    assert activity_ids(
+        client.get("/api/activities", headers=CHEM_ADMIN)
+    ) == {chem_activity.id}
+    assert activity_ids(
+        client.get("/api/activities", headers=CS_ADMIN)
+    ) == {cs_activity.id}
+
+    assert (
+        client.get(
+            f"/api/activities/{cs_activity.id}", headers=CHEM_ADMIN
+        ).status_code
+        == 403
+    )
+    assert (
+        client.get(
+            f"/api/activities/{chem_activity.id}", headers=CS_ADMIN
+        ).status_code
+        == 403
+    )
+
+    assert (
+        client.get(
+            f"/api/activities/{chem_activity.id}", headers=CHEM_ADMIN
+        ).status_code
+        == 200
+    )
+    assert (
+        client.get(
+            f"/api/activities/{cs_activity.id}", headers=CS_ADMIN
+        ).status_code
+        == 200
+    )
+
+    # participants endpoint ใช้ require_activity เหมือนกัน ต้อง 403 ด้วย
+    assert (
+        client.get(
+            f"/api/activities/{cs_activity.id}/participants",
+            headers=CHEM_ADMIN,
+        ).status_code
+        == 403
+    )
+
+
+def test_central_admin_sees_all_branch_activities(client, db_session):
+    chem_activity = create_activity(db_session, major=CHEM, name="Chem Only")
+    cs_activity = create_activity(db_session, major=CS, name="CS Only")
+
+    seen = activity_ids(client.get("/api/activities", headers=CENTRAL))
+    assert {chem_activity.id, cs_activity.id} <= seen
+
+    assert (
+        client.get(
+            f"/api/activities/{chem_activity.id}", headers=CENTRAL
+        ).status_code
+        == 200
+    )
+    assert (
+        client.get(
+            f"/api/activities/{cs_activity.id}", headers=CENTRAL
+        ).status_code
+        == 200
+    )
+
+
+def test_legacy_activity_without_major_is_visible_to_every_admin(
+    client, db_session
+):
+    legacy_activity = create_activity(db_session, major=None, name="No Owner Yet")
+
+    for headers in (CHEM_ADMIN, CS_ADMIN, CENTRAL):
+        assert legacy_activity.id in activity_ids(
+            client.get("/api/activities", headers=headers)
+        )
+        assert (
+            client.get(
+                f"/api/activities/{legacy_activity.id}", headers=headers
+            ).status_code
+            == 200
+        )
+
+
+ACTIVITY_CREATE_PAYLOAD = {
+    "activity_type": "Workshop",
+    "name": "New Activity",
+    "start_at": "2026-05-01T09:00:00",
+    "end_at": "2026-05-01T12:00:00",
+    "department": "",
+    "responsible_person": "Staff",
+    "advisor": "",
+    "location": "Room 1",
+    "description": "",
+    "staff_skills": {},
+    "participant_skills": {},
+}
+
+
+def test_new_activity_is_auto_owned_by_creating_branch_admin(client, db_session):
+    response = client.post(
+        "/api/activities",
+        json=ACTIVITY_CREATE_PAYLOAD,
+        headers=CHEM_ADMIN,
+    )
+    assert response.status_code == 201
+    activity_id = response.json()["id"]
+
+    db_session.expire_all()
+    assert db_session.get(Activity, activity_id).major == CHEM
+
+    assert (
+        client.get(
+            f"/api/activities/{activity_id}", headers=CS_ADMIN
+        ).status_code
+        == 403
+    )
+    assert (
+        client.get(
+            f"/api/activities/{activity_id}", headers=CENTRAL
+        ).status_code
+        == 200
+    )
+
+
+def test_new_activity_created_by_central_admin_has_no_owner(client, db_session):
+    response = client.post(
+        "/api/activities",
+        json=ACTIVITY_CREATE_PAYLOAD,
+        headers=CENTRAL,
+    )
+    assert response.status_code == 201
+    activity_id = response.json()["id"]
+
+    db_session.expire_all()
+    assert db_session.get(Activity, activity_id).major is None
+
+    assert (
+        client.get(
+            f"/api/activities/{activity_id}", headers=CHEM_ADMIN
+        ).status_code
+        == 200
+    )

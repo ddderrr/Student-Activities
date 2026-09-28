@@ -20,6 +20,8 @@ import {
 
   Bell,
 
+  LogOut,
+
   Menu,
 
   UserRound
@@ -32,7 +34,7 @@ import StudentSideBar
 
   from '../components/Student/StudentSideBar.vue'
 
-import { API_BASE, studentHeaders } from '../constants/currentStudent'
+import { API_BASE, clearStudentSession, studentHeaders } from '../constants/currentStudent'
 import { useLanguage } from '../composables/useLanguage'
 
 const router = useRouter()
@@ -109,35 +111,82 @@ provide(
 
    Current Student
 
-   Mock ก่อนต่อ Backend
+   ดึงจาก GET /api/student/me เสมอ (ไม่ hardcode ตายตัว) เพื่อให้ profile ที่
+   โชว์ตรงกับ identity จริงที่ studentHeaders() ส่งไปทุก endpoint -- ก่อนหน้านี้
+   ค่านี้ hardcode เป็น 670510659 ไว้ตลอด ทำให้ดูเหมือน login เป็นคนเดิมแม้จะ
+   สลับ mock student คนอื่นจากหน้า login แล้วก็ตาม
 
 ===================================================== */
 
 const currentStudent = ref({
 
-  id: '670510659',
+  id: '',
 
-  name: 'Tanakit Wanprasert',
+  name: '',
 
-  email: 'tanakit@example.com',
+  email: '',
 
-  faculty: 'Faculty of Science',
+  faculty: '',
 
-  major: 'Computer Science',
-
-  /*
-
-    ตอนมีรูปจริง ใส่ URL จาก Backend ตรงนี้ได้เลย
-
-    เช่น:
-
-    avatar: '/uploads/student/670510659.jpg'
-
-  */
+  major: '',
 
   avatar: ''
 
 })
+
+const fetchCurrentStudent = async () => {
+
+  try {
+
+    const response = await fetch(
+
+      `${API_BASE}/api/student/me`,
+
+      { headers: studentHeaders() }
+
+    )
+
+    if (!response.ok) {
+
+      throw new Error(
+        t.value.studentLayout.cannotLoadNotifications
+      )
+
+    }
+
+    const student = await response.json()
+
+    currentStudent.value = {
+
+      id: student.student_id,
+
+      name: student.name,
+
+      email: student.email,
+
+      faculty: student.faculty,
+
+      major: student.major || '',
+
+      avatar: ''
+
+    }
+
+  } catch (error) {
+
+    // เงียบไว้: header/profile ยังใช้งานหน้าอื่นต่อได้ แค่ไม่โชว์ชื่อ/สาขา
+
+  }
+
+}
+
+const logoutStudent = () => {
+
+  profileOpen.value = false
+  clearStudentSession()
+  router.push('/student/login')
+
+}
 
 
 
@@ -423,6 +472,7 @@ onMounted(() => {
   )
 
   fetchNotifications()
+  fetchCurrentStudent()
 
 })
 
@@ -849,6 +899,20 @@ onBeforeUnmount(() => {
                 </div>
 
               </div>
+
+
+
+              <button
+                class="logout-button"
+                type="button"
+                @click="logoutStudent"
+              >
+
+                <LogOut :size="16" />
+
+                {{ t.studentLayout.logoutAndSwitchStudent }}
+
+              </button>
 
             </div>
 
@@ -1521,6 +1585,41 @@ onBeforeUnmount(() => {
   font-weight: 600;
 
   overflow-wrap: anywhere;
+
+}
+
+
+
+.logout-button {
+
+  width: 100%;
+
+  margin-top: 14px;
+  padding: 9px 10px;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+
+  border: 1px solid #f0d5d5;
+  border-radius: 8px;
+
+  background: #fdf5f5;
+  color: #b42318;
+
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+
+  cursor: pointer;
+  transition: 0.2s;
+
+}
+
+.logout-button:hover {
+
+  background: #fbe9e9;
 
 }
 

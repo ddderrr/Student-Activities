@@ -13,7 +13,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadF
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from reportlab.lib import colors
@@ -41,13 +41,17 @@ from admin_auth import (
     require_central_admin,
 )
 from admin_scope import (
+    ensure_can_access_activity,
     ensure_can_access_student,
     ensure_can_assign_major,
+    resolve_branch_filter,
+    scope_activity_query,
     scope_external_activity_query,
     scope_student_query,
     scope_student_request_query,
 )
 from database import Base, SessionLocal, engine, get_db
+from student_bypass import STUDENT_BYPASS_EMAILS
 from models import (
     Activity,
     ActivityMember,
@@ -186,6 +190,70 @@ def get_admin_me(
 
 
 # ============================================================
+# STUDENT AUTH (bypass สำหรับพัฒนา ดู student_bypass.py)
+# ============================================================
+
+
+def serialize_student_account(student: Student) -> dict:
+    return {
+        "student_id": student.student_id,
+        "email": student.email,
+        "name": f"{student.first_name} {student.last_name}".strip(),
+        "major": student.major,
+        "faculty": student.faculty,
+    }
+
+
+@app.get("/api/student/auth/bypass")
+def get_student_bypass_status(db: Session = Depends(get_db)):
+    # หน้า login ฝั่งนักศึกษาใช้แสดงรายชื่อ mock student ให้เลือก (เหมือนแอดมิน)
+    students = (
+        db.query(Student)
+        .filter(func.lower(Student.email).in_(STUDENT_BYPASS_EMAILS))
+        .all()
+    )
+
+    order = {email: index for index, email in enumerate(STUDENT_BYPASS_EMAILS)}
+    students.sort(key=lambda item: order.get(item.email.strip().lower(), len(order)))
+
+    return {
+        "enabled": True,
+        "accounts": [serialize_student_account(student) for student in students],
+    }
+
+
+@app.get("/api/student/auth/lookup")
+def lookup_student_bypass(
+    identifier: str,
+    db: Session = Depends(get_db),
+):
+    # หน้า login ฝั่งนักศึกษา (ฟอร์มรหัสนักศึกษา/อีเมลแบบพิมพ์เอง) ใช้เข้าสู่ระบบ
+    # เป็นนักศึกษาคนไหนก็ได้ที่มีอยู่จริงในตาราง students ไม่จำกัดแค่ 2 บัญชี
+    # bypass preset (ต่างจาก /api/student/auth/bypass ที่โชว์แค่ shortcut)
+    value = identifier.strip()
+
+    if not value:
+        raise HTTPException(status_code=400, detail="กรุณาระบุรหัสนักศึกษาหรืออีเมล")
+
+    student = db.get(Student, value)
+
+    if not student:
+        student = (
+            db.query(Student)
+            .filter(func.lower(Student.email) == value.lower())
+            .first()
+        )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบนักศึกษานี้ในระบบ กรุณาตรวจสอบรหัสนักศึกษาหรืออีเมลอีกครั้ง",
+        )
+
+    return serialize_student_account(student)
+
+
+# ============================================================
 # ADMIN DASHBOARD
 # ============================================================
 
@@ -227,25 +295,38 @@ def get_admin_dashboard(
     year: int | None = None,
     semester: str = "ALL",
     months: str | None = None,
+    major: str | None = None,
     db: Session = Depends(get_db),
     admin: AdminContext = Depends(get_current_admin),
 ):
     """
     Dashboard summary for the selected activity year/semester.
 
-    Activities, participants, completion rate and Activity Growth all use
-    the real activity date (Activity.start_at / ExternalActivity.start_date)
-    as the reporting period. Student count remains the faculty/system total
-    because students are master data, not activities.
+    "กิจกรรม" (Activities) here means faculty activities (Activity) only --
+    the same set GET /api/activities (owned_only=true) returns -- so the KPI
+    count, participants, completion rate and Activity Growth chart all agree
+    with the Activities page. Approved external activities that students
+    submit themselves are a separate concept (reviewed via Approvals / a
+    student's own history) and are intentionally NOT folded into these
+    numbers, since silently merging them in previously made the Dashboard
+    disagree with the Activities list for the same admin.
 
-    แอดมินสาขา: นักศึกษา ผู้เข้าร่วม และกิจกรรมภายนอก นับเฉพาะสาขาตัวเอง
-    ส่วนกิจกรรมของคณะ (Activity) เป็นของทั้งคณะ ทุกแอดมินนับเหมือนกัน
+    Student count remains the faculty/system total because students are
+    master data, not activities -- see totalStudents vs totalParticipants
+    below.
+
+    แอดมินสาขา: นักศึกษา ผู้เข้าร่วม และกิจกรรมของคณะ (Activity) นับเฉพาะของ
+    สาขาตัวเอง (owned_only: ไม่รวมกิจกรรมที่ยังไม่มีเจ้าของ major=None)
 
     `months`: optional comma-separated month numbers (e.g. "9" or "7,8,9")
     that narrows the period further than `semester` — used when the admin
     clicks a single month/quarter in the Activity Growth chart instead of
     just picking a semester.
+
+    `major`: แอดมินกลางเลือก filter สาขาได้จากหน้า Dashboard (แอดมินสาขาไม่มี
+    ผลจาก param นี้ เพราะถูก scope ตามสาขาตัวเองอยู่แล้ว)
     """
+    admin = resolve_branch_filter(admin, major)
     now_value = datetime.now()
     selected_year = year or now_value.year
 
@@ -272,8 +353,12 @@ def get_admin_dashboard(
 
     # Activities are filtered by the real activity date (start_at), not created_at.
     # Cancelled activities never happened, so no KPI or chart counts them.
+    # สถิติ Dashboard ของแอดมินสาขา นับเฉพาะกิจกรรมที่เป็นของสาขาตัวเองจริง ๆ
+    # (include_unowned=False) กิจกรรมที่ยังไม่มีเจ้าของไม่ควรถูกนับเป็นสถิติ
+    # ของสาขาไหนสาขาหนึ่ง -- ต่างจากหน้ารายการกิจกรรม (list_activities) ที่ยัง
+    # ให้แอดมินสาขาเห็น/จัดการกิจกรรมที่ยังไม่มีเจ้าของได้ตามเดิม
     period_activities = (
-        db.query(Activity)
+        scope_activity_query(db.query(Activity), admin, include_unowned=False)
         .filter(
             Activity.status != "cancelled",
             func.extract("year", Activity.start_at) == selected_year,
@@ -282,20 +367,12 @@ def get_admin_dashboard(
         .all()
     )
 
-    # กิจกรรมภายนอกที่อนุมัติแล้ว นับรวมด้วย ใช้ start_date เป็น reporting period
-    # เดียวกับ Activity.start_at เพื่อให้กรองตามปี/เทอมที่เลือกสอดคล้องกัน
-    period_external_activities = scope_student_query(
-        db.query(ExternalActivity)
-        .join(Student, Student.student_id == ExternalActivity.student_id)
-        .filter(
-            ExternalActivity.status == "approved",
-            func.extract("year", ExternalActivity.start_date) == selected_year,
-            func.extract("month", ExternalActivity.start_date).in_(selected_months),
-        ),
-        admin,
-    ).all()
-
-    total_activities = len(period_activities) + len(period_external_activities)
+    # "กิจกรรม" ในหน้า Dashboard หมายถึงกิจกรรมของคณะ (Activity) เท่านั้น --
+    # ไม่รวมกิจกรรมภายนอกที่นักศึกษายื่นเอง (ExternalActivity) แม้จะอนุมัติแล้ว
+    # ก็ตาม เพื่อให้ตัวเลขตรงกับหน้า Activities list (GET /api/activities) และ
+    # กราฟ/skill distribution ที่คำนวณจากชุดข้อมูลเดียวกันฝั่ง frontend --
+    # กิจกรรมภายนอกยังดูได้ตามปกติผ่านหน้า Approvals/ประวัติของนักศึกษาแต่ละคน
+    total_activities = len(period_activities)
     period_activity_ids = [activity.id for activity in period_activities]
 
     total_students = (
@@ -304,8 +381,8 @@ def get_admin_dashboard(
         or 0
     )
 
-    # Participants follow the same selected activity period: admin activities
-    # (role participant) + approved external activities (role participant).
+    # ผู้เข้าร่วม = นักศึกษาที่มีบทบาท participant ในกิจกรรมของคณะช่วงที่เลือก
+    # (นิยามเดียวกับ "กิจกรรม" ด้านบน ไม่รวมกิจกรรมภายนอก)
     internal_participant_ids = set()
 
     if period_activity_ids:
@@ -326,15 +403,7 @@ def get_admin_dashboard(
             )
         }
 
-    external_participant_ids = {
-        activity.student_id
-        for activity in period_external_activities
-        if activity.role == "participant"
-    }
-
-    total_participants = len(
-        internal_participant_ids | external_participant_ids
-    )
+    total_participants = len(internal_participant_ids)
 
     # period_activities already excludes cancelled activities.
     completion_eligible = period_activities
@@ -350,15 +419,12 @@ def get_admin_dashboard(
         else 0
     )
 
-    # Activity Growth uses start_at/start_date and the selected year/semester.
+    # Activity Growth uses start_at and the selected year/semester. เฉพาะกิจกรรม
+    # ของคณะ (ไม่รวมกิจกรรมภายนอก) นิยามเดียวกับ total_activities ด้านบน
     monthly_counts = [0] * 12
     for activity in period_activities:
         if activity.start_at is not None:
             monthly_counts[activity.start_at.month - 1] += 1
-
-    for activity in period_external_activities:
-        if activity.start_date is not None:
-            monthly_counts[activity.start_date.month - 1] += 1
 
     activity_growth = [
         {
@@ -372,11 +438,14 @@ def get_admin_dashboard(
     # Keep this payload for backward compatibility. The current Vue page
     # calculates period/role Skill Distribution from activity detail data.
     average_rows = (
-        db.query(
-            ActivitySkill.skill_key,
-            func.avg(ActivitySkill.level),
+        scope_activity_query(
+            db.query(
+                ActivitySkill.skill_key,
+                func.avg(ActivitySkill.level),
+            ).join(Activity, Activity.id == ActivitySkill.activity_id),
+            admin,
+            include_unowned=False,
         )
-        .join(Activity, Activity.id == ActivitySkill.activity_id)
         .filter(
             ActivitySkill.target_role == "staff",
             Activity.status != "cancelled",
@@ -408,7 +477,11 @@ def get_admin_dashboard(
         )
 
     available_year_rows = (
-        db.query(func.extract("year", Activity.start_at))
+        scope_activity_query(
+            db.query(func.extract("year", Activity.start_at)),
+            admin,
+            include_unowned=False,
+        )
         .filter(Activity.status != "cancelled")
         .distinct()
         .order_by(func.extract("year", Activity.start_at).desc())
@@ -586,6 +659,7 @@ def update_student_skill_benchmark(
 def get_admin_student_skills(
     year: int | None = None,
     semester: str = "ALL",
+    major: str | None = None,
     db: Session = Depends(get_db),
     admin: AdminContext = Depends(get_current_admin),
 ):
@@ -594,7 +668,10 @@ def get_admin_student_skills(
     Calculation order is intentionally student-first:
     activity evidence -> each student's per-skill average -> faculty average.
     This prevents students with many activities from having more weight in the faculty radar.
+
+    `major`: แอดมินกลางเลือก filter สาขาได้จากหน้า Student Skills (ดู resolve_branch_filter)
     """
+    admin = resolve_branch_filter(admin, major)
     selected_semester = normalize_student_skill_semester(semester)
     now_value = datetime.now()
 
@@ -769,12 +846,14 @@ def get_admin_student_activities(
 
     items = []
 
-    memberships = (
-        db.query(ActivityMember, Activity)
-        .join(Activity, Activity.id == ActivityMember.activity_id)
-        .filter(ActivityMember.student_id == student_id)
-        .all()
-    )
+    # กิจกรรมของคณะที่นักศึกษาคนนี้เข้าร่วมอาจเป็นของสาขาอื่นก็ได้ จึงต้อง
+    # กรองด้วย scope_activity_query ซ้ำอีกชั้น ไม่ใช่แค่กรองตัวนักศึกษา
+    memberships = scope_activity_query(
+        db.query(ActivityMember, Activity).join(
+            Activity, Activity.id == ActivityMember.activity_id
+        ),
+        admin,
+    ).filter(ActivityMember.student_id == student_id).all()
 
     for member, activity in memberships:
         items.append(
@@ -969,22 +1048,39 @@ def replace_activity_skills(
 def get_member_counts(
     db: Session,
     activity_id: int,
+    admin: AdminContext,
 ) -> tuple[int, int]:
+    # นับผ่าน Student เพื่อกรองตามสาขาแอดมินเหมือนกับ get_activity_participants
+    # ไม่งั้นจำนวนที่โชว์ในหน้า list จะไม่ตรงกับรายชื่อจริงที่เห็นในหน้า detail
     participant_count = (
-        db.query(func.count(ActivityMember.student_id))
-        .filter(
-            ActivityMember.activity_id == activity_id,
-            ActivityMember.role == "participant",
+        scope_student_query(
+            db.query(func.count(ActivityMember.student_id))
+            .join(
+                Student,
+                Student.student_id == ActivityMember.student_id,
+            )
+            .filter(
+                ActivityMember.activity_id == activity_id,
+                ActivityMember.role == "participant",
+            ),
+            admin,
         )
         .scalar()
         or 0
     )
 
     organizer_count = (
-        db.query(func.count(ActivityMember.student_id))
-        .filter(
-            ActivityMember.activity_id == activity_id,
-            ActivityMember.role == "organizer",
+        scope_student_query(
+            db.query(func.count(ActivityMember.student_id))
+            .join(
+                Student,
+                Student.student_id == ActivityMember.student_id,
+            )
+            .filter(
+                ActivityMember.activity_id == activity_id,
+                ActivityMember.role == "organizer",
+            ),
+            admin,
         )
         .scalar()
         or 0
@@ -993,19 +1089,27 @@ def get_member_counts(
     return participant_count, organizer_count
 
 
-def get_member_counts_by_activity(db: Session) -> dict[int, tuple[int, int]]:
+def get_member_counts_by_activity(
+    db: Session,
+    admin: AdminContext,
+) -> dict[int, tuple[int, int]]:
     # นับสมาชิกทุกกิจกรรมใน query เดียว แทนการนับทีละกิจกรรม
+    # กรองตามสาขาแอดมินเหมือนกับ get_activity_participants ด้วยเหตุผลเดียวกัน
     counts: dict[int, list[int]] = {}
 
-    for activity_id, role, total in (
+    query = scope_student_query(
         db.query(
             ActivityMember.activity_id,
             ActivityMember.role,
             func.count(ActivityMember.student_id),
-        )
-        .group_by(ActivityMember.activity_id, ActivityMember.role)
-        .all()
-    ):
+        ).join(
+            Student,
+            Student.student_id == ActivityMember.student_id,
+        ),
+        admin,
+    ).group_by(ActivityMember.activity_id, ActivityMember.role)
+
+    for activity_id, role, total in query.all():
         entry = counts.setdefault(activity_id, [0, 0])
         if role == "participant":
             entry[0] = total
@@ -1018,13 +1122,14 @@ def get_member_counts_by_activity(db: Session) -> dict[int, tuple[int, int]]:
 def serialize_activity(
     db: Session,
     activity: Activity,
+    admin: AdminContext,
     include_skills: bool = False,
     member_counts: tuple[int, int] | None = None,
 ) -> dict:
     participant_count, organizer_count = (
         member_counts
         if member_counts is not None
-        else get_member_counts(db, activity.id)
+        else get_member_counts(db, activity.id, admin)
     )
 
     result = {
@@ -1074,6 +1179,7 @@ def serialize_activity(
 def require_activity(
     db: Session,
     activity_id: int,
+    admin: AdminContext,
 ) -> Activity:
     activity = db.get(Activity, activity_id)
 
@@ -1083,22 +1189,32 @@ def require_activity(
             detail="ไม่พบกิจกรรม",
         )
 
+    ensure_can_access_activity(admin, activity)
+
     return activity
 
 
 @app.get("/api/activities")
 def list_activities(
+    owned_only: bool = False,
+    major: str | None = None,
     db: Session = Depends(get_db),
-    _admin: AdminContext = Depends(get_current_admin),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     # โหลด skill ของทุกกิจกรรมและจำนวนสมาชิกรวดเดียว ไม่ query ซ้ำทีละกิจกรรม
+    # แอดมินสาขาเห็นเฉพาะกิจกรรมของสาขาตัวเอง + กิจกรรมที่ยังไม่มีเจ้าของ (major=None)
+    # ตามค่าเริ่มต้น -- หน้า Dashboard ที่คำนวณ Activity Growth/Skill Distribution
+    # เองฝั่ง frontend ส่ง owned_only=true มา เพื่อไม่นับกิจกรรมที่ยังไม่มีเจ้าของ
+    # เป็นสถิติของสาขาไหนสาขาหนึ่ง
+    # major: แอดมินกลางเลือก filter สาขาได้จากหน้า Activities (ดู resolve_branch_filter)
+    admin = resolve_branch_filter(admin, major)
     activities = (
-        db.query(Activity)
+        scope_activity_query(db.query(Activity), admin, include_unowned=not owned_only)
         .options(selectinload(Activity.skill_levels))
         .order_by(Activity.start_at.asc())
         .all()
     )
-    member_counts = get_member_counts_by_activity(db)
+    member_counts = get_member_counts_by_activity(db, admin)
 
     return {
         "total": len(activities),
@@ -1106,6 +1222,7 @@ def list_activities(
             serialize_activity(
                 db,
                 activity,
+                admin,
                 include_skills=True,
                 member_counts=member_counts.get(activity.id, (0, 0)),
             )
@@ -1118,7 +1235,7 @@ def list_activities(
 def create_activity(
     payload: ActivityCreate,
     db: Session = Depends(get_db),
-    _admin: AdminContext = Depends(get_current_admin),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     validate_required_text(
         {
@@ -1156,6 +1273,9 @@ def create_activity(
         location=payload.location.strip(),
         description=payload.description.strip(),
         status="active",
+        # แอดมินสาขาสร้างกิจกรรมเป็นของสาขาตัวเองอัตโนมัติ ส่วนแอดมินกลาง
+        # สร้างแล้วเห็นได้ทุกแอดมิน (major=None)
+        major=None if admin.is_central else admin.major,
     )
 
     db.add(activity)
@@ -1187,6 +1307,7 @@ def create_activity(
     return serialize_activity(
         db,
         activity,
+        admin,
         include_skills=True,
     )
 
@@ -1198,11 +1319,12 @@ def update_activity(
     activity_id: int,
     payload: ActivityUpdate,
     db: Session = Depends(get_db),
-    _admin: AdminContext = Depends(get_current_admin),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     activity = require_activity(
         db,
         activity_id,
+        admin,
     )
 
     updates = payload.model_dump(
@@ -1300,6 +1422,7 @@ def update_activity(
     return serialize_activity(
         db,
         activity,
+        admin,
         include_skills=True,
     )
 
@@ -1308,16 +1431,18 @@ def update_activity(
 def get_activity(
     activity_id: int,
     db: Session = Depends(get_db),
-    _admin: AdminContext = Depends(get_current_admin),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     activity = require_activity(
         db,
         activity_id,
+        admin,
     )
 
     return serialize_activity(
         db,
         activity,
+        admin,
         include_skills=True,
     )
 
@@ -1329,11 +1454,12 @@ def get_activity(
 def delete_activity(
     activity_id: int,
     db: Session = Depends(get_db),
-    _admin: AdminContext = Depends(get_current_admin),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     activity = require_activity(
         db,
         activity_id,
+        admin,
     )
 
     db.delete(activity)
@@ -2024,6 +2150,76 @@ async def import_students(
 # ============================================================
 
 
+def serialize_student_lookup(student: Student) -> dict:
+    return {
+        "student_id": student.student_id,
+        "first_name": student.first_name,
+        "last_name": student.last_name,
+        "email": student.email,
+        "faculty": student.faculty,
+        "major": student.major,
+    }
+
+
+@app.get("/api/admin/students/lookup")
+def lookup_student_by_id(
+    student_id: str,
+    db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
+):
+    # ใช้กับหน้า Add Participant: พิมพ์ student_id แล้วดึงชื่อ/คณะ/สาขามาเติม
+    # ให้อัตโนมัติ ไม่จำกัด major เพราะกิจกรรมหนึ่งอาจมีผู้เข้าร่วมข้ามสาขาได้
+    # (เหมือน behavior เดิมตอนพิมพ์ฟอร์มมือ ไม่เคยจำกัดด้วย major)
+    value = student_id.strip()
+
+    if not value:
+        raise HTTPException(status_code=400, detail="กรุณาระบุรหัสนักศึกษา")
+
+    student = db.get(Student, value)
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบรหัสนักศึกษานี้ในระบบ",
+        )
+
+    return serialize_student_lookup(student)
+
+
+@app.get("/api/admin/students/search")
+def search_students(
+    q: str = "",
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
+):
+    # Autocomplete ค้นหาด้วยรหัสนักศึกษาหรือชื่อ-นามสกุล ใช้กับหน้า Add Participant
+    keyword = q.strip()
+
+    if not keyword:
+        return {"students": []}
+
+    limit = max(1, min(limit, 25))
+    pattern = f"%{keyword}%"
+
+    students = (
+        db.query(Student)
+        .filter(
+            or_(
+                Student.student_id.ilike(pattern),
+                Student.first_name.ilike(pattern),
+                Student.last_name.ilike(pattern),
+                (Student.first_name + " " + Student.last_name).ilike(pattern),
+            )
+        )
+        .order_by(Student.student_id)
+        .limit(limit)
+        .all()
+    )
+
+    return {"students": [serialize_student_lookup(student) for student in students]}
+
+
 @app.post(
     "/api/activities/{activity_id}/participants/import/preview"
 )
@@ -2031,11 +2227,12 @@ async def preview_activity_participants(
     activity_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _admin: AdminContext = Depends(get_current_admin),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     require_activity(
         db,
         activity_id,
+        admin,
     )
 
     result = await read_student_file(file)
@@ -2079,11 +2276,12 @@ def confirm_activity_participants(
     activity_id: int,
     payload: ConfirmImportRequest,
     db: Session = Depends(get_db),
-    _admin: AdminContext = Depends(get_current_admin),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     require_activity(
         db,
         activity_id,
+        admin,
     )
 
     imported_count = 0
@@ -2152,13 +2350,20 @@ def confirm_activity_participants(
         )
 
         if not student:
+            # ไฟล์ไม่มี major (เช่น .xls เช็คอินเก่า) และแอดมินที่ import เป็น
+            # แอดมินสาขา (ไม่ใช่แอดมินกลาง) ให้ใช้สาขาของแอดมินคนนั้นแทน
+            # ไม่งั้นนักศึกษาที่เพิ่ง import จะหลุดออกจาก scope ของแอดมินคนนำเข้าเอง
+            new_student_major = major
+            if not new_student_major and not admin.is_central:
+                new_student_major = admin.major
+
             student = Student(
                 student_id=student_id,
                 first_name=first_name,
                 last_name=last_name,
                 email=email,
                 faculty=faculty or "Faculty of Science",
-                major=major,
+                major=new_student_major,
             )
 
             db.add(student)
@@ -2228,6 +2433,7 @@ def get_activity_participants(
     activity = require_activity(
         db,
         activity_id,
+        admin,
     )
 
     # กิจกรรมของคณะใช้ร่วมกันทุกแอดมิน แต่รายชื่อผู้เข้าร่วมเห็นเฉพาะสาขาตัวเอง
@@ -2303,6 +2509,7 @@ def update_activity_participant(
     require_activity(
         db,
         activity_id,
+        admin,
     )
 
     member = db.get(
@@ -2378,6 +2585,7 @@ def remove_activity_participant(
     require_activity(
         db,
         activity_id,
+        admin,
     )
 
     member = db.get(
@@ -2445,10 +2653,32 @@ EXTERNAL_ACTIVITY_MAX_LENGTHS = {
 
 def get_current_student(
     x_student_id: str | None = Header(default=None),
+    x_student_email: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> Student:
     # ยังไม่มีระบบ login นักศึกษา: frontend ส่ง student ID จำลองมาใน header
     # เปลี่ยนเป็นอ่านจาก session/token เมื่อมีระบบ login จริง
+    #
+    # หน้า /student/login ให้เลือก mock student จากอีเมล (เหมือนแอดมิน) ส่งมาเป็น
+    # X-Student-Email แทน X-Student-Id -- ต้องเป็นนักศึกษาที่มีอยู่จริงในตาราง
+    # students เท่านั้น (ไม่ auto-create เหมือน path X-Student-Id ด้านล่าง)
+    email = (x_student_email or "").strip().lower()
+
+    if email:
+        student = (
+            db.query(Student)
+            .filter(func.lower(Student.email) == email)
+            .first()
+        )
+
+        if not student:
+            raise HTTPException(
+                status_code=401,
+                detail="ไม่พบนักศึกษาตามอีเมลนี้ (X-Student-Email)",
+            )
+
+        return student
+
     student_id = (x_student_id or "").strip()
 
     if not student_id:
@@ -2477,6 +2707,13 @@ def get_current_student(
         db.refresh(student)
 
     return student
+
+
+@app.get("/api/student/me")
+def get_student_me(
+    student: Student = Depends(get_current_student),
+):
+    return serialize_student_account(student)
 
 
 def detect_evidence_type(contents: bytes) -> str | None:
@@ -4256,9 +4493,13 @@ def serialize_request(request: StudentRequest) -> dict:
 
 @app.get("/api/requests/stats")
 def get_request_stats(
+    major: str | None = None,
     db: Session = Depends(get_db),
     admin: AdminContext = Depends(get_current_admin),
 ):
+    # major: แอดมินกลางเลือก filter สาขาได้จากหน้า Approvals (ดู resolve_branch_filter)
+    admin = resolve_branch_filter(admin, major)
+
     today_start = datetime.now().replace(
         hour=0,
         minute=0,
@@ -4354,11 +4595,15 @@ def list_requests(
     sort: str = "date_desc",
     page: int = 1,
     page_size: int = 10,
+    major: str | None = None,
     db: Session = Depends(get_db),
     admin: AdminContext = Depends(get_current_admin),
 ):
     # รวม 2 แหล่ง (student_requests + external_activities) แล้วเรียง/แบ่งหน้าใน Python
     # ปริมาณคำขอยังน้อย ถ้าเยอะขึ้นควรย้ายไปทำ UNION ใน SQL
+    # major: แอดมินกลางเลือก filter สาขาได้จากหน้า Approvals (ดู resolve_branch_filter)
+    admin = resolve_branch_filter(admin, major)
+
     include_student_requests = (
         not request_type
         or request_type != EXTERNAL_ACTIVITY_REQUEST_TYPE

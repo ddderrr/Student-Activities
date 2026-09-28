@@ -6,7 +6,9 @@ export default {
     helpCenter: 'Help Center',
     helpCenterContact: 'Contact by email:',
     logout: 'Logout',
-    settings: 'Settings'
+    settings: 'Settings',
+    branchLabel: 'Branch',
+    allBranches: 'All Branches'
   },
 
   adminSidebar: {
@@ -570,6 +572,11 @@ export default {
     studentAlreadyInActivity: 'This student already exists in the activity',
     studentIdLabel: 'Student ID *',
     studentIdPlaceholder: 'e.g. 670510001',
+    studentSearchPlaceholder: 'Type a student ID or name to search',
+    studentLookupLoading: 'Searching...',
+    studentIdNotFoundError: 'No student found with this ID.',
+    facultyLabel: 'Faculty',
+    noMajorLabel: 'No major',
     summaryActiveActivities: 'ACTIVE ACTIVITIES',
     summaryParticipantsMonth: 'PARTICIPANTS (MONTH)',
     summaryPendingEvaluations: 'PENDING EVALUATIONS',
@@ -757,6 +764,7 @@ export default {
     activityDescriptionModalTitle: 'Activity Description',
     closeButtonAriaLabel: 'Close',
     loadFailedError: 'Failed to load data',
+    accessDeniedError: 'You do not have permission to view this activity. Redirecting to the activity list...',
     fillAllFieldsError: 'Please fill in all required fields',
     saveFailedError: 'Failed to save data',
     saveFailedFallbackError: 'Unable to save data',
@@ -776,7 +784,8 @@ export default {
     faculty: 'Faculty',
     major: 'Major',
     email: 'Email',
-    cannotLoadNotifications: 'Cannot load notifications'
+    cannotLoadNotifications: 'Cannot load notifications',
+    logoutAndSwitchStudent: 'Log out / switch student'
   },
 
   adminLogin: {
@@ -809,7 +818,15 @@ export default {
     signInButton: 'Sign In',
     newToPortal: 'New to the portal?',
     contactItSupport: 'Contact IT Support',
-    forAccess: 'for access.'
+    forAccess: 'for access.',
+    mockStudentSectionTitle: 'Sign in as a test student',
+    mockStudentLoading: 'Loading test students...',
+    mockStudentBackendUnavailable: 'Could not reach the backend. Please try again.',
+    mockStudentRetry: 'Retry',
+    mockStudentBranchPrefix: 'Student - ',
+    identifierRequiredError: 'Please enter a student ID or email.',
+    identifierNotFoundError: 'No student found with that ID or email. Please check and try again.',
+    backendUnavailableError: 'Could not reach the backend. Please try again.'
   },
 
   skillLevelEditor: {

@@ -44,14 +44,19 @@ def create_external_activity(db_session, student_id="670510659", **overrides) ->
     return activity
 
 
-def test_dashboard_counts_approved_external_activity(client, db_session):
+def test_dashboard_never_counts_external_activities_even_when_approved(client, db_session):
+    """
+    "กิจกรรม" ในหน้า Dashboard หมายถึงกิจกรรมของคณะ (Activity) เท่านั้น เพื่อให้
+    ตรงกับหน้า Activities list เสมอ -- อนุมัติกิจกรรมภายนอกแล้วก็ไม่ควรทำให้
+    totalActivities/totalParticipants/activityGrowth ของ Dashboard เปลี่ยน
+    (ก่อนหน้านี้เคยรวมกันเงียบ ๆ ทำให้ตัวเลขไม่ตรงกับ Activities list)
+    """
     create_student(db_session)
 
     baseline = client.get("/api/admin/dashboard").json()
 
     activity = create_external_activity(db_session, status="pending")
 
-    # ยังไม่อนุมัติ ไม่ควรถูกนับ
     pending_stats = client.get("/api/admin/dashboard").json()
     assert pending_stats["totalActivities"] == baseline["totalActivities"]
     assert pending_stats["totalParticipants"] == baseline["totalParticipants"]
@@ -61,8 +66,8 @@ def test_dashboard_counts_approved_external_activity(client, db_session):
     db_session.commit()
 
     approved_stats = client.get("/api/admin/dashboard").json()
-    assert approved_stats["totalActivities"] == baseline["totalActivities"] + 1
-    assert approved_stats["totalParticipants"] == baseline["totalParticipants"] + 1
+    assert approved_stats["totalActivities"] == baseline["totalActivities"]
+    assert approved_stats["totalParticipants"] == baseline["totalParticipants"]
 
     if approved_stats["year"] == 2026:
         march_count = next(
@@ -71,7 +76,7 @@ def test_dashboard_counts_approved_external_activity(client, db_session):
         baseline_march_count = next(
             item["count"] for item in baseline["activityGrowth"] if item["month"] == "MAR"
         )
-        assert march_count == baseline_march_count + 1
+        assert march_count == baseline_march_count
 
 
 def test_dashboard_external_activities_endpoint_only_lists_approved(client, db_session):

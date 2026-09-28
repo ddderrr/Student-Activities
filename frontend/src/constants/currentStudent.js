@@ -7,11 +7,106 @@ export const MOCK_STUDENT_ID = '670510659'
 // ศูนย์ช่วยเหลือของนักศึกษา: ติดต่อทางอีเมล
 export const HELP_CENTER_EMAIL = 'natthanon_t@cmu.ac.th'
 
+// โหมด bypass ให้เลือกอีเมลนักศึกษาทดสอบที่หน้า /student/login (เหมือนแอดมิน)
+// backend รายชื่ออยู่ที่ backend/student_bypass.py เก็บ session ไว้ใน localStorage
+// เมื่อมีระบบ login จริง ให้แก้ที่ไฟล์นี้ไฟล์เดียว (เก็บ/ส่ง token แทนอีเมล)
+const STORAGE_KEY = 'studentSession'
+
+export function getStudentSession() {
+  try {
+    const session = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')
+    return session?.email ? session : null
+  } catch {
+    return null
+  }
+}
+
+export function setStudentSession(student) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      student_id: student.student_id,
+      email: student.email,
+      name: student.name,
+      major: student.major,
+      faculty: student.faculty
+    }))
+  } catch {
+    // เก็บไม่ได้ (เช่น private mode) ก็ยังใช้หน้านี้ต่อได้ แต่รีเฟรชแล้วต้องเลือกใหม่
+  }
+}
+
+export function clearStudentSession() {
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    // ignore
+  }
+}
+
 export function studentHeaders(extra = {}) {
+  const session = getStudentSession()
+
+  if (session) {
+    return {
+      'X-Student-Email': session.email,
+      ...extra
+    }
+  }
+
+  // ยังไม่ได้เลือก mock student จากหน้า login: fallback ไป student ID จำลองเดิม
   return {
     'X-Student-Id': MOCK_STUDENT_ID,
     ...extra
   }
+}
+
+export async function fetchStudentBypassStatus() {
+  const response = await fetch(`${API_BASE}/api/student/auth/bypass`)
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+
+  return response.json()
+}
+
+// ตรวจกับ backend ว่าอีเมลที่เลือกไว้ยังใช้ได้ คืน null ถ้าใช้ไม่ได้ / throw ถ้าต่อ backend ไม่ได้
+export async function verifyStudentSession() {
+  if (!getStudentSession()) return null
+
+  const response = await fetch(`${API_BASE}/api/student/me`, {
+    headers: studentHeaders()
+  })
+
+  if (response.status === 401) {
+    clearStudentSession()
+    return null
+  }
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+
+  const student = await response.json()
+  setStudentSession(student)
+  return student
+}
+
+// หน้า login ฝั่งนักศึกษา: ช่องรหัสนักศึกษา/อีเมลแบบพิมพ์เอง ค้นหานักศึกษาจริง
+// ในระบบ (ไม่ได้จำกัดแค่ 2 บัญชี shortcut) โยน error ที่มี .status ไว้แยก
+// 404 (ไม่พบ) จากปัญหาต่อ backend ไม่ได้
+export async function lookupStudentBypass(identifier) {
+  const response = await fetch(
+    `${API_BASE}/api/student/auth/lookup?identifier=${encodeURIComponent(identifier)}`
+  )
+
+  if (!response.ok) {
+    const error = new Error(`HTTP ${response.status}`)
+    error.status = response.status
+    throw error
+  }
+
+  return response.json()
 }
 
 // ไฟล์หลักฐานต้องแนบ X-Student-Id จึงเปิดด้วย <a href> ตรง ๆ ไม่ได้: โหลดเป็น blob แล้วเปิดในแท็บใหม่

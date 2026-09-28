@@ -21,6 +21,8 @@ import {
 } from '../../constants/activitySkills'
 import { useLanguage } from '../../composables/useLanguage'
 import { adminFetch, fetchAdminFileUrl } from '../../constants/currentAdmin'
+import BranchFilterSelect from '../../components/common/BranchFilterSelect.vue'
+import { ALL_BRANCHES_VALUE } from '../../constants/branches'
 
 const { t } = useLanguage()
 
@@ -54,6 +56,8 @@ const actionError = ref('')
 
 const filterType = ref('')
 const sortOrder = ref('date_desc')
+// filter สาขา สำหรับแอดมินกลางเท่านั้น (BranchFilterSelect ซ่อนตัวเองให้แอดมินสาขา)
+const selectedBranch = ref(ALL_BRANCHES_VALUE)
 const showFilterMenu = ref(false)
 
 const STATUS_TABS = computed(() => [
@@ -351,7 +355,10 @@ function formatDateOnly(value) {
 
 async function fetchStats() {
   try {
-    const response = await adminFetch(`${API_BASE}/api/requests/stats`)
+    const params = new URLSearchParams()
+    if (selectedBranch.value !== ALL_BRANCHES_VALUE) params.set('major', selectedBranch.value)
+
+    const response = await adminFetch(`${API_BASE}/api/requests/stats?${params}`)
     if (!response.ok) return
     stats.value = await response.json()
   } catch {
@@ -372,6 +379,7 @@ async function fetchRequests() {
     })
 
     if (filterType.value) params.set('request_type', filterType.value)
+    if (selectedBranch.value !== ALL_BRANCHES_VALUE) params.set('major', selectedBranch.value)
 
     const response = await adminFetch(`${API_BASE}/api/requests?${params}`)
 
@@ -397,6 +405,12 @@ onMounted(refreshAll)
 watch([filterType, sortOrder, statusFilter], () => {
   page.value = 1
   fetchRequests()
+})
+
+// แอดมินกลางเปลี่ยน filter สาขา -> stat cards กับรายการต้อง refresh ทั้งคู่
+watch(selectedBranch, () => {
+  page.value = 1
+  refreshAll()
 })
 
 function goToPage(next) {
@@ -485,6 +499,8 @@ async function decideRequest(request, status) {
         </h2>
 
         <div class="heading-actions">
+          <BranchFilterSelect v-model="selectedBranch" />
+
           <div class="filter-wrapper">
             <button class="tool-button" @click="showFilterMenu = !showFilterMenu">
               <SlidersHorizontal :size="14" />

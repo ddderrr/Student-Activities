@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Plus,
@@ -28,6 +28,8 @@ import {
   Trash2
 } from 'lucide-vue-next'
 import SkillLevelEditor from '../../components/Admin/SkillLevelEditor.vue'
+import BranchFilterSelect from '../../components/common/BranchFilterSelect.vue'
+import { ALL_BRANCHES_VALUE } from '../../constants/branches'
 import {
   PARTICIPANT_SKILLS,
   SKILLS_BY_ROLE,
@@ -40,6 +42,8 @@ import { adminFetch } from '../../constants/currentAdmin'
 const { t } = useLanguage()
 
 const searchText = ref('')
+// filter สาขา สำหรับแอดมินกลางเท่านั้น (BranchFilterSelect ซ่อนตัวเองให้แอดมินสาขา)
+const selectedBranch = ref(ALL_BRANCHES_VALUE)
 const quickSearch = ref('')
 const selectedCategory = ref('all')
 const selectedDate = ref('')
@@ -162,21 +166,6 @@ const pageLoading = ref(true)
 const tableLoading = ref(true)
 const skeletonRows = Array.from({ length: rowsPerPage }, (_, index) => index)
 
-const majorOptions = [
-  'เคมี',
-  'เคมีอุตสาหกรรม',
-  'จุลชีววิทยา',
-  'ชีวเคมีและชีวเคมีนวัตกรรม',
-  'ชีววิทยา',
-  'ธรณีวิทยา',
-  'ฟิสิกส์และวัสดุศาสตร์',
-  'สัตววิทยา',
-  'วิทยาการคอมพิวเตอร์',
-  'วิทยาการข้อมูล',
-  'วิทยาศาสตร์สิ่งแวดล้อม (หลักสูตรนานาชาติ)',
-  'สถิติ',
-  'อัญมณีวิทยา'
-]
 
 const roleOptions = computed(() => [
   { value: 'participant', label: t.value.adminStudentActivities.participantLabel },
@@ -252,7 +241,6 @@ const showAddStudentModal = ref(false)
 const addStudentLoading = ref(false)
 const addStudentError = ref('')
 const addStudentSuccess = ref('')
-const showMajorDropdown = ref(false)
 const showRoleDropdown = ref(false)
 
 const manualStudent = ref({
@@ -260,9 +248,116 @@ const manualStudent = ref({
   first_name: '',
   last_name: '',
   email: '',
+  faculty: '',
   major: '',
   role: 'participant'
 })
+
+// เพิ่ม Participant แบบพิมพ์รหัสนักศึกษา/ค้นหาชื่อ: ดึงชื่อ/คณะ/สาขาจาก
+// database มาเติมให้อัตโนมัติ (ไม่ให้พิมพ์เองแล้ว เพื่อกันพิมพ์ผิด/major ไม่ตรง
+// กับข้อมูลจริงเหมือนฟอร์มเดิม)
+const studentQuery = ref('')
+const studentSuggestions = ref([])
+const showStudentSuggestions = ref(false)
+const studentLookupStatus = ref('idle') // idle | loading | found | not_found
+let studentSearchTimer = null
+
+function clearStudentLookup() {
+  studentQuery.value = ''
+  studentSuggestions.value = []
+  showStudentSuggestions.value = false
+  studentLookupStatus.value = 'idle'
+  manualStudent.value.student_id = ''
+  manualStudent.value.first_name = ''
+  manualStudent.value.last_name = ''
+  manualStudent.value.email = ''
+  manualStudent.value.faculty = ''
+  manualStudent.value.major = ''
+}
+
+function applyStudentLookupResult(student) {
+  studentQuery.value = `${student.student_id} - ${student.first_name} ${student.last_name}`
+  manualStudent.value.student_id = student.student_id
+  manualStudent.value.first_name = student.first_name
+  manualStudent.value.last_name = student.last_name
+  manualStudent.value.email = student.email || ''
+  manualStudent.value.faculty = student.faculty || ''
+  manualStudent.value.major = student.major || ''
+  studentLookupStatus.value = 'found'
+}
+
+function selectStudentSuggestion(student) {
+  showStudentSuggestions.value = false
+  studentSuggestions.value = []
+  applyStudentLookupResult(student)
+}
+
+function onStudentQueryInput() {
+  addStudentError.value = ''
+  studentLookupStatus.value = 'idle'
+  manualStudent.value.student_id = ''
+  manualStudent.value.first_name = ''
+  manualStudent.value.last_name = ''
+  manualStudent.value.email = ''
+  manualStudent.value.faculty = ''
+  manualStudent.value.major = ''
+
+  clearTimeout(studentSearchTimer)
+
+  const keyword = studentQuery.value.trim()
+
+  if (!keyword) {
+    studentSuggestions.value = []
+    showStudentSuggestions.value = false
+    return
+  }
+
+  studentSearchTimer = setTimeout(async () => {
+    try {
+      const response = await adminFetch(
+        `${API_BASE}/api/admin/students/search?q=${encodeURIComponent(keyword)}`
+      )
+
+      if (!response.ok) return
+
+      const data = await response.json()
+      studentSuggestions.value = data.students || []
+      showStudentSuggestions.value = studentSuggestions.value.length > 0
+    } catch {
+      // เงียบไว้: พิมพ์รหัสตรง ๆ แล้ว blur ยัง trigger lookup แบบเต็มได้อยู่
+    }
+  }, 250)
+}
+
+// พิมพ์รหัสนักศึกษาตรง ๆ แล้ว blur/submit โดยไม่ได้กดเลือกจาก suggestion
+async function confirmStudentLookup() {
+  const keyword = studentQuery.value.trim()
+
+  if (!keyword || studentLookupStatus.value === 'found') return
+
+  studentLookupStatus.value = 'loading'
+  showStudentSuggestions.value = false
+
+  try {
+    const response = await adminFetch(
+      `${API_BASE}/api/admin/students/lookup?student_id=${encodeURIComponent(keyword)}`
+    )
+
+    if (response.status === 404) {
+      studentLookupStatus.value = 'not_found'
+      return
+    }
+
+    if (!response.ok) {
+      studentLookupStatus.value = 'not_found'
+      return
+    }
+
+    applyStudentLookupResult(await response.json())
+  } catch {
+    studentLookupStatus.value = 'not_found'
+  }
+}
 
 const activities = ref([])
 
@@ -438,7 +533,12 @@ async function fetchActivities() {
   tableLoading.value = true
 
   try {
-    const response = await adminFetch(`${API_BASE}/api/activities`)
+    const params = new URLSearchParams()
+    if (selectedBranch.value !== ALL_BRANCHES_VALUE) {
+      params.set('major', selectedBranch.value)
+    }
+
+    const response = await adminFetch(`${API_BASE}/api/activities?${params.toString()}`)
     const data = await response.json()
 
     if (!response.ok) {
@@ -458,6 +558,12 @@ async function fetchActivities() {
 onMounted(() => {
   fetchActivities()
   fetchPendingEvaluations()
+})
+
+// แอดมินกลางเปลี่ยน filter สาขา -> โหลดรายการกิจกรรมใหม่ตามสาขาที่เลือก
+watch(selectedBranch, () => {
+  currentPage.value = 1
+  fetchActivities()
 })
 
 function createActivity() {
@@ -655,18 +761,11 @@ function openAddStudent(activity) {
   openManageMenuId.value = null
   openActivityMenuId.value = null
 
-  manualStudent.value = {
-    student_id: '',
-    first_name: '',
-    last_name: '',
-    email: '',
-    major: '',
-    role: 'participant'
-  }
+  clearStudentLookup()
+  manualStudent.value.role = 'participant'
 
   addStudentError.value = ''
   addStudentSuccess.value = ''
-  showMajorDropdown.value = false
   showRoleDropdown.value = false
   showAddStudentModal.value = true
 }
@@ -675,16 +774,10 @@ function closeAddStudentModal() {
   if (addStudentLoading.value) return
 
   showAddStudentModal.value = false
-  showMajorDropdown.value = false
   showRoleDropdown.value = false
   selectedActivity.value = null
   addStudentError.value = ''
   addStudentSuccess.value = ''
-}
-
-function selectMajor(major) {
-  manualStudent.value.major = major
-  showMajorDropdown.value = false
 }
 
 function selectRole(role) {
@@ -702,31 +795,30 @@ function roleLabel(value) {
 async function addStudentManually() {
   if (!selectedActivity.value) return
 
-  const student = {
-    student_id: manualStudent.value.student_id.trim(),
-    first_name: manualStudent.value.first_name.trim(),
-    last_name: manualStudent.value.last_name.trim(),
-    email: manualStudent.value.email.trim(),
-    major: manualStudent.value.major.trim(),
-    role: manualStudent.value.role
+  // ยังไม่ได้ยืนยันด้วย lookup (เช่น พิมพ์รหัสแล้วกด Add ทันทีโดยไม่ blur)
+  if (studentLookupStatus.value === 'idle' || studentLookupStatus.value === 'loading') {
+    await confirmStudentLookup()
   }
 
-  if (
-    !student.student_id ||
-    !student.first_name ||
-    !student.last_name ||
-    !student.email ||
-    !student.major ||
-    !student.role
-  ) {
+  if (studentLookupStatus.value === 'not_found') {
+    addStudentError.value = t.value.adminStudentActivities.studentIdNotFoundError
+    return
+  }
+
+  if (studentLookupStatus.value !== 'found') {
     addStudentError.value =
       t.value.adminStudentActivities.addStudentValidationError
     return
   }
 
-  if (!student.email.includes('@')) {
-    addStudentError.value = t.value.adminStudentActivities.invalidEmailFormat
-    return
+  const student = {
+    student_id: manualStudent.value.student_id.trim(),
+    first_name: manualStudent.value.first_name.trim(),
+    last_name: manualStudent.value.last_name.trim(),
+    email: manualStudent.value.email.trim(),
+    faculty: manualStudent.value.faculty.trim(),
+    major: manualStudent.value.major.trim(),
+    role: manualStudent.value.role
   }
 
   addStudentLoading.value = true
@@ -763,14 +855,8 @@ async function addStudentManually() {
 
     addStudentSuccess.value = t.value.adminStudentActivities.addStudentSuccessMessage
 
-    manualStudent.value = {
-      student_id: '',
-      first_name: '',
-      last_name: '',
-      email: '',
-      major: '',
-      role: 'participant'
-    }
+    clearStudentLookup()
+    manualStudent.value.role = 'participant'
   } catch (error) {
     addStudentError.value =
       error.message || t.value.adminStudentActivities.backendConnectionError
@@ -1347,6 +1433,8 @@ const confirmImportButtonText = computed(() =>
         </select>
       </div>
 
+      <BranchFilterSelect v-model="selectedBranch" />
+
       <div class="filter-field filter-date-field">
         <label>{{ t.adminStudentActivities.filterDateFromLabel }}</label>
 
@@ -1784,84 +1872,62 @@ const confirmImportButtonText = computed(() =>
         </div>
 
         <div class="manual-form">
-          <label>
+          <label class="student-search-field">
             <span>{{ t.adminStudentActivities.studentIdLabel }}</span>
-            <input
-              v-model="manualStudent.student_id"
-              type="text"
-              :placeholder="t.adminStudentActivities.studentIdPlaceholder"
-            />
-          </label>
 
-          <div class="form-row">
-            <label>
-              <span>{{ t.adminStudentActivities.firstNameLabel }}</span>
+            <div class="student-search-wrapper">
               <input
-                v-model="manualStudent.first_name"
+                v-model="studentQuery"
                 type="text"
-                :placeholder="t.adminStudentActivities.firstNamePlaceholder"
+                autocomplete="off"
+                :placeholder="t.adminStudentActivities.studentSearchPlaceholder"
+                @input="onStudentQueryInput"
+                @focus="showStudentSuggestions = studentSuggestions.length > 0"
+                @blur="confirmStudentLookup"
               />
-            </label>
 
-            <label>
-              <span>{{ t.adminStudentActivities.lastNameLabel }}</span>
-              <input
-                v-model="manualStudent.last_name"
-                type="text"
-                :placeholder="t.adminStudentActivities.lastNamePlaceholder"
-              />
-            </label>
-          </div>
-
-          <label>
-            <span>{{ t.adminStudentActivities.emailLabel }}</span>
-            <input
-              v-model="manualStudent.email"
-              type="email"
-              :placeholder="t.adminStudentActivities.emailPlaceholder"
-            />
-          </label>
-
-          <label>
-            <span>{{ t.adminStudentActivities.majorLabel }}</span>
-
-            <div class="major-select">
-              <button
-                type="button"
-                class="major-select-button"
-                @click="showMajorDropdown = !showMajorDropdown"
+              <ul
+                v-if="showStudentSuggestions"
+                class="student-suggestions"
               >
-                <span
-                  :class="{ placeholder: !manualStudent.major }"
+                <li
+                  v-for="student in studentSuggestions"
+                  :key="student.student_id"
+                  @mousedown.prevent="selectStudentSuggestion(student)"
                 >
-                  {{
-                    manualStudent.major ||
-                    t.adminStudentActivities.selectMajorPlaceholder
-                  }}
-                </span>
-
-                <ChevronDown
-                  :size="16"
-                  :class="{ rotated: showMajorDropdown }"
-                />
-              </button>
-
-              <div
-                v-if="showMajorDropdown"
-                class="major-dropdown"
-              >
-                <button
-                  v-for="major in majorOptions"
-                  :key="major"
-                  type="button"
-                  class="major-option"
-                  @click="selectMajor(major)"
-                >
-                  {{ major }}
-                </button>
-              </div>
+                  <strong>{{ student.student_id }}</strong>
+                  <span>{{ student.first_name }} {{ student.last_name }}</span>
+                  <small>{{ student.major || t.adminStudentActivities.noMajorLabel }}</small>
+                </li>
+              </ul>
             </div>
+
+            <p v-if="studentLookupStatus === 'loading'" class="student-lookup-status">
+              {{ t.adminStudentActivities.studentLookupLoading }}
+            </p>
+            <p v-else-if="studentLookupStatus === 'not_found'" class="student-lookup-status error">
+              {{ t.adminStudentActivities.studentIdNotFoundError }}
+            </p>
           </label>
+
+          <div v-if="studentLookupStatus === 'found'" class="student-found-card">
+            <div class="student-found-row">
+              <span class="student-found-label">{{ t.adminStudentActivities.firstNameLabel }} / {{ t.adminStudentActivities.lastNameLabel }}</span>
+              <strong>{{ manualStudent.first_name }} {{ manualStudent.last_name }}</strong>
+            </div>
+            <div class="student-found-row">
+              <span class="student-found-label">{{ t.adminStudentActivities.emailLabel }}</span>
+              <strong>{{ manualStudent.email }}</strong>
+            </div>
+            <div class="student-found-row">
+              <span class="student-found-label">{{ t.adminStudentActivities.facultyLabel }}</span>
+              <strong>{{ manualStudent.faculty || '-' }}</strong>
+            </div>
+            <div class="student-found-row">
+              <span class="student-found-label">{{ t.adminStudentActivities.majorLabel }}</span>
+              <strong>{{ manualStudent.major || t.adminStudentActivities.noMajorLabel }}</strong>
+            </div>
+          </div>
 
           <label>
             <span>{{ t.adminStudentActivities.roleFieldLabel }}</span>
@@ -4184,90 +4250,95 @@ td {
 }
 
 
-.major-select {
+.student-search-wrapper {
   position: relative;
-  width: 100%;
 }
 
-.major-select-button {
-  width: 100%;
-  min-height: 42px;
-  padding: 0 12px;
-  border: 1px solid #dce5ef;
-  border-radius: 9px;
-  background: #fff;
-  color: #34445a;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.major-select-button:hover {
-  border-color: #c8d5e6;
-}
-
-.major-select-button:focus {
-  outline: none;
-  border-color: #7bb1f5;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
-}
-
-.major-select-button .placeholder {
-  color: #98a5b7;
-}
-
-.major-select-button svg {
-  flex-shrink: 0;
-  color: #7b8da5;
-  transition: transform 0.2s ease;
-}
-
-.major-select-button svg.rotated {
-  transform: rotate(180deg);
-}
-
-.major-dropdown {
+.student-suggestions {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 4px);
   left: 0;
   right: 0;
-  z-index: 1400;
+  z-index: 20;
 
-  max-height: 230px;
+  max-height: 220px;
   overflow-y: auto;
 
+  margin: 0;
   padding: 6px;
-  border: 1px solid #dce5ef;
-  border-radius: 10px;
-  background: #fff;
+  list-style: none;
 
-  box-shadow: 0 14px 35px rgba(15, 23, 42, 0.15);
+  background: #fff;
+  border: 1px solid #dce5ef;
+  border-radius: 9px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
 }
 
-.major-option {
-  width: 100%;
-  min-height: 36px;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: #46566d;
+.student-suggestions li {
   display: flex;
-  align-items: center;
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
+  flex-direction: column;
+  gap: 1px;
+
+  padding: 8px 10px;
+  border-radius: 7px;
+
   cursor: pointer;
 }
 
-.major-option:hover {
-  background: #f2f6fb;
-  color: #1769dc;
+.student-suggestions li:hover {
+  background: #f1f6fd;
+}
+
+.student-suggestions li strong {
+  color: #1f2937;
+  font-size: 13px;
+}
+
+.student-suggestions li span {
+  color: #4b5563;
+  font-size: 12.5px;
+}
+
+.student-suggestions li small {
+  color: #8c929c;
+  font-size: 11.5px;
+}
+
+.student-lookup-status {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #66758c;
+}
+
+.student-lookup-status.error {
+  color: #b42318;
+}
+
+.student-found-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  padding: 12px 14px;
+
+  background: #f6fbf7;
+  border: 1px solid #bfe3c6;
+  border-radius: 9px;
+}
+
+.student-found-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+
+  font-size: 13px;
+}
+
+.student-found-label {
+  color: #66758c;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 

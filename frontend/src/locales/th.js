@@ -6,7 +6,9 @@ export default {
     helpCenter: 'ศูนย์ช่วยเหลือ',
     helpCenterContact: 'ติดต่อทางอีเมล',
     logout: 'ออกจากระบบ',
-    settings: 'ตั้งค่า'
+    settings: 'ตั้งค่า',
+    branchLabel: 'สาขา',
+    allBranches: 'ทุกสาขา'
   },
 
   adminSidebar: {
@@ -571,6 +573,11 @@ export default {
     studentAlreadyInActivity: 'นักศึกษาคนนี้มีอยู่ในกิจกรรมแล้ว',
     studentIdLabel: 'รหัสนักศึกษา *',
     studentIdPlaceholder: 'เช่น 670510001',
+    studentSearchPlaceholder: 'พิมพ์รหัสนักศึกษาหรือชื่อเพื่อค้นหา',
+    studentLookupLoading: 'กำลังค้นหา...',
+    studentIdNotFoundError: 'ไม่พบรหัสนักศึกษานี้ในระบบ',
+    facultyLabel: 'คณะ',
+    noMajorLabel: 'ไม่มีสาขา',
     summaryActiveActivities: 'กิจกรรมที่กำลังดำเนินการ',
     summaryParticipantsMonth: 'ผู้เข้าร่วม (เดือนนี้)',
     summaryPendingEvaluations: 'คำขอที่รออนุมัติ',
@@ -758,6 +765,7 @@ export default {
     activityDescriptionModalTitle: 'รายละเอียดกิจกรรม',
     closeButtonAriaLabel: 'ปิด',
     loadFailedError: 'โหลดข้อมูลไม่สำเร็จ',
+    accessDeniedError: 'คุณไม่มีสิทธิ์เข้าถึงกิจกรรมนี้ กำลังพากลับไปหน้ารายการกิจกรรม...',
     fillAllFieldsError: 'กรุณากรอกข้อมูลให้ครบ',
     saveFailedError: 'บันทึกข้อมูลไม่สำเร็จ',
     saveFailedFallbackError: 'ไม่สามารถบันทึกข้อมูลได้',
@@ -777,7 +785,8 @@ export default {
     faculty: 'คณะ',
     major: 'สาขาวิชา',
     email: 'อีเมล',
-    cannotLoadNotifications: 'ไม่สามารถโหลดการแจ้งเตือนได้'
+    cannotLoadNotifications: 'ไม่สามารถโหลดการแจ้งเตือนได้',
+    logoutAndSwitchStudent: 'ออกจากระบบ / สลับนักศึกษา'
   },
 
   adminLogin: {
@@ -810,7 +819,15 @@ export default {
     signInButton: 'เข้าสู่ระบบ',
     newToPortal: 'เพิ่งเคยใช้งานระบบนี้?',
     contactItSupport: 'ติดต่อฝ่ายไอที',
-    forAccess: 'เพื่อขอสิทธิ์เข้าใช้งาน'
+    forAccess: 'เพื่อขอสิทธิ์เข้าใช้งาน',
+    mockStudentSectionTitle: 'เข้าสู่ระบบด้วยนักศึกษาทดสอบ',
+    mockStudentLoading: 'กำลังโหลดรายชื่อนักศึกษาทดสอบ...',
+    mockStudentBackendUnavailable: 'เชื่อมต่อ backend ไม่ได้ กรุณาลองใหม่',
+    mockStudentRetry: 'ลองใหม่',
+    mockStudentBranchPrefix: 'นักศึกษาสาขา',
+    identifierRequiredError: 'กรุณากรอกรหัสนักศึกษาหรืออีเมล',
+    identifierNotFoundError: 'ไม่พบนักศึกษานี้ในระบบ กรุณาตรวจสอบรหัสนักศึกษาหรืออีเมลอีกครั้ง',
+    backendUnavailableError: 'เชื่อมต่อ backend ไม่ได้ กรุณาลองใหม่'
   },
 
   skillLevelEditor: {

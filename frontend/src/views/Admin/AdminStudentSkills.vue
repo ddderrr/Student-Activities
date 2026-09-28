@@ -15,6 +15,8 @@ import {
 
 import { useLanguage } from '../../composables/useLanguage'
 import { adminFetch } from '../../constants/currentAdmin'
+import BranchFilterSelect from '../../components/common/BranchFilterSelect.vue'
+import { ALL_BRANCHES_VALUE } from '../../constants/branches'
 
 const { t, currentLanguage } = useLanguage()
 const API_BASE = 'http://localhost:8000'
@@ -120,6 +122,10 @@ const selectedYear = ref(null)
 const selectedPeriod = ref('ALL')
 const yearOpen = ref(false)
 const periodOpen = ref(false)
+// filter สาขา สำหรับแอดมินกลางเท่านั้น (BranchFilterSelect ซ่อนตัวเองให้แอดมินสาขา)
+const selectedBranch = ref(ALL_BRANCHES_VALUE)
+
+const changeBranch = () => loadStudentSkills()
 
 const periodOptions = computed(() => [
   { value: 'ALL', label: t.value.adminStudentSkills.periodAll },
@@ -181,6 +187,9 @@ const loadStudentSkills = async () => {
     const params = new URLSearchParams()
     if (selectedYear.value) params.set('year', selectedYear.value)
     params.set('semester', selectedPeriod.value)
+    if (selectedBranch.value !== ALL_BRANCHES_VALUE) {
+      params.set('major', selectedBranch.value)
+    }
 
     const response = await adminFetch(`${API_BASE}/api/admin/student-skills?${params.toString()}`)
     const data = await response.json()
@@ -660,6 +669,10 @@ onBeforeUnmount(() => {
       </div>
 
     </div>
+
+    <section class="branch-filter-row">
+      <BranchFilterSelect v-model="selectedBranch" @update:model-value="changeBranch" />
+    </section>
 
     <div v-if="error" class="skills-api-error">
       {{ error }}
@@ -1554,6 +1567,11 @@ onBeforeUnmount(() => {
 ========================= */
 
 .page-header {
+  margin-bottom: 22px;
+}
+
+.branch-filter-row {
+  max-width: 260px;
   margin-bottom: 22px;
 }
 

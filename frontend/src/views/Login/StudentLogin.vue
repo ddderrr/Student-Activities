@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   GraduationCap,
@@ -7,9 +7,15 @@ import {
   LockKeyhole,
   Eye,
   EyeOff,
-  ArrowRight
+  ArrowRight,
+  TriangleAlert
 } from 'lucide-vue-next'
 import { useLanguage } from '../../composables/useLanguage'
+import {
+  fetchStudentBypassStatus,
+  lookupStudentBypass,
+  setStudentSession
+} from '../../constants/currentStudent'
 
 const { t } = useLanguage()
 
@@ -19,18 +25,73 @@ const username = ref('')
 const password = ref('')
 const rememberMe = ref(false)
 const showPassword = ref(false)
+const loginError = ref('')
+const loginSubmitting = ref(false)
 
 /*
-  MOCK LOGIN
-  ตอนนี้ยังไม่ตรวจ Username / Password
+  MOCK LOGIN (bypass สำหรับพัฒนา)
+  ช่อง "รหัสนักศึกษาหรืออีเมล" เป็นรหัสนักศึกษา/อีเมลจริงของนักศึกษาที่มีอยู่
+  ในระบบ (ไม่ตรวจรหัสผ่าน) เพื่อให้ทดสอบเป็นนักศึกษาคนไหนก็ได้ ไม่ใช่แค่ 2
+  บัญชี shortcut ด้านล่าง -- ถ้าพิมพ์ผิด/ไม่พบ ต้องขึ้น error ชัดเจน ไม่ใช่
+  เงียบ ๆ แล้วสวมรอยเป็น mock student คนอื่นแทน (บั๊กเดิม)
 */
-const loginStudent = () => {
-  router.push('/student/activities')
+const loginStudent = async () => {
+  loginError.value = ''
+
+  const identifier = username.value.trim()
+
+  if (!identifier) {
+    loginError.value = t.value.studentLogin.identifierRequiredError
+    return
+  }
+
+  loginSubmitting.value = true
+
+  try {
+    const student = await lookupStudentBypass(identifier)
+    setStudentSession(student)
+    router.push('/student/activities')
+  } catch (error) {
+    loginError.value = error.status === 404
+      ? t.value.studentLogin.identifierNotFoundError
+      : t.value.studentLogin.backendUnavailableError
+  } finally {
+    loginSubmitting.value = false
+  }
 }
 
 const goAdminLogin = () => {
   router.push('/admin/login')
 }
+
+/*
+  MOCK STUDENT PICKER (bypass สำหรับพัฒนา เหมือนหน้า admin login)
+  เลือกนักศึกษาทดสอบจากรายชื่อที่ backend ส่งมา (backend/student_bypass.py)
+*/
+const mockLoading = ref(true)
+const mockBackendError = ref(false)
+const mockAccounts = ref([])
+
+const loadMockStudents = async () => {
+  mockLoading.value = true
+  mockBackendError.value = false
+
+  try {
+    const status = await fetchStudentBypassStatus()
+    mockAccounts.value = status.accounts || []
+  } catch {
+    mockBackendError.value = true
+  } finally {
+    mockLoading.value = false
+  }
+}
+
+const loginAsMockStudent = (account) => {
+  setStudentSession(account)
+  router.push('/student/activities')
+}
+
+onMounted(loadMockStudents)
 </script>
 
 <template>
@@ -59,6 +120,38 @@ const goAdminLogin = () => {
           <BriefcaseBusiness :size="15" />
           {{ t.studentLogin.adminLogin }}
         </button>
+      </div>
+
+
+      <!-- Mock Student Picker (bypass สำหรับพัฒนา) -->
+      <div class="mock-student-section">
+        <p class="mock-student-title">{{ t.studentLogin.mockStudentSectionTitle }}</p>
+
+        <p v-if="mockLoading" class="status-text">
+          {{ t.studentLogin.mockStudentLoading }}
+        </p>
+
+        <div v-else-if="mockBackendError" class="notice notice-error" role="alert">
+          <TriangleAlert :size="16" />
+          <div>
+            <strong>{{ t.studentLogin.mockStudentBackendUnavailable }}</strong>
+            <button class="retry-btn" type="button" @click="loadMockStudents">
+              {{ t.studentLogin.mockStudentRetry }}
+            </button>
+          </div>
+        </div>
+
+        <div v-else class="mock-account-list">
+          <button
+            v-for="account in mockAccounts"
+            :key="account.email"
+            type="button"
+            class="mock-account-btn"
+            @click="loginAsMockStudent(account)"
+          >
+            {{ t.studentLogin.mockStudentBranchPrefix }}{{ account.major }}
+          </button>
+        </div>
       </div>
 
 
@@ -137,10 +230,16 @@ const goAdminLogin = () => {
         </div>
 
 
+        <p v-if="loginError" class="error-text" role="alert">
+          {{ loginError }}
+        </p>
+
+
         <!-- Sign In -->
         <button
           class="sign-in-btn"
           type="submit"
+          :disabled="loginSubmitting"
         >
           {{ t.studentLogin.signInButton }}
           <ArrowRight :size="19" />
@@ -262,6 +361,101 @@ const goAdminLogin = () => {
 
 .admin-btn:hover {
   background: #f5f5f5;
+}
+
+
+/* =========================
+   Mock Student Picker
+========================= */
+
+.mock-student-section {
+  margin-bottom: 32px;
+
+  padding: 16px 18px;
+
+  background: #f8fafc;
+
+  border: 1px solid #d8dee9;
+  border-radius: 9px;
+}
+
+.mock-student-title {
+  margin: 0 0 12px;
+
+  font-size: 13px;
+  color: #374151;
+}
+
+.status-text {
+  margin: 0;
+
+  color: #777b85;
+  font-size: 13px;
+}
+
+.mock-account-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.mock-account-btn {
+  padding: 10px 16px;
+
+  border: 1px solid #a100d4;
+  border-radius: 7px;
+
+  background: white;
+  color: #a100d4;
+
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+
+  cursor: pointer;
+
+  transition: 0.2s;
+}
+
+.mock-account-btn:hover {
+  background: #a100d4;
+  color: white;
+}
+
+.notice {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+
+  color: #8a1c1c;
+
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.notice svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.notice strong {
+  display: block;
+}
+
+.retry-btn {
+  margin-top: 6px;
+  padding: 5px 12px;
+
+  border: 1px solid currentColor;
+  border-radius: 6px;
+
+  background: transparent;
+  color: inherit;
+
+  font-size: 12.5px;
+  font-family: inherit;
+
+  cursor: pointer;
 }
 
 
@@ -432,6 +626,18 @@ const goAdminLogin = () => {
 
 .sign-in-btn:hover {
   background: #9005bb;
+}
+
+.sign-in-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.error-text {
+  margin: -8px 0 18px;
+
+  color: #b42318;
+  font-size: 13px;
 }
 
 

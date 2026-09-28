@@ -63,6 +63,7 @@ const activity = ref({
 const participants = ref([])
 const pageLoading = ref(true)
 const loadError = ref('')
+let redirectTimeoutId = null
 
 const editingRowId = ref(null)
 const editDraft = ref(null)
@@ -174,6 +175,14 @@ async function fetchParticipants() {
       adminFetch(`${API_BASE}/api/activities/${activityId.value}`)
     ])
 
+    // แอดมินสาขาเปิด URL ของกิจกรรมสาขาอื่นตรงๆ -> backend ตอบ 403
+    // พาออกจากหน้านี้แทนที่จะปล่อยให้ค้างอยู่กับตารางว่าง/error ทั่วไป
+    if (participantsResponse.status === 403 || activityResponse.status === 403) {
+      loadError.value = t.value.adminParticipantDetails.accessDeniedError
+      redirectTimeoutId = setTimeout(() => router.push('/admin/activities'), 1500)
+      return
+    }
+
     if (!participantsResponse.ok || !activityResponse.ok) {
       throw new Error(t.value.adminParticipantDetails.loadFailedError)
     }
@@ -202,6 +211,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', checkDescriptionOverflow)
   window.removeEventListener('keydown', handleModalEscape)
+  clearTimeout(redirectTimeoutId)
 })
 
 function goBack() {
