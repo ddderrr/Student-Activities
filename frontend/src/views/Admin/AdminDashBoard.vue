@@ -227,8 +227,9 @@ const monthlyActivityData = computed(() => {
   const counts = Array(12).fill(0)
   const year = Number(selectedYear.value)
 
+  // กิจกรรม cancelled ไม่นับ ให้ตรงกับ KPI Total Activities ฝั่ง backend
   for (const activity of activityDetails.value) {
-    if (!activity.start_at) continue
+    if (!activity.start_at || activity.status === 'cancelled') continue
     const date = new Date(activity.start_at)
     if (Number.isNaN(date.getTime()) || date.getFullYear() !== year) continue
     counts[date.getMonth()] += 1

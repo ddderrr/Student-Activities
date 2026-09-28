@@ -220,9 +220,11 @@ def get_admin_dashboard(
         selected_months = dashboard_semester_months(semester)
 
     # Activities are filtered by the real activity date (start_at), not created_at.
+    # Cancelled activities never happened, so no KPI or chart counts them.
     period_activities = (
         db.query(Activity)
         .filter(
+            Activity.status != "cancelled",
             func.extract("year", Activity.start_at) == selected_year,
             func.extract("month", Activity.start_at).in_(selected_months),
         )
@@ -278,13 +280,8 @@ def get_admin_dashboard(
         internal_participant_ids | external_participant_ids
     )
 
-    # Cancelled activities are kept in the Activities card, but excluded from
-    # the completion-rate denominator because they were not expected to finish.
-    completion_eligible = [
-        activity
-        for activity in period_activities
-        if activity.status != "cancelled"
-    ]
+    # period_activities already excludes cancelled activities.
+    completion_eligible = period_activities
     completed_activities = sum(
         1
         for activity in completion_eligible
