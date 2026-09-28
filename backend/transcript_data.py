@@ -3,17 +3,18 @@
 - ชั้นปีคิดจากรหัสนักศึกษา มช. 9 หลัก: 2 หลักแรก = ปีที่เข้า (พ.ศ. 25xx)
   รหัสไม่ตรงรูปแบบ = ไม่รู้ชั้นปี เลือกได้แค่ "ทุกชั้นปี"
 - ชั้นปีที่ 1 = ปีการศึกษาที่เข้า, ชั้นปีที่ 2 = ปีการศึกษาถัดไป ...
-- ปีการศึกษาของกิจกรรมคิดจากวันที่จัด (เริ่มเดือน ACADEMIC_YEAR_START_MONTH)
+- ปีการศึกษาของกิจกรรมคิดจากวันที่จัด (เดือนเริ่มปีการศึกษาอยู่ใน academic_calendar.py)
 - นับเฉพาะกิจกรรมของคณะที่ไม่ถูกยกเลิก และกิจกรรมภายนอกที่อนุมัติแล้ว
 - คะแนนทักษะคิดจากกิจกรรมที่เลือกเท่านั้น (บทบาทผู้เข้าร่วม เหมือนหน้า My Skills)
 """
 
 import re
-from datetime import date, datetime
+from datetime import date
 
 from sqlalchemy.orm import Session
 
 import transcript_config
+from academic_calendar import academic_year_of
 from models import (
     Activity,
     ActivityMember,
@@ -72,17 +73,6 @@ def today() -> date:
 def entry_year_from_student_id(student_id: str | None) -> int | None:
     match = STUDENT_ID_PATTERN.match((student_id or "").strip())
     return 2500 + int(match.group(1)) if match else None
-
-
-def academic_year_of(value: date | datetime) -> int:
-    """ปีการศึกษา (พ.ศ.) ของวันที่"""
-    day = value.date() if isinstance(value, datetime) else value
-    buddhist_year = day.year + 543
-
-    if day.month >= transcript_config.ACADEMIC_YEAR_START_MONTH:
-        return buddhist_year
-
-    return buddhist_year - 1
 
 
 def year_level_for(entry_year: int | None, academic_year: int) -> int | None:

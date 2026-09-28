@@ -50,6 +50,7 @@ from admin_scope import (
     scope_student_query,
     scope_student_request_query,
 )
+import academic_calendar
 from database import Base, SessionLocal, engine, get_db
 import transcript_data
 from transcript_pdf import STYLES as TRANSCRIPT_STYLES, render_transcript_pdf
@@ -615,11 +616,11 @@ def report_academic_year_be(
     today: date,
 ) -> int:
     """
-    ปีการศึกษา (พ.ศ.) ที่ใช้คิดชั้นปีในรายงาน โดยถือว่าปีการศึกษาใหม่เริ่มเดือนกรกฎาคม
-    (ตรงกับ Semester 2 = ก.ค.-ธ.ค. ของหน้า Student Skills)
+    ปีการศึกษา (พ.ศ.) ที่ใช้คิดชั้นปีในรายงาน เดือนเริ่มปีการศึกษาอยู่ใน academic_calendar.py
+    (ค่าเริ่มต้น ก.ค. ตรงกับ Semester 2 = ก.ค.-ธ.ค. ของหน้า Student Skills)
     - SEMESTER_1 (ม.ค.-มิ.ย.) = ปีการศึกษาที่เริ่มในปีก่อนหน้า
     - SEMESTER_2 (ก.ค.-ธ.ค.) = ปีการศึกษาที่เริ่มในปีนั้น
-    - ALL = ชั้นปีล่าสุดของปีนั้น (ถ้าเป็นปีปัจจุบันและยังไม่ถึง ก.ค. = ชั้นปีปัจจุบัน)
+    - ALL = ชั้นปีล่าสุดของปีนั้น (ถ้าเป็นปีปัจจุบันและยังไม่ถึงเดือนเริ่มปีการศึกษา = ชั้นปีปัจจุบัน)
     """
     if semester == "SEMESTER_1":
         return report_year + 542
@@ -627,7 +628,10 @@ def report_academic_year_be(
     if semester == "SEMESTER_2":
         return report_year + 543
 
-    if report_year == today.year and today.month < 7:
+    if (
+        report_year == today.year
+        and today.month < academic_calendar.ACADEMIC_YEAR_START_MONTH
+    ):
         return report_year + 542
 
     return report_year + 543

@@ -1,5 +1,6 @@
 from datetime import date, datetime
 
+import academic_calendar
 from models import Activity, ActivityMember, Student
 from seed_demo_data import is_demo_student_id, remove_demo_data, seed_demo_data
 
@@ -61,14 +62,17 @@ def test_seed_creates_demo_data_and_remove_keeps_real_data(db_session):
     # ปี 1-4 ในปีการศึกษา 2569 = รหัส 69, 68, 67, 66
     assert {student.student_id[:2] for student in demo_students} == {"69", "68", "67", "66"}
 
-    # ปี 1 (รหัส 69) ต้องไม่อยู่ในกิจกรรมก่อน ก.ค.
+    # ปี 1 (รหัส 69) ต้องไม่อยู่ในกิจกรรมก่อนเดือนเริ่มปีการศึกษา (ก.ค.)
     first_year_early = (
         db_session.query(ActivityMember)
         .join(Activity, Activity.id == ActivityMember.activity_id)
         .filter(ActivityMember.student_id.like("69%"))
         .all()
     )
-    assert all(member.activity.start_at.month >= 7 for member in first_year_early)
+    assert all(
+        member.activity.start_at.month >= academic_calendar.ACADEMIC_YEAR_START_MONTH
+        for member in first_year_early
+    )
 
     # รันซ้ำได้ ไม่ซ้ำซ้อน
     seed_demo_data(db_session, today=date(2026, 9, 28))

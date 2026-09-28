@@ -18,6 +18,7 @@ from datetime import date, datetime
 
 from sqlalchemy.orm import Session
 
+import academic_calendar
 from database import SessionLocal
 from main import report_academic_year_be
 from models import Activity, ActivityMember, ActivitySkill, Student
@@ -192,10 +193,10 @@ def seed_demo_data(db: Session, today: date | None = None) -> dict:
                 )
                 student_count += 1
 
-                # ปี 1 เพิ่งเข้าเรียนเดือนกรกฎาคม จึงเข้าได้แค่กิจกรรมตั้งแต่ ก.ค.
+                # ปี 1 เพิ่งเข้าเรียนตอนเริ่มปีการศึกษา จึงเข้าได้แค่กิจกรรมตั้งแต่เดือนนั้น
                 eligible = [
                     key for key, _name, month, _p, _s in ACTIVITY_TEMPLATES
-                    if level > 1 or month >= 7
+                    if level > 1 or month >= academic_calendar.ACADEMIC_YEAR_START_MONTH
                 ]
                 weights = {
                     key: 1

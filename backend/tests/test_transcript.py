@@ -6,6 +6,7 @@ from io import BytesIO
 import pytest
 from pypdf import PdfReader
 
+import academic_calendar
 import transcript_config
 import transcript_data
 from models import (
@@ -56,22 +57,27 @@ def test_entry_year_from_student_id(student_id, expected):
     assert entry_year_from_student_id(student_id) == expected
 
 
-def test_academic_year_starts_in_configured_month(monkeypatch):
-    monkeypatch.setattr(transcript_config, "ACADEMIC_YEAR_START_MONTH", 6)
+def test_academic_year_starts_in_july_by_default():
+    assert academic_calendar.ACADEMIC_YEAR_START_MONTH == 7
 
-    assert academic_year_of(date(2026, 5, 31)) == 2568
-    assert academic_year_of(date(2026, 6, 1)) == 2569
+    assert academic_year_of(date(2026, 6, 30)) == 2568
+    assert academic_year_of(date(2026, 7, 1)) == 2569
     assert academic_year_of(datetime(2027, 1, 15, 9, 0)) == 2569
 
-    monkeypatch.setattr(transcript_config, "ACADEMIC_YEAR_START_MONTH", 8)
+
+def test_academic_year_follows_shared_start_month(monkeypatch):
+    monkeypatch.setattr(academic_calendar, "ACADEMIC_YEAR_START_MONTH", 8)
+
     assert academic_year_of(date(2026, 7, 31)) == 2568
     assert academic_year_of(date(2026, 8, 1)) == 2569
 
 
 def test_current_year_level():
     assert current_year_level("670510659", date(2026, 9, 28)) == 3
-    assert current_year_level("670510659", date(2026, 5, 31)) == 2
-    assert current_year_level("690510001", date(2026, 6, 1)) == 1
+    assert current_year_level("670510659", date(2026, 6, 30)) == 2
+    assert current_year_level("690510001", date(2026, 7, 1)) == 1
+    # รหัส 69 ก่อน ก.ค. 2569 ยังไม่ได้เข้าเรียน
+    assert current_year_level("690510001", date(2026, 6, 30)) is None
     # รหัสไม่ตรงรูปแบบ / ปีที่เข้ายังไม่มาถึง = ไม่รู้ชั้นปี
     assert current_year_level("TEST-CS-01", TODAY) is None
     assert current_year_level("700510001", TODAY) is None

@@ -3,8 +3,7 @@
 
 from pathlib import Path
 
-# ปีการศึกษาเริ่มเดือนไหน (1-12) เช่น 6 = 1 มิ.ย. ถึง 31 พ.ค. ปีถัดไป
-ACADEMIC_YEAR_START_MONTH = 6
+# เดือนเริ่มปีการศึกษา: ดู academic_calendar.py (ใช้ร่วมกับหน้า Student Skills)
 
 UNIVERSITY_NAME = "มหาวิทยาลัยเชียงใหม่"
 FACULTY_NAME = "คณะวิทยาศาสตร์"
