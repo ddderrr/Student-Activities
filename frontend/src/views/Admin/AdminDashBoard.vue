@@ -181,31 +181,25 @@ const fetchDashboard = async () => {
   error.value = null
 
   try {
-    // 1) ดึง Activity จริงทั้งหมดก่อน เพื่อสร้างรายการปีและคำนวณกราฟ/Skill
-    const activitiesResponse = await fetch(`${API_BASE}/api/activities`)
+    // 1) Activity ทั้งหมดในครั้งเดียว: list มี status / staff_skills / participant_skills
+    //    อยู่แล้ว ไม่ต้องยิง /api/activities/{id} ทีละกิจกรรม
+    // 2) กิจกรรมภายนอกที่อนุมัติแล้ว นับรวมใน "การเติบโตของกิจกรรม" ด้วย
+    const [activitiesResponse, externalResponse] = await Promise.all([
+      fetch(`${API_BASE}/api/activities`),
+      fetch(`${API_BASE}/api/admin/dashboard/external-activities`)
+    ])
     if (!activitiesResponse.ok) throw new Error('Cannot load activities')
     const activitiesPayload = await activitiesResponse.json()
     const activities = Array.isArray(activitiesPayload.activities)
       ? activitiesPayload.activities
       : []
 
-    // 2) Detail endpoint มี staff_skills / participant_skills
-    const details = await Promise.all(
-      activities.map(async (activity) => {
-        const response = await fetch(`${API_BASE}/api/activities/${activity.id}`)
-        if (!response.ok) return activity
-        return response.json()
-      })
-    )
-    // 3) กิจกรรมภายนอกที่อนุมัติแล้ว นับรวมใน "การเติบโตของกิจกรรม" ด้วย
-    // (ไม่มี staff_skills/participant_skills จึงไม่กระทบ Skill Distribution)
-    const externalResponse = await fetch(`${API_BASE}/api/admin/dashboard/external-activities`)
     const externalPayload = externalResponse.ok ? await externalResponse.json() : null
     const externalActivities = Array.isArray(externalPayload?.external_activities)
       ? externalPayload.external_activities
       : []
 
-    activityDetails.value = [...details, ...externalActivities]
+    activityDetails.value = [...activities, ...externalActivities]
 
     // ถ้าปีปัจจุบันไม่มีข้อมูลก็ยังคงเลือกได้ตามเดิม
     // Summary จะกรองตามปี + Semester ที่ผู้ใช้เลือก (รวมกิจกรรมภายนอกแล้วฝั่ง backend)

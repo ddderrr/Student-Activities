@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
@@ -925,14 +925,38 @@ def get_member_counts(
     return participant_count, organizer_count
 
 
+def get_member_counts_by_activity(db: Session) -> dict[int, tuple[int, int]]:
+    # นับสมาชิกทุกกิจกรรมใน query เดียว แทนการนับทีละกิจกรรม
+    counts: dict[int, list[int]] = {}
+
+    for activity_id, role, total in (
+        db.query(
+            ActivityMember.activity_id,
+            ActivityMember.role,
+            func.count(ActivityMember.student_id),
+        )
+        .group_by(ActivityMember.activity_id, ActivityMember.role)
+        .all()
+    ):
+        entry = counts.setdefault(activity_id, [0, 0])
+        if role == "participant":
+            entry[0] = total
+        elif role == "organizer":
+            entry[1] = total
+
+    return {activity_id: (entry[0], entry[1]) for activity_id, entry in counts.items()}
+
+
 def serialize_activity(
     db: Session,
     activity: Activity,
     include_skills: bool = False,
+    member_counts: tuple[int, int] | None = None,
 ) -> dict:
-    participant_count, organizer_count = get_member_counts(
-        db,
-        activity.id,
+    participant_count, organizer_count = (
+        member_counts
+        if member_counts is not None
+        else get_member_counts(db, activity.id)
     )
 
     result = {
@@ -998,11 +1022,14 @@ def require_activity(
 def list_activities(
     db: Session = Depends(get_db),
 ):
+    # โหลด skill ของทุกกิจกรรมและจำนวนสมาชิกรวดเดียว ไม่ query ซ้ำทีละกิจกรรม
     activities = (
         db.query(Activity)
+        .options(selectinload(Activity.skill_levels))
         .order_by(Activity.start_at.asc())
         .all()
     )
+    member_counts = get_member_counts_by_activity(db)
 
     return {
         "total": len(activities),
@@ -1011,6 +1038,7 @@ def list_activities(
                 db,
                 activity,
                 include_skills=True,
+                member_counts=member_counts.get(activity.id, (0, 0)),
             )
             for activity in activities
         ],
