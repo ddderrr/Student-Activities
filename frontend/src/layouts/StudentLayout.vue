@@ -284,15 +284,19 @@ const openNotification = async (notification) => {
 
     ตัวอย่าง:
 
-    /student/activities?open=4
+    /student/activities?open=4&source=external_activity
 
     StudentActivities.vue จะเปิด Modal
 
-    ของ Activity id 4 ให้อัตโนมัติ
+    ของคำขอกิจกรรมภายนอก id 4 (My Submissions) ให้อัตโนมัติ
+
+    แจ้งเตือนของ student_request ไม่มีหน้าให้เปิด อ่านอย่างเดียว
+
+    (id ของสองตารางชนกันได้ ห้ามเอาไปเปิดเป็นกิจกรรมอื่น)
 
   */
 
-  if (!notification.activityId) return
+  if (!notification.activityId || notification.source !== 'external_activity') return
 
   await router.push({
 
@@ -300,7 +304,9 @@ const openNotification = async (notification) => {
 
     query: {
 
-      open: notification.activityId
+      open: notification.activityId,
+
+      source: notification.source
 
     }
 

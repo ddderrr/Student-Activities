@@ -2992,6 +2992,8 @@ def create_notification(
 def serialize_notification(notification: Notification) -> dict:
     return {
         "id": notification.id,
+        # activityId เป็น id ของตารางตาม source (external_activities หรือ student_requests)
+        "source": notification.source,
         "activityId": notification.external_activity_id or notification.request_id,
         "title": notification.title,
         "message": notification.message,
