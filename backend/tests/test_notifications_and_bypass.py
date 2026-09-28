@@ -164,3 +164,39 @@ def test_list_and_mark_notifications(client, db_session):
         headers={"X-Student-Id": "670510659"},
     )
     assert list_response_after.json()[0]["read"] is True
+
+
+def test_notifications_say_which_source_their_id_belongs_to(client, db_session):
+    # id ของคำขอกิจกรรมภายนอกกับ id ของ student_request ชนกันได้
+    # frontend ต้องรู้ว่า activityId มาจากไหนจึงจะเปิดถูกรายการ
+    create_student(db_session)
+    activity = create_external_activity(db_session)
+    request = StudentRequest(
+        requester_name="Test Student",
+        requester_student_id="670510659",
+        request_type="skill_validation",
+        detail="ขอ validate ทักษะ",
+        status="pending",
+    )
+    db_session.add(request)
+    db_session.commit()
+
+    client.patch(
+        f"/api/external-activities/{activity.id}/decision",
+        json={"status": "rejected", "reject_reason": "แนบไฟล์ใหม่"},
+    )
+    client.patch(
+        f"/api/requests/{request.id}",
+        json={"status": "rejected", "reject_reason": "ข้อมูลไม่ครบ"},
+    )
+
+    notifications = client.get(
+        "/api/student/me/notifications",
+        headers={"X-Student-Id": "670510659"},
+    ).json()
+
+    by_source = {item["source"]: item["activityId"] for item in notifications}
+    assert by_source == {
+        "external_activity": activity.id,
+        "student_request": request.id,
+    }

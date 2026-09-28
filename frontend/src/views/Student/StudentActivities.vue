@@ -492,38 +492,31 @@ const closeDetails = () => {
    /student/activities?open=ACTIVITY_ID
 ===================================================== */
 
+// ข้อมูลโหลดครบแล้วหรือยัง: watch ของ ?open ทำงานก่อน fetch เสร็จ
+// ถ้าเปิดตอนนั้นจะหาไม่เจอแล้วล้าง ?open ทิ้ง modal เลยไม่เปิด
+const dataLoaded = ref(false)
+
 const openActivityFromNotification = async () => {
 
   const activityId =
     Number(route.query.open)
 
 
-  if (!activityId) {
+  if (!activityId || !dataLoaded.value) {
     return
   }
 
 
-  const activity =
-    activities.value.find(
-      item =>
-        item.id === activityId
-    )
-
-  // Notification ของกิจกรรมภายนอกจะอ้าง id จาก My Submissions ไม่ใช่ Faculty Activities
+  // แจ้งเตือนอ้าง id ของคำขอกิจกรรมภายนอก (My Submissions) เท่านั้น
+  // ห้ามหาใน Faculty Activities: id คนละตาราง ชนกันได้ จะเปิดผิดรายการ
   const submission =
-    !activity &&
     submissions.value.find(
       item =>
         item.id === activityId
     )
 
 
-  if (activity) {
-
-    selectedActivity.value =
-      activity
-
-  } else if (submission) {
+  if (submission) {
 
     sourceFilter.value = 'submissions'
     selectedActivity.value = submission
@@ -532,14 +525,16 @@ const openActivityFromNotification = async () => {
 
 
   /*
-    เปิด Modal แล้วล้าง ?open=...
+    เปิด Modal แล้วล้าง ?open=... ?source=...
     เพื่อให้ URL กลับมาสะอาด
   */
   await router.replace({
     path: '/student/activities',
-    query: route.query.tab
-      ? { tab: route.query.tab }
-      : {}
+    query: submission
+      ? { tab: 'submissions' }
+      : route.query.tab
+        ? { tab: route.query.tab }
+        : {}
   })
 
 }
@@ -652,6 +647,8 @@ const fetchActivities = async () => {
       submissionsData.external_activities.map(
         toSubmissionView
       )
+
+    dataLoaded.value = true
 
 
     /*
