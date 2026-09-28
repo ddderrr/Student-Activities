@@ -32,6 +32,21 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from admin_auth import (
+    AdminContext,
+    get_current_admin,
+    get_optional_admin,
+    is_admin_bypass_enabled,
+    list_bypass_admins,
+    require_central_admin,
+)
+from admin_scope import (
+    ensure_can_access_student,
+    ensure_can_assign_major,
+    scope_external_activity_query,
+    scope_student_query,
+    scope_student_request_query,
+)
 from database import Base, SessionLocal, engine, get_db
 from models import (
     Activity,
@@ -137,6 +152,38 @@ def home():
     }
 
 
+# ============================================================
+# ADMIN AUTH (bypass สำหรับพัฒนา ดู admin_auth.py)
+# ============================================================
+
+
+def serialize_admin(admin: AdminContext) -> dict:
+    return {
+        "email": admin.email,
+        "name": admin.name,
+        "major": admin.major,
+        "is_central": admin.is_central,
+    }
+
+
+@app.get("/api/admin/auth/bypass")
+def get_admin_bypass_status():
+    # หน้า login ฝั่ง admin ใช้แสดงรายชื่อให้เลือก และบอกว่า bypass ปิดอยู่หรือไม่
+    if not is_admin_bypass_enabled():
+        return {"enabled": False, "accounts": []}
+
+    return {
+        "enabled": True,
+        "accounts": [serialize_admin(admin) for admin in list_bypass_admins()],
+    }
+
+
+@app.get("/api/admin/me")
+def get_admin_me(
+    admin: AdminContext = Depends(get_current_admin),
+):
+    return serialize_admin(admin)
+
 
 # ============================================================
 # ADMIN DASHBOARD
@@ -181,6 +228,7 @@ def get_admin_dashboard(
     semester: str = "ALL",
     months: str | None = None,
     db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     """
     Dashboard summary for the selected activity year/semester.
@@ -189,6 +237,9 @@ def get_admin_dashboard(
     the real activity date (Activity.start_at / ExternalActivity.start_date)
     as the reporting period. Student count remains the faculty/system total
     because students are master data, not activities.
+
+    แอดมินสาขา: นักศึกษา ผู้เข้าร่วม และกิจกรรมภายนอก นับเฉพาะสาขาตัวเอง
+    ส่วนกิจกรรมของคณะ (Activity) เป็นของทั้งคณะ ทุกแอดมินนับเหมือนกัน
 
     `months`: optional comma-separated month numbers (e.g. "9" or "7,8,9")
     that narrows the period further than `semester` — used when the admin
@@ -233,21 +284,22 @@ def get_admin_dashboard(
 
     # กิจกรรมภายนอกที่อนุมัติแล้ว นับรวมด้วย ใช้ start_date เป็น reporting period
     # เดียวกับ Activity.start_at เพื่อให้กรองตามปี/เทอมที่เลือกสอดคล้องกัน
-    period_external_activities = (
+    period_external_activities = scope_student_query(
         db.query(ExternalActivity)
+        .join(Student, Student.student_id == ExternalActivity.student_id)
         .filter(
             ExternalActivity.status == "approved",
             func.extract("year", ExternalActivity.start_date) == selected_year,
             func.extract("month", ExternalActivity.start_date).in_(selected_months),
-        )
-        .all()
-    )
+        ),
+        admin,
+    ).all()
 
     total_activities = len(period_activities) + len(period_external_activities)
     period_activity_ids = [activity.id for activity in period_activities]
 
     total_students = (
-        db.query(func.count(Student.student_id))
+        scope_student_query(db.query(func.count(Student.student_id)), admin)
         .scalar()
         or 0
     )
@@ -260,10 +312,14 @@ def get_admin_dashboard(
         internal_participant_ids = {
             row[0]
             for row in (
-                db.query(ActivityMember.student_id)
-                .filter(
-                    ActivityMember.role == "participant",
-                    ActivityMember.activity_id.in_(period_activity_ids),
+                scope_student_query(
+                    db.query(ActivityMember.student_id)
+                    .join(Student, Student.student_id == ActivityMember.student_id)
+                    .filter(
+                        ActivityMember.role == "participant",
+                        ActivityMember.activity_id.in_(period_activity_ids),
+                    ),
+                    admin,
                 )
                 .distinct()
                 .all()
@@ -385,6 +441,7 @@ def get_admin_dashboard(
 @app.get("/api/admin/dashboard/external-activities")
 def get_dashboard_external_activities(
     db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     """
     กิจกรรมภายนอกที่อนุมัติแล้วทั้งหมด (ไม่แบ่งหน้า) ให้หน้า Dashboard
@@ -394,13 +451,14 @@ def get_dashboard_external_activities(
     เดียวกับ /api/activities/{id} เพื่อให้ frontend ใช้ logic เดิมได้เลย)
     """
 
-    activities = (
+    activities = scope_student_query(
         db.query(ExternalActivity.id, ExternalActivity.start_date)
-        .filter(ExternalActivity.status == "approved")
-        .all()
-    )
+        .join(Student, Student.student_id == ExternalActivity.student_id)
+        .filter(ExternalActivity.status == "approved"),
+        admin,
+    ).all()
 
-    skill_rows = (
+    skill_rows = scope_student_query(
         db.query(
             ExternalActivitySkill.external_activity_id,
             ExternalActivitySkill.target_role,
@@ -411,9 +469,10 @@ def get_dashboard_external_activities(
             ExternalActivity,
             ExternalActivity.id == ExternalActivitySkill.external_activity_id,
         )
-        .filter(ExternalActivity.status == "approved")
-        .all()
-    )
+        .join(Student, Student.student_id == ExternalActivity.student_id)
+        .filter(ExternalActivity.status == "approved"),
+        admin,
+    ).all()
 
     skills_by_activity: dict[int, dict[str, dict]] = {}
 
@@ -495,6 +554,7 @@ class StudentSkillBenchmarkUpdate(BaseModel):
 def update_student_skill_benchmark(
     payload: StudentSkillBenchmarkUpdate,
     db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(require_central_admin),
 ):
     expected = set(PARTICIPANT_SKILL_DEFINITIONS)
     received = set(payload.scores)
@@ -527,6 +587,7 @@ def get_admin_student_skills(
     year: int | None = None,
     semester: str = "ALL",
     db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     """Student skill report for a selected year or semester.
 
@@ -537,7 +598,11 @@ def get_admin_student_skills(
     selected_semester = normalize_student_skill_semester(semester)
     now_value = datetime.now()
 
-    total_students = db.query(func.count(Student.student_id)).scalar() or 0
+    total_students = (
+        scope_student_query(db.query(func.count(Student.student_id)), admin)
+        .scalar()
+        or 0
+    )
 
     # Years come from both internal activities and approved external activities.
     internal_years = {
@@ -553,7 +618,7 @@ def get_admin_student_skills(
     available_years = sorted(internal_years | external_years | {now_value.year}, reverse=True)
     selected_year = year if year in available_years else available_years[0]
 
-    internal_rows = (
+    internal_rows = scope_student_query(
         db.query(
             Student.student_id,
             Student.first_name,
@@ -572,11 +637,11 @@ def get_admin_student_skills(
             ActivitySkill.target_role == "participant",
             Activity.status != "cancelled",
             func.extract("year", Activity.start_at) == selected_year,
-        )
-        .all()
-    )
+        ),
+        admin,
+    ).all()
 
-    external_rows = (
+    external_rows = scope_student_query(
         db.query(
             Student.student_id,
             Student.first_name,
@@ -594,9 +659,9 @@ def get_admin_student_skills(
             ExternalActivity.role == "participant",
             ExternalActivitySkill.target_role == "participant",
             func.extract("year", ExternalActivity.start_date) == selected_year,
-        )
-        .all()
-    )
+        ),
+        admin,
+    ).all()
 
     # student_id -> accumulated evidence. activity_ids is a set, so one activity
     # counts once even when it contributes several skills.
@@ -682,6 +747,7 @@ def get_admin_student_skills(
 def get_admin_student_activities(
     student_id: str,
     db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     """
     ประวัติกิจกรรมทั้งหมดของนักศึกษา 1 คน (มุมมอง Admin) ใช้กับปุ่ม
@@ -698,6 +764,8 @@ def get_admin_student_activities(
             status_code=404,
             detail="ไม่พบนักศึกษา",
         )
+
+    ensure_can_access_student(admin, student)
 
     items = []
 
@@ -1021,6 +1089,7 @@ def require_activity(
 @app.get("/api/activities")
 def list_activities(
     db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(get_current_admin),
 ):
     # โหลด skill ของทุกกิจกรรมและจำนวนสมาชิกรวดเดียว ไม่ query ซ้ำทีละกิจกรรม
     activities = (
@@ -1049,6 +1118,7 @@ def list_activities(
 def create_activity(
     payload: ActivityCreate,
     db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(get_current_admin),
 ):
     validate_required_text(
         {
@@ -1128,6 +1198,7 @@ def update_activity(
     activity_id: int,
     payload: ActivityUpdate,
     db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(get_current_admin),
 ):
     activity = require_activity(
         db,
@@ -1237,6 +1308,7 @@ def update_activity(
 def get_activity(
     activity_id: int,
     db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(get_current_admin),
 ):
     activity = require_activity(
         db,
@@ -1257,6 +1329,7 @@ def get_activity(
 def delete_activity(
     activity_id: int,
     db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(get_current_admin),
 ):
     activity = require_activity(
         db,
@@ -1903,6 +1976,7 @@ def import_students_from_legacy_xls(
 async def import_students(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(require_central_admin),
 ):
     """
     นำเข้านักศึกษาแบบ bulk โดยไม่ผูกกับกิจกรรมใดๆ (ต่างจาก
@@ -1957,6 +2031,7 @@ async def preview_activity_participants(
     activity_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(get_current_admin),
 ):
     require_activity(
         db,
@@ -2004,6 +2079,7 @@ def confirm_activity_participants(
     activity_id: int,
     payload: ConfirmImportRequest,
     db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(get_current_admin),
 ):
     require_activity(
         db,
@@ -2147,25 +2223,30 @@ def confirm_activity_participants(
 def get_activity_participants(
     activity_id: int,
     db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     activity = require_activity(
         db,
         activity_id,
     )
 
+    # กิจกรรมของคณะใช้ร่วมกันทุกแอดมิน แต่รายชื่อผู้เข้าร่วมเห็นเฉพาะสาขาตัวเอง
     rows = (
-        db.query(
-            ActivityMember,
-            Student,
-        )
-        .join(
-            Student,
-            Student.student_id
-            == ActivityMember.student_id,
-        )
-        .filter(
-            ActivityMember.activity_id
-            == activity_id
+        scope_student_query(
+            db.query(
+                ActivityMember,
+                Student,
+            )
+            .join(
+                Student,
+                Student.student_id
+                == ActivityMember.student_id,
+            )
+            .filter(
+                ActivityMember.activity_id
+                == activity_id
+            ),
+            admin,
         )
         .order_by(
             Student.student_id.asc()
@@ -2217,6 +2298,7 @@ def update_activity_participant(
     student_id: str,
     payload: ParticipantUpdate,
     db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     require_activity(
         db,
@@ -2235,6 +2317,7 @@ def update_activity_participant(
         )
 
     student = db.get(Student, student_id)
+    ensure_can_access_student(admin, student)
 
     first_name = payload.first_name.strip()
     last_name = payload.last_name.strip()
@@ -2242,6 +2325,8 @@ def update_activity_participant(
     faculty = payload.faculty.strip()
     major = payload.major.strip()
     role = normalize_role(payload.role)
+
+    ensure_can_assign_major(admin, major)
 
     if not first_name or not last_name:
         raise HTTPException(
@@ -2284,6 +2369,7 @@ def remove_activity_participant(
     activity_id: int,
     student_id: str,
     db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     """
     นำนักศึกษาออกจากกิจกรรมนี้ (ลบแค่ activity_members)
@@ -2304,6 +2390,8 @@ def remove_activity_participant(
             status_code=404,
             detail="ไม่พบผู้เข้าร่วมนี้ในกิจกรรม",
         )
+
+    ensure_can_access_student(admin, db.get(Student, student_id))
 
     db.delete(member)
     db.commit()
@@ -3967,10 +4055,37 @@ def export_my_skills_pdf(
 def get_external_activity(
     external_activity_id: int,
     db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
 ):
-    return serialize_external_activity(
-        require_external_activity(db, external_activity_id)
-    )
+    external_activity = require_external_activity(db, external_activity_id)
+    ensure_can_access_student(admin, external_activity.student)
+
+    return serialize_external_activity(external_activity)
+
+
+def ensure_can_view_evidence(
+    external_activity: ExternalActivity,
+    admin: AdminContext | None,
+    x_student_id: str | None,
+) -> None:
+    # ไฟล์หลักฐานเปิดได้ทั้งแอดมิน (ตามสาขา) และนักศึกษาเจ้าของคำขอ
+    if admin is not None:
+        ensure_can_access_student(admin, external_activity.student)
+        return
+
+    student_id = (x_student_id or "").strip()
+
+    if not student_id:
+        raise HTTPException(
+            status_code=401,
+            detail="ต้องระบุแอดมิน (X-Admin-Email) หรือนักศึกษา (X-Student-Id)",
+        )
+
+    if student_id != external_activity.student_id:
+        raise HTTPException(
+            status_code=403,
+            detail="เปิดได้เฉพาะไฟล์หลักฐานของคำขอตัวเอง",
+        )
 
 
 def evidence_file_response(evidence: ExternalActivityEvidence) -> FileResponse:
@@ -3994,12 +4109,15 @@ def evidence_file_response(evidence: ExternalActivityEvidence) -> FileResponse:
 def get_external_activity_evidence(
     external_activity_id: int,
     db: Session = Depends(get_db),
+    admin: AdminContext | None = Depends(get_optional_admin),
+    x_student_id: str | None = Header(default=None),
 ):
     # URL เดิมแบบไฟล์เดียว: ส่งไฟล์แรกของคำขอ
     external_activity = require_external_activity(
         db,
         external_activity_id,
     )
+    ensure_can_view_evidence(external_activity, admin, x_student_id)
 
     if not external_activity.evidence_files:
         raise HTTPException(
@@ -4015,6 +4133,8 @@ def get_external_activity_evidence_file(
     external_activity_id: int,
     evidence_id: int,
     db: Session = Depends(get_db),
+    admin: AdminContext | None = Depends(get_optional_admin),
+    x_student_id: str | None = Header(default=None),
 ):
     evidence = db.get(ExternalActivityEvidence, evidence_id)
 
@@ -4023,6 +4143,8 @@ def get_external_activity_evidence_file(
             status_code=404,
             detail="ไม่พบไฟล์หลักฐาน",
         )
+
+    ensure_can_view_evidence(evidence.external_activity, admin, x_student_id)
 
     return evidence_file_response(evidence)
 
@@ -4038,6 +4160,7 @@ def decide_external_activity(
     external_activity_id: int,
     payload: ExternalActivityDecision,
     db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     if payload.status not in {"approved", "rejected"}:
         raise HTTPException(
@@ -4049,6 +4172,7 @@ def decide_external_activity(
         db,
         external_activity_id,
     )
+    ensure_can_access_student(admin, external_activity.student)
 
     if external_activity.status != "pending":
         raise HTTPException(
@@ -4133,6 +4257,7 @@ def serialize_request(request: StudentRequest) -> dict:
 @app.get("/api/requests/stats")
 def get_request_stats(
     db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     today_start = datetime.now().replace(
         hour=0,
@@ -4142,14 +4267,14 @@ def get_request_stats(
     )
 
     total_pending = (
-        db.query(func.count(StudentRequest.id))
+        scope_student_request_query(db.query(func.count(StudentRequest.id)), admin)
         .filter(StudentRequest.status == "pending")
         .scalar()
         or 0
     )
 
     approved_today = (
-        db.query(func.count(StudentRequest.id))
+        scope_student_request_query(db.query(func.count(StudentRequest.id)), admin)
         .filter(
             StudentRequest.status == "approved",
             StudentRequest.decided_at >= today_start,
@@ -4159,7 +4284,7 @@ def get_request_stats(
     )
 
     rejected_today = (
-        db.query(func.count(StudentRequest.id))
+        scope_student_request_query(db.query(func.count(StudentRequest.id)), admin)
         .filter(
             StudentRequest.status == "rejected",
             StudentRequest.decided_at >= today_start,
@@ -4170,14 +4295,14 @@ def get_request_stats(
 
     # รวมกิจกรรมภายนอกเข้าไปในตัวเลขของหน้า Approvals ด้วย
     total_pending += (
-        db.query(func.count(ExternalActivity.id))
+        scope_external_activity_query(db.query(func.count(ExternalActivity.id)), admin)
         .filter(ExternalActivity.status == "pending")
         .scalar()
         or 0
     )
 
     approved_today += (
-        db.query(func.count(ExternalActivity.id))
+        scope_external_activity_query(db.query(func.count(ExternalActivity.id)), admin)
         .filter(
             ExternalActivity.status == "approved",
             ExternalActivity.decided_at >= today_start,
@@ -4187,7 +4312,7 @@ def get_request_stats(
     )
 
     rejected_today += (
-        db.query(func.count(ExternalActivity.id))
+        scope_external_activity_query(db.query(func.count(ExternalActivity.id)), admin)
         .filter(
             ExternalActivity.status == "rejected",
             ExternalActivity.decided_at >= today_start,
@@ -4230,6 +4355,7 @@ def list_requests(
     page: int = 1,
     page_size: int = 10,
     db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     # รวม 2 แหล่ง (student_requests + external_activities) แล้วเรียง/แบ่งหน้าใน Python
     # ปริมาณคำขอยังน้อย ถ้าเยอะขึ้นควรย้ายไปทำ UNION ใน SQL
@@ -4245,7 +4371,7 @@ def list_requests(
     items = []
 
     if include_student_requests:
-        query = db.query(StudentRequest)
+        query = scope_student_request_query(db.query(StudentRequest), admin)
 
         if status:
             query = query.filter(StudentRequest.status == status)
@@ -4256,7 +4382,7 @@ def list_requests(
         items.extend(serialize_request(item) for item in query.all())
 
     if include_external:
-        query = db.query(ExternalActivity)
+        query = scope_external_activity_query(db.query(ExternalActivity), admin)
 
         if status:
             query = query.filter(ExternalActivity.status == status)
@@ -4320,6 +4446,7 @@ def decide_request(
     request_id: int,
     payload: RequestDecision,
     db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     if payload.status not in {"approved", "rejected"}:
         raise HTTPException(
@@ -4334,6 +4461,11 @@ def decide_request(
             status_code=404,
             detail="ไม่พบคำขอนี้",
         )
+
+    ensure_can_access_student(
+        admin,
+        db.get(Student, request.requester_student_id),
+    )
 
     if request.status != "pending":
         raise HTTPException(

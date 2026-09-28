@@ -1,0 +1,675 @@
+"""แอดมินสาขาเห็น/จัดการได้เฉพาะนักศึกษาในสาขาตัวเอง ส่วนแอดมินกลางเห็นทุกสาขา
+
+บัญชีแอดมินในเทสต์มาจาก fixture ใน conftest.py (ไม่ผูกกับ admin_accounts.py จริง)
+"""
+
+import base64
+from datetime import date, datetime
+
+import pytest
+
+from models import (
+    Activity,
+    ActivityMember,
+    ExternalActivity,
+    ExternalActivityEvidence,
+    ExternalActivitySkill,
+    Student,
+    StudentRequest,
+)
+from tests.conftest import (
+    CENTRAL_ADMIN_EMAIL,
+    CHEM_ADMIN_EMAIL,
+    CS_ADMIN_EMAIL,
+)
+
+CHEM = "เคมี"
+CS = "วิทยาการคอมพิวเตอร์"
+
+CENTRAL = {"X-Admin-Email": CENTRAL_ADMIN_EMAIL}
+CHEM_ADMIN = {"X-Admin-Email": CHEM_ADMIN_EMAIL}
+CS_ADMIN = {"X-Admin-Email": CS_ADMIN_EMAIL}
+
+PNG_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+    "+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
+
+
+def create_student(db_session, student_id, major) -> Student:
+    student = Student(
+        student_id=student_id,
+        first_name="Test",
+        last_name=student_id,
+        email=f"{student_id}@test.local",
+        faculty="Faculty of Science",
+        major=major,
+    )
+    db_session.add(student)
+    db_session.commit()
+    return student
+
+
+def create_external(db_session, student_id, status="pending", title=None) -> ExternalActivity:
+    activity = ExternalActivity(
+        student_id=student_id,
+        title=title or f"External {student_id}",
+        organization="Some Org",
+        activity_type="Workshop",
+        start_date=date(2026, 2, 1),
+        end_date=date(2026, 2, 2),
+        location="Online",
+        role="participant",
+        description="",
+        status=status,
+    )
+    db_session.add(activity)
+    db_session.commit()
+    db_session.refresh(activity)
+
+    db_session.add(
+        ExternalActivitySkill(
+            external_activity_id=activity.id,
+            skill_key="volunteerism",
+            target_role="participant",
+            level=4,
+        )
+    )
+    db_session.commit()
+    return activity
+
+
+def add_evidence(db_session, upload_dir, activity) -> ExternalActivityEvidence:
+    folder = upload_dir / str(activity.id)
+    folder.mkdir()
+    stored_name = f"evidence-{activity.id}.png"
+    (folder / stored_name).write_bytes(PNG_BYTES)
+
+    evidence = ExternalActivityEvidence(
+        external_activity_id=activity.id,
+        stored_name=stored_name,
+        original_name="evidence.png",
+        content_type="image/png",
+        size=len(PNG_BYTES),
+    )
+    db_session.add(evidence)
+    db_session.commit()
+    db_session.refresh(evidence)
+    return evidence
+
+
+def create_student_request(db_session, student_id) -> StudentRequest:
+    request = StudentRequest(
+        requester_name=f"Test {student_id}",
+        requester_student_id=student_id,
+        request_type="special_request",
+        detail=f"Request {student_id}",
+        status="pending",
+    )
+    db_session.add(request)
+    db_session.commit()
+    db_session.refresh(request)
+    return request
+
+
+@pytest.fixture()
+def data(db_session):
+    """นักศึกษาเคมี 1, CS 1, ไม่มีสาขา 1 พร้อมคำขอ pending คนละ 1 รายการ"""
+    create_student(db_session, "C001", CHEM)
+    create_student(db_session, "S001", CS)
+    create_student(db_session, "N001", "")
+
+    return {
+        "chem_external": create_external(db_session, "C001"),
+        "cs_external": create_external(db_session, "S001"),
+        "none_external": create_external(db_session, "N001"),
+        "chem_request": create_student_request(db_session, "C001"),
+        "cs_request": create_student_request(db_session, "S001"),
+        "none_request": create_student_request(db_session, "N001"),
+        # คำขอที่ requester_student_id ไม่มีในตาราง students
+        "orphan_request": create_student_request(db_session, "X999"),
+    }
+
+
+def request_keys(response):
+    assert response.status_code == 200, response.text
+    return {
+        (item["source"], item["requester_student_id"])
+        for item in response.json()["requests"]
+    }
+
+
+def status_of(db_session, model, item_id):
+    db_session.expire_all()
+    return db_session.get(model, item_id).status
+
+
+# ------------------------------------------------------------
+# Bypass on/off และการระบุตัวแอดมิน
+# ------------------------------------------------------------
+
+
+def test_bypass_disabled_blocks_admin_api(client, monkeypatch, data):
+    monkeypatch.setenv("ADMIN_BYPASS_ENABLED", "false")
+
+    response = client.get("/api/requests", headers=CENTRAL)
+
+    assert response.status_code == 401
+    assert "ADMIN_BYPASS_ENABLED=true" in response.json()["detail"]
+
+
+def test_bypass_disabled_when_env_missing(client, monkeypatch):
+    monkeypatch.delenv("ADMIN_BYPASS_ENABLED", raising=False)
+
+    assert client.get("/api/admin/dashboard", headers=CENTRAL).status_code == 401
+
+
+def test_bypass_status_lists_accounts_only_when_enabled(client, monkeypatch):
+    enabled = client.get("/api/admin/auth/bypass").json()
+    assert enabled["enabled"] is True
+    assert {item["email"] for item in enabled["accounts"]} == {
+        CENTRAL_ADMIN_EMAIL,
+        CHEM_ADMIN_EMAIL,
+        CS_ADMIN_EMAIL,
+    }
+
+    monkeypatch.setenv("ADMIN_BYPASS_ENABLED", "false")
+    disabled = client.get("/api/admin/auth/bypass").json()
+    assert disabled == {"enabled": False, "accounts": []}
+
+
+def test_missing_or_unknown_admin_email_is_rejected(client):
+    client.headers.pop("X-Admin-Email", None)
+
+    assert client.get("/api/requests").status_code == 401
+    assert client.get(
+        "/api/requests",
+        headers={"X-Admin-Email": "someone@test.local"},
+    ).status_code == 401
+
+
+def test_admin_email_is_case_insensitive(client):
+    response = client.get(
+        "/api/admin/me",
+        headers={"X-Admin-Email": f"  {CHEM_ADMIN_EMAIL.upper()} "},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["email"] == CHEM_ADMIN_EMAIL
+
+
+def test_me_returns_admin_scope(client):
+    chem = client.get("/api/admin/me", headers=CHEM_ADMIN).json()
+    central = client.get("/api/admin/me", headers=CENTRAL).json()
+
+    assert chem["major"] == CHEM
+    assert chem["is_central"] is False
+    assert central["major"] is None
+    assert central["is_central"] is True
+
+
+# ------------------------------------------------------------
+# รายการคำขอ (/api/requests)
+# ------------------------------------------------------------
+
+
+def test_branch_admin_lists_only_own_major(client, data):
+    assert request_keys(client.get("/api/requests", headers=CHEM_ADMIN)) == {
+        ("external_activity", "C001"),
+        ("student_request", "C001"),
+    }
+    assert request_keys(client.get("/api/requests", headers=CS_ADMIN)) == {
+        ("external_activity", "S001"),
+        ("student_request", "S001"),
+    }
+
+
+def test_only_central_admin_sees_requests_without_major(client, data):
+    keys = request_keys(client.get("/api/requests", headers=CENTRAL))
+
+    assert ("external_activity", "N001") in keys
+    assert ("student_request", "N001") in keys
+    assert ("student_request", "X999") in keys
+    assert len(keys) == 7
+
+
+def test_request_type_filter_keeps_major_scope(client, data):
+    keys = request_keys(
+        client.get(
+            "/api/requests?request_type=external_activity",
+            headers=CS_ADMIN,
+        )
+    )
+
+    assert keys == {("external_activity", "S001")}
+
+
+def test_request_stats_are_scoped(client, data):
+    chem = client.get("/api/requests/stats", headers=CHEM_ADMIN).json()
+    central = client.get("/api/requests/stats", headers=CENTRAL).json()
+
+    assert chem["total_pending"] == 2
+    assert central["total_pending"] == 7
+
+
+# ------------------------------------------------------------
+# ดูรายละเอียด / ไฟล์หลักฐาน
+# ------------------------------------------------------------
+
+
+def test_branch_admin_cannot_view_other_major_external_activity(client, data):
+    cs_id = data["cs_external"].id
+
+    assert client.get(
+        f"/api/external-activities/{cs_id}",
+        headers=CHEM_ADMIN,
+    ).status_code == 403
+    assert client.get(
+        f"/api/external-activities/{cs_id}",
+        headers=CS_ADMIN,
+    ).status_code == 200
+
+
+def test_branch_admin_cannot_view_request_without_major(client, data):
+    none_id = data["none_external"].id
+
+    assert client.get(
+        f"/api/external-activities/{none_id}",
+        headers=CHEM_ADMIN,
+    ).status_code == 403
+    assert client.get(
+        f"/api/external-activities/{none_id}",
+        headers=CENTRAL,
+    ).status_code == 200
+
+
+def test_evidence_is_scoped_to_major_or_owner(client, db_session, upload_dir, data):
+    activity = data["cs_external"]
+    evidence = add_evidence(db_session, upload_dir, activity)
+    urls = [
+        f"/api/external-activities/{activity.id}/evidence",
+        f"/api/external-activities/{activity.id}/evidence/{evidence.id}",
+    ]
+
+    client.headers.pop("X-Admin-Email", None)
+
+    for url in urls:
+        assert client.get(url, headers=CHEM_ADMIN).status_code == 403
+        assert client.get(url, headers=CS_ADMIN).status_code == 200
+        assert client.get(url, headers=CENTRAL).status_code == 200
+        # นักศึกษาเจ้าของคำขอเปิดไฟล์ของตัวเองได้ แต่คนอื่นเปิดไม่ได้
+        assert client.get(url, headers={"X-Student-Id": "S001"}).status_code == 200
+        assert client.get(url, headers={"X-Student-Id": "C001"}).status_code == 403
+        assert client.get(url).status_code == 401
+
+
+# ------------------------------------------------------------
+# อนุมัติ / ปฏิเสธ
+# ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"status": "approved"},
+        {"status": "rejected", "reject_reason": "ไม่ผ่าน"},
+    ],
+)
+def test_branch_admin_cannot_decide_other_major_external_activity(
+    client, db_session, data, payload
+):
+    cs_id = data["cs_external"].id
+
+    response = client.patch(
+        f"/api/external-activities/{cs_id}/decision",
+        json=payload,
+        headers=CHEM_ADMIN,
+    )
+
+    assert response.status_code == 403
+    assert status_of(db_session, ExternalActivity, cs_id) == "pending"
+
+
+def test_branch_admin_can_decide_own_major_external_activity(client, db_session, data):
+    chem_id = data["chem_external"].id
+
+    response = client.patch(
+        f"/api/external-activities/{chem_id}/decision",
+        json={"status": "approved"},
+        headers=CHEM_ADMIN,
+    )
+
+    assert response.status_code == 200
+    assert status_of(db_session, ExternalActivity, chem_id) == "approved"
+
+
+def test_branch_admin_cannot_decide_external_activity_without_major(
+    client, db_session, data
+):
+    none_id = data["none_external"].id
+
+    response = client.patch(
+        f"/api/external-activities/{none_id}/decision",
+        json={"status": "approved"},
+        headers=CS_ADMIN,
+    )
+
+    assert response.status_code == 403
+    assert status_of(db_session, ExternalActivity, none_id) == "pending"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"status": "approved"},
+        {"status": "rejected", "reject_reason": "ไม่ผ่าน"},
+    ],
+)
+def test_branch_admin_cannot_decide_other_major_student_request(
+    client, db_session, data, payload
+):
+    cs_id = data["cs_request"].id
+
+    response = client.patch(
+        f"/api/requests/{cs_id}",
+        json=payload,
+        headers=CHEM_ADMIN,
+    )
+
+    assert response.status_code == 403
+    assert status_of(db_session, StudentRequest, cs_id) == "pending"
+
+
+def test_orphan_student_request_is_central_only(client, db_session, data):
+    orphan_id = data["orphan_request"].id
+
+    denied = client.patch(
+        f"/api/requests/{orphan_id}",
+        json={"status": "approved"},
+        headers=CHEM_ADMIN,
+    )
+    assert denied.status_code == 403
+    assert status_of(db_session, StudentRequest, orphan_id) == "pending"
+
+    allowed = client.patch(
+        f"/api/requests/{orphan_id}",
+        json={"status": "approved"},
+        headers=CENTRAL,
+    )
+    assert allowed.status_code == 200
+    assert status_of(db_session, StudentRequest, orphan_id) == "approved"
+
+
+def test_branch_admin_can_decide_own_major_student_request(client, db_session, data):
+    cs_id = data["cs_request"].id
+
+    response = client.patch(
+        f"/api/requests/{cs_id}",
+        json={"status": "approved"},
+        headers=CS_ADMIN,
+    )
+
+    assert response.status_code == 200
+    assert status_of(db_session, StudentRequest, cs_id) == "approved"
+
+
+# ------------------------------------------------------------
+# Dashboard
+# ------------------------------------------------------------
+
+
+def approve_all_external(db_session):
+    for activity in db_session.query(ExternalActivity).all():
+        activity.status = "approved"
+    db_session.commit()
+
+
+def test_dashboard_counts_only_own_major(client, db_session, data):
+    approve_all_external(db_session)
+
+    # กิจกรรมของคณะ 1 รายการ มีผู้เข้าร่วมทั้งเคมีและ CS
+    activity = Activity(
+        activity_type="Volunteer",
+        name="Faculty Activity",
+        start_at=datetime(2026, 3, 10, 9, 0, 0),
+        end_at=datetime(2026, 3, 10, 12, 0, 0),
+        responsible_person="Staff",
+        location="Room 101",
+    )
+    db_session.add(activity)
+    db_session.commit()
+    for student_id in ("C001", "S001"):
+        db_session.add(
+            ActivityMember(
+                activity_id=activity.id,
+                student_id=student_id,
+                role="participant",
+            )
+        )
+    create_student(db_session, "C002", CHEM)
+    db_session.add(
+        ActivityMember(
+            activity_id=activity.id,
+            student_id="C002",
+            role="participant",
+        )
+    )
+    db_session.commit()
+
+    chem = client.get("/api/admin/dashboard?year=2026", headers=CHEM_ADMIN).json()
+    central = client.get("/api/admin/dashboard?year=2026", headers=CENTRAL).json()
+
+    assert chem["totalStudents"] == 2
+    assert central["totalStudents"] == 4
+
+    # C001, C002 (เคมี) เท่านั้น / ทุกคน 4 คน
+    assert chem["totalParticipants"] == 2
+    assert central["totalParticipants"] == 4
+
+    # กิจกรรมของคณะนับร่วมกัน + กิจกรรมภายนอกของสาขาตัวเอง
+    assert chem["totalActivities"] == 1 + 1
+    assert central["totalActivities"] == 1 + 3
+
+
+def test_dashboard_external_activities_are_scoped(client, db_session, data):
+    approve_all_external(db_session)
+
+    chem = client.get(
+        "/api/admin/dashboard/external-activities",
+        headers=CHEM_ADMIN,
+    ).json()["external_activities"]
+    central = client.get(
+        "/api/admin/dashboard/external-activities",
+        headers=CENTRAL,
+    ).json()["external_activities"]
+
+    assert [item["id"] for item in chem] == [f"external-{data['chem_external'].id}"]
+    assert len(central) == 3
+
+
+# ------------------------------------------------------------
+# Student Skills
+# ------------------------------------------------------------
+
+
+def test_student_skills_are_scoped(client, db_session, data):
+    approve_all_external(db_session)
+
+    chem = client.get(
+        "/api/admin/student-skills?year=2026",
+        headers=CHEM_ADMIN,
+    ).json()
+    central = client.get(
+        "/api/admin/student-skills?year=2026",
+        headers=CENTRAL,
+    ).json()
+
+    assert [item["id"] for item in chem["students"]] == ["C001"]
+    assert chem["totalFaculty"] == 1
+    assert {item["id"] for item in central["students"]} == {"C001", "N001", "S001"}
+    assert central["totalFaculty"] == 3
+
+
+def test_branch_admin_cannot_view_other_major_student_history(client, data):
+    assert client.get(
+        "/api/admin/students/S001/activities",
+        headers=CHEM_ADMIN,
+    ).status_code == 403
+    assert client.get(
+        "/api/admin/students/C001/activities",
+        headers=CHEM_ADMIN,
+    ).status_code == 200
+    assert client.get(
+        "/api/admin/students/N001/activities",
+        headers=CHEM_ADMIN,
+    ).status_code == 403
+
+
+def test_only_central_admin_updates_benchmark(client):
+    payload = {"scores": {"volunteerism": 3.5}}
+
+    assert client.put(
+        "/api/admin/student-skills/benchmark",
+        json=payload,
+        headers=CHEM_ADMIN,
+    ).status_code == 403
+    assert client.put(
+        "/api/admin/student-skills/benchmark",
+        json=payload,
+        headers=CENTRAL,
+    ).status_code == 200
+
+
+def test_only_central_admin_imports_students(client):
+    files = {"file": ("students.csv", b"student_id,first_name\n", "text/csv")}
+
+    response = client.post(
+        "/api/students/import",
+        files=files,
+        headers=CHEM_ADMIN,
+    )
+
+    assert response.status_code == 403
+
+
+# ------------------------------------------------------------
+# ผู้เข้าร่วมกิจกรรมของคณะ (กิจกรรมใช้ร่วมกัน แต่รายชื่อกรองตามสาขา)
+# ------------------------------------------------------------
+
+
+@pytest.fixture()
+def faculty_activity(db_session, data):
+    activity = Activity(
+        activity_type="Volunteer",
+        name="Faculty Activity",
+        start_at=datetime(2026, 3, 10, 9, 0, 0),
+        end_at=datetime(2026, 3, 10, 12, 0, 0),
+        responsible_person="Staff",
+        location="Room 101",
+    )
+    db_session.add(activity)
+    db_session.commit()
+    for student_id in ("C001", "S001", "N001"):
+        db_session.add(
+            ActivityMember(
+                activity_id=activity.id,
+                student_id=student_id,
+                role="participant",
+            )
+        )
+    db_session.commit()
+    return activity
+
+
+def participant_ids(response):
+    assert response.status_code == 200, response.text
+    return {item["student_id"] for item in response.json()["students"]}
+
+
+def test_all_admins_see_faculty_activities(client, faculty_activity):
+    for headers in (CENTRAL, CHEM_ADMIN, CS_ADMIN):
+        response = client.get("/api/activities", headers=headers)
+        assert response.status_code == 200
+        assert client.get(
+            f"/api/activities/{faculty_activity.id}",
+            headers=headers,
+        ).status_code == 200
+
+
+def test_participants_are_filtered_by_major(client, faculty_activity):
+    url = f"/api/activities/{faculty_activity.id}/participants"
+
+    assert participant_ids(client.get(url, headers=CHEM_ADMIN)) == {"C001"}
+    assert participant_ids(client.get(url, headers=CS_ADMIN)) == {"S001"}
+    assert participant_ids(client.get(url, headers=CENTRAL)) == {
+        "C001",
+        "S001",
+        "N001",
+    }
+
+
+def participant_payload(major):
+    return {
+        "first_name": "Edited",
+        "last_name": "Name",
+        "email": "edited@test.local",
+        "faculty": "Faculty of Science",
+        "major": major,
+        "role": "participant",
+    }
+
+
+def test_branch_admin_cannot_edit_or_remove_other_major_participant(
+    client, db_session, faculty_activity
+):
+    url = f"/api/activities/{faculty_activity.id}/participants/S001"
+
+    assert client.patch(
+        url,
+        json=participant_payload(CS),
+        headers=CHEM_ADMIN,
+    ).status_code == 403
+    assert client.delete(url, headers=CHEM_ADMIN).status_code == 403
+
+    db_session.expire_all()
+    assert db_session.get(Student, "S001").first_name == "Test"
+    assert db_session.get(ActivityMember, (faculty_activity.id, "S001")) is not None
+
+
+def test_branch_admin_cannot_move_student_to_other_major(
+    client, db_session, faculty_activity
+):
+    response = client.patch(
+        f"/api/activities/{faculty_activity.id}/participants/C001",
+        json=participant_payload(CS),
+        headers=CHEM_ADMIN,
+    )
+
+    assert response.status_code == 403
+    db_session.expire_all()
+    assert db_session.get(Student, "C001").major == CHEM
+
+
+def test_branch_admin_can_edit_own_major_participant(
+    client, db_session, faculty_activity
+):
+    response = client.patch(
+        f"/api/activities/{faculty_activity.id}/participants/C001",
+        json=participant_payload(CHEM),
+        headers=CHEM_ADMIN,
+    )
+
+    assert response.status_code == 200
+    db_session.expire_all()
+    assert db_session.get(Student, "C001").first_name == "Edited"
+
+
+def test_student_endpoints_do_not_need_admin(client, data):
+    client.headers.pop("X-Admin-Email", None)
+
+    response = client.get(
+        "/api/student/me/external-activities",
+        headers={"X-Student-Id": "C001"},
+    )
+
+    assert response.status_code == 200
