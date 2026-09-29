@@ -51,10 +51,12 @@ const isCentralAdmin = computed(() => getAdminSession()?.is_central === true)
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .branch-filter-field label {
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
   color: #66758c;
 }
@@ -70,9 +72,10 @@ const isCentralAdmin = computed(() => getAdminSession()?.is_central === true)
   color: #34445a;
 
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
 
   cursor: pointer;
+  max-width: 100%;
 }
 
 .branch-filter-field select:focus {

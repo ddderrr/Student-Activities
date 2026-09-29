@@ -15,7 +15,18 @@
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
-  font: 18px/145% var(--sans);
+  /* ขนาดตัวอักษรกลางของทั้งเว็บ (Admin + Student) ปรับที่นี่ที่เดียว
+     component ใช้ผ่าน var(--fs-*) แทนการใส่ px เอง */
+  --fs-badge: 13px;   /* badge, tag, status chip */
+  --fs-caption: 14px; /* หัวตาราง, eyebrow, คำอธิบายเล็ก */
+  --fs-small: 15px;   /* label, ปุ่ม, input, เมนู sidebar */
+  --fs-body: 16px;    /* เนื้อหา, ช่องตาราง */
+  --fs-lead: 17px;    /* หัวข้อย่อยในการ์ด */
+  --fs-h3: 19px;
+  --fs-h2: 22px;
+  --fs-h1: 28px;
+
+  font: 16px/1.6 var(--sans);
   letter-spacing: 0.18px;
   /* แอปนี้ไม่มี dark theme จริงในหน้า Admin/Student ล็อกไว้ light เพื่อไม่ให้
      browser ทึกทักเรนเดอร์ scrollbar/form control เป็นสีเข้มตาม OS dark mode */
@@ -27,9 +38,6 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -64,23 +72,23 @@ h2 {
 }
 
 h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
+  font-size: var(--fs-h1);
 }
 h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
+  font-size: var(--fs-h2);
 }
+h3 {
+  font-size: var(--fs-h3);
+}
+
+/* browser ตั้ง form control ไว้ ~13.3px ไม่สืบทอดจาก body */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
 p {
   margin: 0;
 }

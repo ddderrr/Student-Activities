@@ -7,7 +7,9 @@ import {
   Info,
   LoaderCircle,
   Paperclip,
+  Send,
   SlidersHorizontal,
+  Sparkles,
   TriangleAlert,
   X
 } from 'lucide-vue-next'
@@ -27,7 +29,8 @@ import {
 } from '../../constants/currentStudent'
 import {
   PARTICIPANT_SKILLS,
-  STAFF_SKILLS
+  STAFF_SKILLS,
+  defaultSkillLevels
 } from '../../constants/activitySkills'
 
 // role ของนักศึกษากำหนดชุด Skill: participant -> Participant skills, organizer -> Staff skills
@@ -38,14 +41,11 @@ const SKILLS_BY_ROLE = {
   organizer: STAFF_SKILLS
 }
 
-const defaultLevels = (definitions) =>
-  Object.fromEntries(definitions.map((skill) => [skill.key, null]))
-
 // เก็บแยกตาม role เพื่อให้สลับบทบาทไปมาแล้วค่าที่ตั้งไว้ไม่หาย
-// เริ่มจาก "ไม่เกี่ยวข้อง" (null) ทั้งหมด นักศึกษาต้องเลือกเองอย่างน้อย 1 ทักษะ
+// เริ่มที่ level 3 (มีส่วนร่วม) ทุกทักษะ นักศึกษาติ๊ก "ไม่เกี่ยวข้อง" เองได้
 const emptySkillLevels = () => ({
-  participant: defaultLevels(PARTICIPANT_SKILLS),
-  organizer: defaultLevels(STAFF_SKILLS)
+  participant: defaultSkillLevels(PARTICIPANT_SKILLS),
+  organizer: defaultSkillLevels(STAFF_SKILLS)
 })
 
 /* =========================
@@ -551,37 +551,6 @@ async function submitActivity() {
               </select>
             </label>
 
-            <div
-              ref="skillsField"
-              class="field full skills-field"
-              :class="{ invalid: skillsError }"
-            >
-              <span id="skills-field-label">{{ t.studentExternalActivity.skillsFieldLabel }} <b>*</b></span>
-
-              <div class="skills-field-row">
-                <div class="skills-field-summary" :class="{ empty: relatedSkillCount === 0 }">
-                  <strong>{{ skillsSummaryText(relatedSkillCount) }}</strong>
-                  <small>{{ roleSkillLabel }} · {{ t.studentExternalActivity.skillsFieldHint }}</small>
-                </div>
-
-                <button
-                  type="button"
-                  class="view-skills-button"
-                  aria-labelledby="skills-field-label"
-                  aria-haspopup="dialog"
-                  @click="openSkillsModal"
-                >
-                  <SlidersHorizontal :size="15" />
-                  {{ t.studentExternalActivity.viewSkillsButton }}
-                </button>
-              </div>
-
-              <p v-if="skillsError" class="field-error" role="alert">
-                <TriangleAlert :size="14" />
-                {{ skillsError }}
-              </p>
-            </div>
-
             <label class="field full">
               <span>{{ t.studentExternalActivity.descriptionLabel }}</span>
               <textarea
@@ -623,6 +592,75 @@ async function submitActivity() {
             </label>
           </div>
         </section>
+      </div>
+
+      <!-- RIGHT: ทักษะที่ได้รับ (ติดขอบบนตอนเลื่อน) ปรับระดับใน popup -->
+      <aside class="form-column form-side">
+        <section
+          ref="skillsField"
+          class="card skills-panel"
+          :class="{ invalid: skillsError }"
+        >
+          <div class="card-heading">
+            <span class="heading-icon accent"><Sparkles :size="16" /></span>
+            <div class="skills-panel-title">
+              <h2 id="skills-field-label">{{ t.studentExternalActivity.skillsFieldLabel }} <b>*</b></h2>
+              <small>{{ roleSkillLabel }} · {{ t.studentExternalActivity.skillsFieldHint }}</small>
+            </div>
+          </div>
+
+          <div class="skills-panel-summary" :class="{ empty: relatedSkillCount === 0 }">
+            <strong>{{ skillsSummaryText(relatedSkillCount) }}</strong>
+            <span>{{ relatedSkillCount }} / {{ skillDefinitions.length }}</span>
+          </div>
+
+          <ul class="skill-overview">
+            <li
+              v-for="skill in skillDefinitions"
+              :key="skill.key"
+              :class="{ 'not-related': activeSkillLevels[skill.key] == null }"
+            >
+              <span class="skill-overview-icon"><component :is="skill.icon" :size="16" /></span>
+              <span class="skill-overview-name">
+                <strong>{{ skill.label }}</strong>
+                <small>{{ skill.description }}</small>
+              </span>
+              <span class="skill-overview-level">
+                <template v-if="activeSkillLevels[skill.key] != null">
+                  <span class="level-dots" aria-hidden="true">
+                    <i v-for="dot in 5" :key="dot" :class="{ on: dot <= activeSkillLevels[skill.key] }"></i>
+                  </span>
+                  <small>{{ t.skillLevelEditor.level }} {{ activeSkillLevels[skill.key] }}</small>
+                </template>
+                <small v-else>{{ t.skillLevelEditor.notApplicable }}</small>
+              </span>
+            </li>
+          </ul>
+
+          <button
+            type="button"
+            class="view-skills-button"
+            aria-labelledby="skills-field-label"
+            aria-haspopup="dialog"
+            @click="openSkillsModal"
+          >
+            <SlidersHorizontal :size="16" />
+            {{ t.studentExternalActivity.adjustSkillsButton }}
+          </button>
+
+          <p v-if="skillsError" class="field-error" role="alert">
+            <TriangleAlert :size="14" />
+            {{ skillsError }}
+          </p>
+        </section>
+      </aside>
+
+      <!-- หลักฐาน: เต็มความกว้างใต้สองคอลัมน์ -->
+      <section class="card evidence-card">
+        <div class="card-heading">
+          <span class="heading-icon green"><ImagePlus :size="16" /></span>
+          <h2>{{ t.studentExternalActivity.evidenceCardHeading }}</h2>
+        </div>
 
         <div class="evidence-section">
           <div
@@ -645,7 +683,7 @@ async function submitActivity() {
               @change="handleFileChange"
             />
 
-            <span class="upload-icon"><ImagePlus :size="20" /></span>
+            <span class="upload-icon large"><ImagePlus :size="26" /></span>
             <strong>{{ t.studentExternalActivity.uploadEvidenceLabel }} <b>*</b></strong>
             <p>{{ t.studentExternalActivity.uploadEvidenceHint.replace('{max}', EVIDENCE_MAX_FILES) }}</p>
             <button type="button" class="link-button" @click.stop="openFilePicker">
@@ -715,10 +753,9 @@ async function submitActivity() {
             </li>
           </ul>
         </div>
+      </section>
 
-      </div>
-
-      <!-- ข้อความ + ปุ่มส่ง (บนจอแคบจะอยู่ใต้ Skill Mapping) -->
+      <!-- ข้อความ + ปุ่มส่ง -->
       <div class="form-column form-footer">
         <div v-if="formError" class="alert error" role="alert">
           <TriangleAlert :size="16" />
@@ -740,7 +777,8 @@ async function submitActivity() {
 
         <div class="form-actions">
           <button type="submit" class="primary-button" :disabled="submitting">
-            <LoaderCircle v-if="submitting" class="spin" :size="15" />
+            <LoaderCircle v-if="submitting" class="spin" :size="18" />
+            <Send v-else :size="18" />
             {{
               submitting
                 ? (editingId ? t.studentExternalActivity.resubmittingButton : t.studentExternalActivity.submittingButton)
@@ -856,33 +894,41 @@ async function submitActivity() {
 <style scoped>
 .external-page {
   min-height: 100vh;
-  padding: 30px;
+  padding: 32px;
   background: #f5f7fb;
   color: #1c2434;
 }
 
 .page-title {
-  margin-bottom: 22px;
+  max-width: 1280px;
+  margin: 0 auto 24px;
 }
 
 .page-title h1 {
   margin: 0;
   color: #1d2f6f;
-  font-size: 22px;
+  font-size: 28px;
   font-weight: 700;
 }
 
 .page-title p {
   margin: 6px 0 0;
   color: #7e8796;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .page-grid {
-  max-width: 860px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  /* ฟอร์ม ~60% | ทักษะ ~40% แล้วหลักฐาน + ปุ่มส่งเต็มแถวด้านล่าง */
+  max-width: 1280px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  grid-template-areas:
+    "main side"
+    "evidence evidence"
+    "footer footer";
+  align-items: start;
+  gap: 24px;
 }
 
 .form-column {
@@ -892,11 +938,25 @@ async function submitActivity() {
   min-width: 0;
 }
 
+.form-main { grid-area: main; }
+/* column ยืดเท่าแถวฟอร์ม ให้ panel ติดขอบบนได้แค่ในแถวนี้ ไม่เลื่อนทับหลักฐาน */
+.form-side {
+  grid-area: side;
+  align-self: stretch;
+}
+.form-side .skills-panel {
+  position: sticky;
+  top: 24px;
+}
+.evidence-card { grid-area: evidence; }
+.form-footer { grid-area: footer; }
+
 .card {
-  padding: 18px 20px;
+  padding: 26px 28px;
   border: 1px solid #e6eaf1;
-  border-radius: 12px;
+  border-radius: 16px;
   background: #fff;
+  box-shadow: 0 1px 2px rgba(29, 47, 111, 0.04), 0 6px 20px rgba(29, 47, 111, 0.04);
 }
 
 .card-heading {
@@ -908,14 +968,15 @@ async function submitActivity() {
 .card-heading h2 {
   margin: 0;
   color: #1c2434;
-  font-size: 14px;
+  font-size: 20px;
   font-weight: 700;
 }
 
 .heading-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
   background: #eef1ff;
@@ -930,14 +991,14 @@ async function submitActivity() {
 .card-subtitle {
   margin: 8px 0 14px;
   color: #7e8796;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .form-grid {
-  margin-top: 18px;
+  margin-top: 22px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 20px 18px;
 }
 
 .field {
@@ -957,7 +1018,7 @@ async function submitActivity() {
   gap: 6px;
   margin: -4px 0 0;
   color: #e0453a;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .field-error.full {
@@ -966,7 +1027,7 @@ async function submitActivity() {
 
 .field > span {
   color: #1c2434;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 700;
 }
 
@@ -980,24 +1041,24 @@ async function submitActivity() {
 .field textarea {
   width: 100%;
   border: 1px solid #dfe3ea;
-  border-radius: 8px;
+  border-radius: 10px;
   outline: none;
   background: #fff;
   color: #1c2434;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
   box-sizing: border-box;
 }
 
 .field input,
 .field select {
-  height: 40px;
-  padding: 0 12px;
+  height: 46px;
+  padding: 0 14px;
 }
 
 .field textarea {
-  min-height: 96px;
-  padding: 10px 12px;
+  min-height: 120px;
+  padding: 12px 14px;
   resize: vertical;
 }
 
@@ -1015,28 +1076,35 @@ async function submitActivity() {
 
 .upload-box {
   position: relative;
-  padding: 26px 20px;
-  border: 1.5px dashed #c9cfda;
-  border-radius: 12px;
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 36px 24px;
+  border: 2px dashed #cdbef0;
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  background: #fafbfd;
+  gap: 8px;
+  background: linear-gradient(180deg, #fbf9ff 0%, #f5f0ff 100%);
   text-align: center;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
+.upload-box:hover {
+  border-color: #9b5de5;
+}
 .upload-box.dragging {
   border-color: #7e10c6;
   background: #f7f0ff;
 }
 
 .evidence-section {
+  margin-top: 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .evidence-limit-note {
@@ -1048,7 +1116,7 @@ async function submitActivity() {
   gap: 6px;
   background: #eef1ff;
   color: #1d2f6f;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .evidence-list-header {
@@ -1056,7 +1124,7 @@ async function submitActivity() {
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .evidence-list-header strong {
@@ -1071,9 +1139,9 @@ async function submitActivity() {
   margin: 0;
   padding: 0;
   list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .evidence-list .selected-file {
@@ -1098,25 +1166,37 @@ async function submitActivity() {
   color: #4a5567;
 }
 
+.upload-icon.large {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: #fff;
+  color: #7e10c6;
+  box-shadow: 0 4px 12px rgba(126, 16, 198, 0.12);
+}
+
 .upload-box > strong {
   margin-top: 4px;
   color: #1d2f6f;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .upload-box > p {
   margin: 0;
   color: #4a5567;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .link-button {
-  border: none;
-  background: none;
-  color: #1e45c8;
+  margin-top: 6px;
+  padding: 9px 20px;
+  border: 1px solid #d9c6f3;
+  border-radius: 999px;
+  background: #fff;
+  color: #7e10c6;
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--fs-small);
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -1139,14 +1219,14 @@ async function submitActivity() {
 .selected-file strong {
   overflow: hidden;
   color: #1c2434;
-  font-size: 13px;
+  font-size: var(--fs-body);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .selected-file small {
   color: #7e8796;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .remove-file {
@@ -1167,7 +1247,7 @@ async function submitActivity() {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .alert.error {
@@ -1188,7 +1268,8 @@ async function submitActivity() {
 
 .form-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
+  padding: 8px 0 12px;
 }
 
 .primary-button {
@@ -1204,10 +1285,32 @@ async function submitActivity() {
   background: #7e10c6;
   color: #fff;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 6px 14px rgba(126, 16, 198, 0.2);
+}
+
+.form-actions .primary-button {
+  width: min(100%, 420px);
+  min-height: 56px;
+  gap: 10px;
+  border-radius: 14px;
+  font-size: var(--fs-lead);
+  box-shadow: 0 10px 24px rgba(126, 16, 198, 0.28);
+  transition: background-color 0.15s ease, transform 0.15s ease;
+}
+
+.form-actions .primary-button:not(:disabled):hover {
+  background: #6a0da8;
+  transform: translateY(-1px);
+}
+
+.form-footer .alert {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .primary-button:disabled {
@@ -1223,60 +1326,193 @@ async function submitActivity() {
   to { transform: rotate(360deg); }
 }
 
-.skills-field-row {
-  padding: 10px 12px;
-  border: 1px solid #dfe3ea;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  background: #fff;
+/* =========================
+   Skills panel (ขวา)
+========================= */
+.skills-panel {
+  border-color: #e3d6f7;
+  background: linear-gradient(180deg, #fcfaff 0%, #fff 140px);
+  box-shadow: 0 1px 2px rgba(126, 16, 198, 0.05), 0 10px 28px rgba(126, 16, 198, 0.08);
 }
 
-.skills-field.invalid .skills-field-row {
+.skills-panel::before {
+  content: '';
+  display: block;
+  height: 4px;
+  margin: -26px -28px 22px;
+  border-radius: 16px 16px 0 0;
+  background: linear-gradient(90deg, #7e10c6, #b76cf0);
+}
+
+.skills-panel.invalid {
   border-color: #e0453a;
-  box-shadow: 0 0 0 3px rgba(224, 69, 58, 0.08);
+  box-shadow: 0 0 0 3px rgba(224, 69, 58, 0.1);
 }
 
-.skills-field-summary {
+.heading-icon.accent {
+  background: #f1e6ff;
+  color: #7e10c6;
+}
+
+.skills-panel .card-heading {
+  align-items: flex-start;
+}
+
+.skills-panel-title {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.skills-field-summary strong {
-  color: #1d2f6f;
-  font-size: 13px;
+.skills-panel-title h2 {
+  margin: 0;
+  color: #1c2434;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 34px;
 }
 
-.skills-field-summary.empty strong {
+.skills-panel-title h2 b {
+  color: #e0453a;
+}
+
+.skills-panel-title small {
+  color: #7e8796;
+  font-size: var(--fs-small);
+}
+
+.skills-panel-summary {
+  margin: 20px 0 14px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #f5eeff;
+  color: #5b0f96;
+}
+
+.skills-panel-summary strong {
+  font-size: var(--fs-body);
+}
+
+.skills-panel-summary span {
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
+.skills-panel-summary.empty {
+  background: #fff5e0;
   color: #8a5a00;
 }
 
-.skills-field-summary small {
-  color: #7e8796;
-  font-size: 11.5px;
+.skill-overview {
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
 }
 
-.skills-field .field-error {
-  margin: 0;
+.skill-overview li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+}
+
+.skill-overview li + li {
+  border-top: 1px solid #f0f2f6;
+}
+
+.skill-overview-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: #f1f3f8;
+  color: #4a5567;
+}
+
+.skill-overview-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.skill-overview-name strong {
+  color: #1c2434;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.skill-overview-name small {
+  color: #8a93a3;
+  font-size: var(--fs-caption);
+}
+
+.skill-overview-level {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.skill-overview-level small {
+  color: #7e10c6;
+  font-size: var(--fs-caption);
+  font-weight: 700;
+}
+
+.level-dots {
+  display: flex;
+  gap: 3px;
+}
+
+.level-dots i {
+  width: 12px;
+  height: 6px;
+  border-radius: 3px;
+  background: #e6e9f0;
+}
+
+.level-dots i.on {
+  background: #7e10c6;
+}
+
+.skill-overview li.not-related .skill-overview-icon,
+.skill-overview li.not-related .skill-overview-name {
+  opacity: 0.5;
+}
+
+.skill-overview li.not-related .skill-overview-level small {
+  color: #a3aab6;
+}
+
+.skills-panel .field-error {
+  margin: 12px 0 0;
 }
 
 .view-skills-button {
-  min-height: 36px;
-  padding: 0 14px;
-  border: 1px solid #d9c6f3;
-  border-radius: 8px;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 16px;
+  border: 1.5px solid #d9c6f3;
+  border-radius: 12px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
+  justify-content: center;
+  gap: 8px;
   background: #f7f0ff;
   color: #7e10c6;
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-body);
   font-weight: 700;
   cursor: pointer;
 }
@@ -1290,26 +1526,60 @@ async function submitActivity() {
   outline-offset: 2px;
 }
 
+/* จอกลาง: เหลือคอลัมน์เดียว ลำดับ ฟอร์ม -> ทักษะ -> หลักฐาน -> ปุ่มส่ง */
+@media (max-width: 1180px) {
+  .page-grid {
+    max-width: 860px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "main"
+      "side"
+      "evidence"
+      "footer";
+    gap: 20px;
+  }
+
+  .page-title {
+    max-width: 860px;
+  }
+
+  .form-side .skills-panel {
+    position: static;
+  }
+}
+
 @media (max-width: 640px) {
   .external-page {
-    padding: 18px 16px;
+    padding: 20px 16px;
+  }
+
+  .page-title h1 {
+    font-size: 24px;
+  }
+
+  .card {
+    padding: 20px 16px;
+  }
+
+  .skills-panel::before {
+    margin: -20px -16px 18px;
   }
 
   .form-grid {
     grid-template-columns: 1fr;
+    gap: 16px;
   }
 
-  .primary-button {
+  .evidence-list {
+    grid-template-columns: 1fr;
+  }
+
+  .upload-box {
+    padding: 28px 16px;
+  }
+
+  .form-actions .primary-button {
     width: 100%;
-  }
-
-  .skills-field-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .view-skills-button {
-    justify-content: center;
   }
 }
 
@@ -1322,7 +1592,7 @@ async function submitActivity() {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: #53647c;
 }
 
@@ -1337,7 +1607,7 @@ async function submitActivity() {
   color: #7e10c6;
   font: inherit;
   font-weight: 700;
-  font-size: 12px;
+  font-size: var(--fs-small);
   cursor: pointer;
 }
 
@@ -1370,7 +1640,7 @@ async function submitActivity() {
 .modal-header h2 {
   margin: 0;
   color: #1b283d;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .modal-close {
@@ -1392,7 +1662,7 @@ async function submitActivity() {
   gap: 6px;
   margin: 8px 0 0;
   color: #e0453a;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .modal-actions {
@@ -1477,7 +1747,7 @@ async function submitActivity() {
 
 .skills-modal-count {
   color: #1d2f6f;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   font-weight: 700;
 }
 

@@ -411,7 +411,7 @@ onMounted(loadBypassStatus)
 
   color: #071442;
 
-  font-size: 25px;
+  font-size: 27px;
   font-weight: 600;
 }
 
@@ -420,7 +420,7 @@ onMounted(loadBypassStatus)
 
   color: #777b85;
 
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 
@@ -437,7 +437,7 @@ onMounted(loadBypassStatus)
 
   margin-bottom: 9px;
 
-  font-size: 13px;
+  font-size: var(--fs-body);
 
   color: #374151;
 }
@@ -463,7 +463,7 @@ onMounted(loadBypassStatus)
   /* สีตัวหนังสือตอนพิมพ์ */
   color: #1f2937 !important;
 
-  font-size: 15px;
+  font-size: var(--fs-lead);
   font-family: inherit;
 
   color-scheme: light;
@@ -525,7 +525,7 @@ onMounted(loadBypassStatus)
 
   color: white;
 
-  font-size: 21px;
+  font-size: 23px;
 
   display: flex;
   justify-content: center;
@@ -582,7 +582,7 @@ onMounted(loadBypassStatus)
   }
 
   .admin-title h1 {
-    font-size: 22px;
+    font-size: 24px;
   }
 
 }
@@ -594,7 +594,7 @@ onMounted(loadBypassStatus)
 
 .status-text {
   color: #777b85;
-  font-size: 14px;
+  font-size: var(--fs-body);
 }
 
 .notice {
@@ -607,8 +607,8 @@ onMounted(loadBypassStatus)
 
   border-radius: 8px;
 
-  font-size: 13.5px;
-  line-height: 1.5;
+  font-size: var(--fs-body);
+  line-height: 1.6;
 }
 
 .notice svg {
@@ -635,7 +635,7 @@ onMounted(loadBypassStatus)
 
   background: rgba(0, 0, 0, 0.06);
 
-  font-size: 13px;
+  font-size: var(--fs-body);
   word-break: break-all;
 }
 
@@ -665,7 +665,7 @@ onMounted(loadBypassStatus)
   background: transparent;
   color: inherit;
 
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-family: inherit;
 
   cursor: pointer;
@@ -674,7 +674,7 @@ onMounted(loadBypassStatus)
 .accounts-title {
   margin: 0 0 9px;
 
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: #374151;
 }
 
@@ -710,14 +710,14 @@ onMounted(loadBypassStatus)
 
 .account-option strong {
   color: #1f2937;
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
   word-break: break-all;
 }
 
 .account-option small {
   color: #777b85;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .account-option:hover,
@@ -734,7 +734,7 @@ onMounted(loadBypassStatus)
   margin: -8px 0 18px;
 
   color: #b42318;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .sign-in-btn:disabled {

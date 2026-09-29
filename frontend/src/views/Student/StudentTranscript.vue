@@ -1,6 +1,18 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Download, Eye, FileText, Loader2, RefreshCw, X } from 'lucide-vue-next'
+import {
+  Building2,
+  Check,
+  Download,
+  Eye,
+  FileText,
+  Globe2,
+  GraduationCap,
+  Layers,
+  Loader2,
+  RefreshCw,
+  X
+} from 'lucide-vue-next'
 
 import { useLanguage } from '../../composables/useLanguage'
 import { API_BASE, studentHeaders } from '../../constants/currentStudent'
@@ -36,6 +48,13 @@ const scopeLabels = computed(() => ({
   faculty: t.value.studentTranscript.scopeFaculty,
   external: t.value.studentTranscript.scopeExternal
 }))
+
+const scopeIcons = {
+  all: Layers,
+  major: GraduationCap,
+  faculty: Building2,
+  external: Globe2
+}
 
 const styleCards = computed(() => [
   { key: 'A', title: t.value.studentTranscript.styleA, description: t.value.studentTranscript.styleADescription },
@@ -278,6 +297,7 @@ onMounted(loadOptions)
 
 <template>
   <div class="transcript-page">
+    <div class="transcript-container">
     <div class="page-heading">
       <h1>{{ t.studentTranscript.title }}</h1>
       <p>{{ t.studentTranscript.subtitle }}</p>
@@ -296,7 +316,10 @@ onMounted(loadOptions)
     <form v-else class="options-card" @submit.prevent="downloadTranscript">
       <!-- รูปแบบเอกสาร -->
       <section class="option-section">
-        <h2>{{ t.studentTranscript.styleTitle }}</h2>
+        <div class="section-heading">
+          <span class="step" aria-hidden="true">1</span>
+          <h2>{{ t.studentTranscript.styleTitle }}</h2>
+        </div>
 
         <div class="style-grid">
           <label
@@ -308,13 +331,30 @@ onMounted(loadOptions)
           >
             <input v-model="style" type="radio" name="style" :value="card.key">
 
+            <span class="check-mark" aria-hidden="true"><Check :size="14" :stroke-width="3" /></span>
+
             <!-- ภาพย่อโครงเอกสาร -->
-            <span class="thumb" :class="`thumb-${card.key}`" aria-hidden="true">
-              <span class="thumb-head"></span>
-              <span class="thumb-line"></span>
-              <span class="thumb-line short"></span>
-              <span class="thumb-table"></span>
-              <span class="thumb-sign"></span>
+            <span class="thumb-stage" aria-hidden="true">
+              <span class="thumb" :class="`thumb-${card.key}`">
+                <span class="thumb-head">
+                  <span class="thumb-seal"></span>
+                  <span class="thumb-title"></span>
+                  <span class="thumb-title short"></span>
+                </span>
+                <span class="thumb-info">
+                  <span></span><span></span><span></span><span></span>
+                </span>
+                <span class="thumb-table">
+                  <span v-for="row in 5" :key="row"></span>
+                </span>
+                <span class="thumb-skills">
+                  <span v-for="skill in 6" :key="skill"></span>
+                </span>
+                <span class="thumb-foot">
+                  <span class="thumb-qr"></span>
+                  <span class="thumb-sign"></span>
+                </span>
+              </span>
             </span>
 
             <span class="style-text">
@@ -327,41 +367,57 @@ onMounted(loadOptions)
 
       <!-- ประเภทกิจกรรม -->
       <section class="option-section">
-        <h2>{{ t.studentTranscript.scopeTitle }}</h2>
+        <div class="section-heading">
+          <span class="step" aria-hidden="true">2</span>
+          <h2>{{ t.studentTranscript.scopeTitle }}</h2>
+        </div>
 
         <div class="choice-list">
           <label
             v-for="item in options.scopes"
             :key="item.key"
             class="choice"
-            :class="{ selected: scope === item.key }"
+            :class="{ selected: scope === item.key, empty: !item.count }"
           >
             <input v-model="scope" type="radio" name="scope" :value="item.key">
-            <span>
-              {{ scopeLabels[item.key] || item.label }}
-              <small v-if="item.key === 'major' && options.major">({{ options.major }})</small>
+
+            <span class="choice-icon" aria-hidden="true">
+              <component :is="scopeIcons[item.key] || Layers" :size="20" />
             </span>
-            <span class="count">{{ item.count }} {{ t.studentTranscript.activitiesUnit }}</span>
+
+            <span class="choice-text">
+              <strong>{{ scopeLabels[item.key] || item.label }}</strong>
+              <small v-if="item.key === 'major' && options.major">{{ options.major }}</small>
+            </span>
+
+            <span class="count">
+              <b>{{ item.count }}</b>
+              {{ t.studentTranscript.activitiesUnit }}
+            </span>
           </label>
         </div>
       </section>
 
       <!-- ชั้นปี -->
       <section class="option-section">
-        <h2>{{ t.studentTranscript.yearTitle }}</h2>
+        <div class="section-heading">
+          <span class="step" aria-hidden="true">3</span>
+          <div>
+            <h2>{{ t.studentTranscript.yearTitle }}</h2>
+            <p v-if="currentYearLevel" class="muted">
+              {{ t.studentTranscript.currentYear }} {{ currentYearLevel }}
+              · {{ t.studentTranscript.yearRule }}
+            </p>
+            <p v-else class="muted" data-testid="year-unknown">
+              {{ t.studentTranscript.yearUnknown }}
+            </p>
+          </div>
+        </div>
 
-        <p v-if="currentYearLevel" class="muted">
-          {{ t.studentTranscript.currentYear }} {{ currentYearLevel }}
-          · {{ t.studentTranscript.yearRule }}
-        </p>
-        <p v-else class="muted" data-testid="year-unknown">
-          {{ t.studentTranscript.yearUnknown }}
-        </p>
-
-        <div class="year-list">
+        <div class="year-list" :style="{ '--year-count': yearChoices.length }">
           <button
             type="button"
-            class="year-chip"
+            class="year-chip all"
             :class="{ selected: allYears }"
             @click="chooseAllYears"
           >
@@ -384,13 +440,8 @@ onMounted(loadOptions)
         </div>
       </section>
 
-      <p v-if="downloadError" class="error-text" role="alert">{{ downloadError }}</p>
-
       <div class="actions">
-        <p class="muted">
-          <FileText :size="15" />
-          {{ t.studentTranscript.demoNote }}
-        </p>
+        <p class="summary">{{ previewSummary }}</p>
 
         <div class="action-buttons">
           <button
@@ -401,20 +452,27 @@ onMounted(loadOptions)
             data-testid="preview"
             @click="openPreview"
           >
-            <Loader2 v-if="previewLoading && !previewOpen" :size="17" class="spin" />
-            <Eye v-else :size="17" />
+            <Loader2 v-if="previewLoading && !previewOpen" :size="19" class="spin" />
+            <Eye v-else :size="19" />
             {{ t.studentTranscript.preview }}
           </button>
 
           <button type="submit" class="primary-btn" :disabled="!canDownload" data-testid="download">
-            <Download :size="17" />
+            <Download :size="19" />
             {{ downloading ? t.studentTranscript.downloading : t.studentTranscript.download }}
           </button>
         </div>
-      </div>
 
-      <p v-if="previewNotice" class="error-text" role="alert">{{ previewNotice }}</p>
+        <p class="muted demo-note">
+          <FileText :size="15" />
+          {{ t.studentTranscript.demoNote }}
+        </p>
+
+        <p v-if="downloadError" class="error-text" role="alert">{{ downloadError }}</p>
+        <p v-if="previewNotice" class="error-text" role="alert">{{ previewNotice }}</p>
+      </div>
     </form>
+    </div>
 
     <!-- popup ดูตัวอย่าง PDF: คลิกนอกกรอบ / Esc / ปุ่มปิด = ปิด -->
     <div
@@ -492,38 +550,47 @@ onMounted(loadOptions)
 .transcript-page {
   width: 100%;
   min-height: 100vh;
-  padding: 24px 28px 38px;
+  padding: 32px 32px 48px;
   box-sizing: border-box;
   background: #f5f7fb;
   color: #17213c;
-  font-size: 15px;
+  font-size: var(--fs-body);
+}
+
+/* จัดกลางหน้า กว้างพอให้การ์ดสองคอลัมน์ไม่อึดอัด */
+.transcript-container {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.page-heading {
+  margin-bottom: 24px;
 }
 
 .page-heading h1 {
-  margin: 0 0 5px;
+  margin: 0 0 6px;
   color: #172d68;
-  font-size: 25px;
+  font-size: 28px;
 }
 
 .page-heading p,
 .muted {
   margin: 0;
   color: #8793aa;
-  font-size: 13.5px;
-}
-
-.page-heading {
-  margin-bottom: 18px;
+  font-size: var(--fs-body);
 }
 
 .options-card,
 .error-card {
-  max-width: 920px;
-  padding: 24px 26px;
-  border: 1px solid #d8deea;
-  border-radius: 17px;
+  border: 1px solid #dfe4ee;
+  border-radius: 20px;
   background: #fff;
+  box-shadow: 0 1px 2px rgba(23, 45, 104, 0.04), 0 8px 24px rgba(23, 45, 104, 0.05);
   box-sizing: border-box;
+}
+
+.options-card {
+  overflow: hidden;
 }
 
 .error-card {
@@ -531,21 +598,48 @@ onMounted(loadOptions)
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding: 24px 28px;
   color: #b42318;
 }
 
+.option-section {
+  padding: 32px 36px;
+}
+
 .option-section + .option-section {
-  margin-top: 26px;
+  border-top: 1px solid #edf0f6;
 }
 
-.option-section h2 {
-  margin: 0 0 12px;
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.section-heading h2 {
+  margin: 0;
   color: #172d68;
-  font-size: 16px;
+  font-size: 21px;
+  line-height: 32px;
 }
 
-.option-section .muted {
-  margin-bottom: 10px;
+.section-heading .muted {
+  margin-top: 2px;
+}
+
+.step {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #f1eafd;
+  color: #6d28d9;
+  font-size: var(--fs-small);
+  font-weight: 700;
 }
 
 input[type="radio"] {
@@ -554,29 +648,25 @@ input[type="radio"] {
   pointer-events: none;
 }
 
-/* รูปแบบเอกสาร */
-.style-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+/* การ์ดที่เลือกได้ (รูปแบบ + ประเภท) ใช้สถานะร่วมกัน */
+.style-card,
+.choice {
+  position: relative;
+  border: 1.5px solid #dfe4ee;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.18s, box-shadow 0.18s, background-color 0.18s;
 }
 
-.style-card {
-  position: relative;
-  display: flex;
-  gap: 14px;
-  align-items: center;
-  padding: 14px;
-  border: 1px solid #d7deeb;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: 0.2s;
+.style-card:hover,
+.choice:hover {
+  border-color: #c4b1ef;
 }
 
 .style-card.selected,
 .choice.selected {
   border-color: #6d28d9;
-  box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.1);
+  box-shadow: 0 0 0 4px rgba(109, 40, 217, 0.1);
 }
 
 .style-card:focus-within,
@@ -585,135 +675,361 @@ input[type="radio"] {
   outline-offset: 2px;
 }
 
-.style-text {
+/* รูปแบบเอกสาร */
+.style-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.style-card {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-width: 0;
+  border-radius: 16px;
+  overflow: hidden;
 }
 
-.style-text strong {
-  color: #172d68;
-}
-
-.style-text small {
-  color: #6b7a96;
-  line-height: 1.45;
-}
-
-.thumb {
-  position: relative;
-  flex-shrink: 0;
-  width: 64px;
-  height: 86px;
-  padding: 7px 6px;
-  border: 1px solid #d7deeb;
-  border-radius: 4px;
-  background: #fff;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.thumb span {
-  display: block;
-  background: #cfd6e4;
-  border-radius: 1px;
-}
-
-.thumb-head { height: 10px; }
-.thumb-line { height: 3px; }
-.thumb-line.short { width: 60%; }
-.thumb-table { flex: 1; }
-.thumb-sign { height: 3px; width: 45%; align-self: flex-end; }
-
-.thumb-A .thumb-head {
-  width: 18px;
-  height: 18px;
+.check-mark {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1.5px solid #cfd6e4;
   border-radius: 50%;
-  align-self: center;
+  background: #fff;
+  color: transparent;
+  transition: 0.18s;
+}
+
+.selected .check-mark {
+  border-color: #6d28d9;
+  background: #6d28d9;
+  color: #fff;
+}
+
+.thumb-stage {
+  display: flex;
+  justify-content: center;
+  padding: 26px 20px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #f3f5fa 0%, #e9edf5 100%);
+  transition: background 0.18s;
+}
+
+.style-card.selected .thumb-stage {
+  background: linear-gradient(180deg, #f6f1fe 0%, #ece3fc 100%);
+}
+
+/* หน้า A4 ย่อ (สัดส่วน 1:1.414) */
+.thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: 160px;
+  height: 226px;
+  padding: 14px 15px;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 6px 20px rgba(23, 45, 104, 0.14);
+  box-sizing: border-box;
+  transition: transform 0.2s;
+}
+
+.style-card:hover .thumb,
+.style-card.selected .thumb {
+  transform: translateY(-4px);
+}
+
+/* :where = specificity 0 ไม่ทับ display: flex/grid ของแต่ละส่วนด้านล่าง */
+:where(.thumb span) {
+  display: block;
+}
+
+.thumb-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.thumb-title {
+  width: 70%;
+  height: 5px;
+  border-radius: 2px;
   background: #aab4c8;
 }
 
+.thumb-title.short {
+  width: 45%;
+  height: 3px;
+  background: #cfd6e4;
+}
+
+.thumb-info {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+}
+
+.thumb-info span {
+  height: 3px;
+  border-radius: 2px;
+  background: #dde2ec;
+}
+
+.thumb-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.thumb-table span {
+  height: 9px;
+}
+
+.thumb-skills {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.thumb-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-top: auto;
+}
+
+.thumb-sign {
+  width: 42%;
+  height: 3px;
+  border-radius: 2px;
+  background: #aab4c8;
+}
+
+/* แบบ A คลาสสิก: ตราตรงกลาง ตารางมีเส้นขอบ คะแนนเป็นช่องตัวเลข */
+.thumb-A .thumb-seal {
+  width: 22px;
+  height: 22px;
+  border: 2px solid #9aa6bd;
+  border-radius: 50%;
+}
+
 .thumb-A .thumb-table {
-  background: repeating-linear-gradient(#fff 0 5px, #9aa6bd 5px 6px);
   border: 1px solid #9aa6bd;
 }
 
+.thumb-A .thumb-table span + span {
+  border-top: 1px solid #c3cad8;
+}
+
+.thumb-A .thumb-table span:first-child {
+  background: #e4e8f0;
+}
+
+.thumb-A .thumb-skills span {
+  height: 11px;
+  border: 1px solid #b6bfd0;
+  border-radius: 2px;
+}
+
+.thumb-A .thumb-qr {
+  display: none;
+}
+
+/* แบบ B ทันสมัย: แถบสีหัวกระดาษ คะแนนเป็นแถบ ตารางโล่ง มี QR */
 .thumb-B {
   padding-top: 0;
 }
 
 .thumb-B .thumb-head {
-  height: 16px;
-  margin: 0 -6px 2px;
-  border-radius: 3px 3px 0 0;
+  align-items: flex-start;
+  margin: 0 -15px;
+  padding: 12px 15px 10px;
+  border-radius: 6px 6px 0 0;
   background: #23306b;
 }
 
-.thumb-B .thumb-table {
-  background: repeating-linear-gradient(#fff 0 6px, #e1e5ee 6px 7px);
+.thumb-B .thumb-seal {
+  display: none;
+}
+
+.thumb-B .thumb-title {
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.thumb-B .thumb-title.short {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.thumb-B .thumb-table span:nth-child(odd) {
+  background: #f0f2f7;
+}
+
+.thumb-B .thumb-table span:first-child {
+  background: #d9deea;
+}
+
+.thumb-B .thumb-skills {
+  grid-template-columns: 1fr 1fr;
+}
+
+.thumb-B .thumb-skills span {
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #4f5fb3 var(--fill, 65%), #e3e7f0 var(--fill, 65%));
+}
+
+.thumb-B .thumb-skills span:nth-child(2) { --fill: 85%; }
+.thumb-B .thumb-skills span:nth-child(3) { --fill: 45%; }
+.thumb-B .thumb-skills span:nth-child(4) { --fill: 75%; }
+.thumb-B .thumb-skills span:nth-child(5) { --fill: 55%; }
+
+.thumb-B .thumb-qr {
+  width: 22px;
+  height: 22px;
+  border-radius: 2px;
+  background:
+    conic-gradient(#23306b 25%, #fff 0 50%, #23306b 0 75%, #fff 0) 0 0 / 8px 8px;
+  outline: 1px solid #23306b;
+}
+
+.style-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 22px 20px;
+  border-top: 1px solid #edf0f6;
+}
+
+.style-text strong {
+  color: #172d68;
+  font-size: var(--fs-lead);
+}
+
+.style-text small {
+  color: #6b7a96;
+  font-size: var(--fs-small);
+  line-height: 1.6;
 }
 
 /* ประเภทกิจกรรม */
 .choice-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-auto-rows: 1fr;
+  gap: 14px;
 }
 
 .choice {
-  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid #d7deeb;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: 0.2s;
+  gap: 14px;
+  min-height: 84px;
+  padding: 16px 20px;
+  border-radius: 14px;
 }
 
-.choice small {
+.choice-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #f1f3f8;
+  color: #52617d;
+  transition: 0.18s;
+}
+
+.choice.selected .choice-icon {
+  background: #6d28d9;
+  color: #fff;
+}
+
+.choice-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.choice-text strong {
+  color: #172d68;
+  font-weight: 600;
+}
+
+.choice-text small {
   color: #6b7a96;
+  font-size: var(--fs-small);
 }
 
 .count {
   flex-shrink: 0;
-  color: #6b7a96;
-  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  color: #8793aa;
+  font-size: var(--fs-caption);
+  line-height: 1.3;
+}
+
+.count b {
+  color: #172d68;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.choice.selected .count b {
+  color: #6d28d9;
+}
+
+.choice.empty .count b {
+  color: #b3bccd;
 }
 
 /* ชั้นปี */
 .year-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 1.4fr repeat(var(--year-count, 4), 1fr);
+  gap: 12px;
 }
 
 .year-chip {
-  padding: 8px 16px;
-  border: 1px solid #d7deeb;
-  border-radius: 999px;
+  min-height: 52px;
+  padding: 10px 16px;
+  border: 1.5px solid #dfe4ee;
+  border-radius: 12px;
   background: #fff;
   color: #33415f;
   font: inherit;
-  font-size: 14px;
+  font-size: var(--fs-lead);
+  font-weight: 600;
   cursor: pointer;
-  transition: 0.2s;
+  transition: border-color 0.18s, background-color 0.18s, color 0.18s, box-shadow 0.18s;
+}
+
+.year-chip:not(:disabled):not(.selected):hover {
+  border-color: #c4b1ef;
+  color: #6d28d9;
 }
 
 .year-chip.selected {
   border-color: #6d28d9;
   background: #6d28d9;
   color: #fff;
+  box-shadow: 0 4px 12px rgba(109, 40, 217, 0.25);
 }
 
 .year-chip:disabled {
   border-style: dashed;
-  background: #f5f7fb;
+  background: #f7f8fb;
   color: #b3bccd;
   cursor: not-allowed;
 }
@@ -721,28 +1037,52 @@ input[type="radio"] {
 /* ปุ่ม */
 .actions {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
-  margin-top: 28px;
-  padding-top: 18px;
-  border-top: 1px solid #e8ecf3;
+  padding: 32px 36px 36px;
+  border-top: 1px solid #edf0f6;
+  background: #fafbfd;
+  text-align: center;
 }
 
-.actions .muted {
+.summary {
+  margin: 0;
+  color: #52617d;
+  font-weight: 600;
+}
+
+.demo-note {
   display: flex;
   align-items: center;
   gap: 6px;
+  font-size: var(--fs-small);
 }
 
 .primary-btn,
-.ghost-btn {
+.ghost-btn,
+.secondary-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  border-radius: 9px;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 12px;
   font: inherit;
   cursor: pointer;
+}
+
+.action-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+}
+
+.action-buttons .primary-btn,
+.action-buttons .secondary-btn {
+  min-width: 220px;
+  min-height: 54px;
+  padding: 14px 28px;
+  font-size: var(--fs-lead);
 }
 
 .primary-btn {
@@ -752,6 +1092,15 @@ input[type="radio"] {
   background: #6d28d9;
   color: #fff;
   font-weight: 600;
+  transition: background-color 0.18s, box-shadow 0.18s;
+}
+
+.action-buttons .primary-btn {
+  box-shadow: 0 6px 16px rgba(109, 40, 217, 0.3);
+}
+
+.primary-btn:not(:disabled):hover {
+  background: #5b21b6;
 }
 
 .primary-btn:disabled {
@@ -766,24 +1115,17 @@ input[type="radio"] {
   color: inherit;
 }
 
-.action-buttons {
-  display: flex;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
 .secondary-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
   padding: 10px 18px;
-  border: 1px solid #6d28d9;
-  border-radius: 9px;
+  border: 1.5px solid #6d28d9;
   background: #fff;
   color: #6d28d9;
-  font: inherit;
   font-weight: 600;
-  cursor: pointer;
+  transition: background-color 0.18s;
+}
+
+.secondary-btn:not(:disabled):hover {
+  background: #f6f1fe;
 }
 
 .secondary-btn:disabled {
@@ -837,13 +1179,13 @@ input[type="radio"] {
 .preview-heading h2 {
   margin: 0 0 2px;
   color: #172d68;
-  font-size: 17px;
+  font-size: 20px;
 }
 
 .preview-heading p {
   margin: 0;
   color: #6b7a96;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .preview-actions {
@@ -901,18 +1243,44 @@ input[type="radio"] {
 }
 
 .error-text {
-  margin: 18px 0 0;
+  margin: 0;
   color: #b42318;
-  font-size: 14px;
+  font-size: var(--fs-body);
+}
+
+@media (max-width: 900px) {
+  .option-section {
+    padding: 28px 24px;
+  }
+
+  .actions {
+    padding: 28px 24px 30px;
+  }
+
+  .year-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .year-chip.all {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 720px) {
   .transcript-page {
-    padding: 18px 16px 30px;
+    padding: 20px 16px 32px;
   }
 
-  .options-card {
-    padding: 18px 16px;
+  .page-heading h1 {
+    font-size: 24px;
+  }
+
+  .option-section {
+    padding: 22px 16px;
+  }
+
+  .actions {
+    padding: 22px 16px 24px;
   }
 
   .style-grid,
@@ -920,21 +1288,46 @@ input[type="radio"] {
     grid-template-columns: 1fr;
   }
 
-  .actions {
-    flex-direction: column;
-    align-items: stretch;
+  .style-grid {
+    gap: 14px;
   }
 
-  .primary-btn {
-    justify-content: center;
+  /* scale ไม่ย่อกล่อง layout จึงล็อกความสูง stage = 226 * 0.8 + padding */
+  .thumb-stage {
+    height: 221px;
+    padding: 20px;
+    box-sizing: border-box;
+  }
+
+  .thumb {
+    transform: scale(0.8);
+    transform-origin: top center;
+  }
+
+  .style-card:hover .thumb,
+  .style-card.selected .thumb {
+    transform: scale(0.8) translateY(-4px);
+  }
+
+  .choice {
+    min-height: 72px;
+    padding: 14px 16px;
+  }
+
+  .year-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
   }
 
   .action-buttons {
     flex-direction: column-reverse;
+    align-self: stretch;
   }
 
+  .action-buttons .primary-btn,
   .action-buttons .secondary-btn {
-    justify-content: center;
+    min-width: 0;
+    width: 100%;
   }
 
   .preview-backdrop {

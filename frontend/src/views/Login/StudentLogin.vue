@@ -320,7 +320,7 @@ onMounted(loadMockStudents)
 .brand h1 {
   margin: 0;
 
-  font-size: 21px;
+  font-size: 23px;
   font-weight: 600;
 
   color: #071442;
@@ -329,7 +329,7 @@ onMounted(loadMockStudents)
 .brand p {
   margin: 3px 0 0;
 
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: #7c7c86;
 }
 
@@ -382,7 +382,7 @@ onMounted(loadMockStudents)
 .mock-student-title {
   margin: 0 0 12px;
 
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: #374151;
 }
 
@@ -390,7 +390,7 @@ onMounted(loadMockStudents)
   margin: 0;
 
   color: #777b85;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .mock-account-list {
@@ -409,7 +409,7 @@ onMounted(loadMockStudents)
   color: #a100d4;
 
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: var(--fs-body);
   font-weight: 500;
 
   cursor: pointer;
@@ -429,8 +429,8 @@ onMounted(loadMockStudents)
 
   color: #8a1c1c;
 
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: var(--fs-body);
+  line-height: 1.6;
 }
 
 .notice svg {
@@ -452,7 +452,7 @@ onMounted(loadMockStudents)
   background: transparent;
   color: inherit;
 
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   font-family: inherit;
 
   cursor: pointer;
@@ -474,7 +474,7 @@ onMounted(loadMockStudents)
 
   color: #374151;
 
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .input-wrapper {
@@ -498,7 +498,7 @@ onMounted(loadMockStudents)
   /* ตัวหนังสือที่พิมพ์ */
   color: #1f2937 !important;
 
-  font-size: 15px;
+  font-size: var(--fs-lead);
   font-family: inherit;
 
   transition: 0.2s;
@@ -573,7 +573,7 @@ onMounted(loadMockStudents)
   align-items: center;
   gap: 8px;
 
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: #374151;
 
   cursor: pointer;
@@ -585,7 +585,7 @@ onMounted(loadMockStudents)
 }
 
 .login-options a {
-  font-size: 13px;
+  font-size: var(--fs-body);
 
   color: #071442;
 
@@ -608,7 +608,7 @@ onMounted(loadMockStudents)
 
   color: white;
 
-  font-size: 19px;
+  font-size: 21px;
   font-weight: 500;
 
   display: flex;
@@ -637,7 +637,7 @@ onMounted(loadMockStudents)
   margin: -8px 0 18px;
 
   color: #b42318;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 
@@ -650,7 +650,7 @@ onMounted(loadMockStudents)
 
   margin-top: 34px;
 
-  font-size: 13px;
+  font-size: var(--fs-body);
 
   color: #555;
 }
@@ -676,17 +676,17 @@ onMounted(loadMockStudents)
   }
 
   .brand h1 {
-    font-size: 17px;
+    font-size: 19px;
   }
 
   .brand p {
-    font-size: 10px;
+    font-size: var(--fs-caption);
   }
 
   .admin-btn {
     padding: 0 10px;
 
-    font-size: 11px;
+    font-size: var(--fs-small);
   }
 }
 </style>

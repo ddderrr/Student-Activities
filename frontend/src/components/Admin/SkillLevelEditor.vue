@@ -151,14 +151,14 @@ function setRelated(key, related) {
 .skill-name strong {
   display: block;
   color: #26364b;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .skill-name small {
   display: block;
   margin-top: 2px;
   color: #94a1b1;
-  font-size: 9px;
+  font-size: var(--fs-badge);
 }
 
 .level-badge {
@@ -166,7 +166,7 @@ function setRelated(key, related) {
   border-radius: 999px;
   background: #e8f8ee;
   color: #17864d;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 800;
   white-space: nowrap;
 }
@@ -182,7 +182,7 @@ function setRelated(key, related) {
   align-items: center;
   gap: 5px;
   color: #66758c;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
@@ -226,6 +226,6 @@ function setRelated(key, related) {
   display: flex;
   justify-content: space-between;
   color: #8290a2;
-  font-size: 9px;
+  font-size: var(--fs-badge);
 }
 </style>

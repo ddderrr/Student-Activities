@@ -260,7 +260,7 @@ h1, h2, h3, h4, h5, h6 {
     border-bottom: 1px solid #e5eaf2;
 
     color: #1d3268;
-    font-size: 15px;
+    font-size: var(--fs-lead);
   }
 
   .admin-mobile-menu-button {

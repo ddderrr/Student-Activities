@@ -1296,7 +1296,7 @@ onBeforeUnmount(() => {
 
   color: #253047;
 
-  font-size: 14px;
+  font-size: var(--fs-body);
 
 }
 
@@ -1306,7 +1306,7 @@ onBeforeUnmount(() => {
 
   color: #929baa;
 
-  font-size: 10px;
+  font-size: var(--fs-caption);
 
 }
 
@@ -1320,7 +1320,7 @@ onBeforeUnmount(() => {
 
   color: #345eea;
 
-  font-size: 10px;
+  font-size: var(--fs-small);
 
   cursor: pointer;
 
@@ -1432,7 +1432,7 @@ onBeforeUnmount(() => {
 
   color: #2c3442;
 
-  font-size: 11px;
+  font-size: var(--fs-small);
 
 }
 
@@ -1444,9 +1444,9 @@ onBeforeUnmount(() => {
 
   color: #7f8998;
 
-  font-size: 10px;
+  font-size: var(--fs-caption);
 
-  line-height: 1.45;
+  line-height: 1.6;
 
 }
 
@@ -1514,7 +1514,7 @@ onBeforeUnmount(() => {
 
   color: #263044;
 
-  font-size: 14px;
+  font-size: var(--fs-body);
 
 }
 
@@ -1528,7 +1528,7 @@ onBeforeUnmount(() => {
 
   color: #929baa;
 
-  font-size: 10px;
+  font-size: var(--fs-caption);
 
 }
 
@@ -1570,7 +1570,7 @@ onBeforeUnmount(() => {
 
   color: #949dab;
 
-  font-size: 9px;
+  font-size: var(--fs-badge);
 
 }
 
@@ -1580,7 +1580,7 @@ onBeforeUnmount(() => {
 
   color: #3c4555;
 
-  font-size: 11px;
+  font-size: var(--fs-small);
 
   font-weight: 600;
 
@@ -1609,7 +1609,7 @@ onBeforeUnmount(() => {
   color: #b42318;
 
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
 
   cursor: pointer;
@@ -1633,7 +1633,7 @@ onBeforeUnmount(() => {
 
   color: #929baa;
 
-  font-size: 11px;
+  font-size: var(--fs-small);
 
 }
 

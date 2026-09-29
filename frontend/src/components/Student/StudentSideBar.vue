@@ -283,7 +283,7 @@ const logout = () => {
 .brand h2 {
   margin: 0;
 
-  font-size: 20px;
+  font-size: var(--fs-lead);
   font-weight: 700;
 
   color: white;
@@ -294,12 +294,13 @@ const logout = () => {
 .brand p {
   margin: 3px 0 0;
 
-  font-size: 10px;
+  font-size: var(--fs-badge);
   letter-spacing: 0.7px;
 
   opacity: 0.7;
 
-  white-space: nowrap;
+  min-width: 150px;
+  white-space: normal;
 }
 
 .collapse-button {
@@ -355,9 +356,9 @@ const logout = () => {
 
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 
-  padding: 13px 14px;
+  padding: 13px 12px;
 
   border: none;
   border-radius: 6px;
@@ -383,9 +384,10 @@ const logout = () => {
 }
 
 .menu-text {
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
 
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 500;
 
   transition:
@@ -449,7 +451,7 @@ const logout = () => {
 
   margin-bottom: 10px;
 
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
 
   color: rgba(255, 255, 255, 0.85);
@@ -476,7 +478,7 @@ const logout = () => {
   background: transparent;
   color: rgba(255, 255, 255, 0.7);
 
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 700;
 
   cursor: pointer;
@@ -519,7 +521,7 @@ const logout = () => {
   background: white;
   color: #8d00c4;
 
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 800;
 
   cursor: pointer;
@@ -544,11 +546,11 @@ const logout = () => {
   }
 
   .brand h2 {
-    font-size: 16px;
+    font-size: var(--fs-lead);
   }
 
   .menu-text {
-    font-size: 12px;
+    font-size: var(--fs-small);
   }
 }
 

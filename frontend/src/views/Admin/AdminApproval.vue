@@ -974,14 +974,14 @@ async function decideRequest(request, status) {
 
 .page-header h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: 26px;
   color: #173f95;
 }
 
 .subtitle {
   margin: 6px 0 0;
   color: #64748b;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .stat-grid {
@@ -1003,11 +1003,11 @@ async function decideRequest(request, status) {
 
 .stat-label {
   color: #8ea0ba;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .stat-value {
-  font-size: 26px;
+  font-size: 28px;
   color: #1c293d;
 }
 
@@ -1026,7 +1026,7 @@ async function decideRequest(request, status) {
   border-radius: 8px;
   background: #fff;
   color: #64748b;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   cursor: pointer;
   transition: 0.15s;
@@ -1044,7 +1044,7 @@ async function decideRequest(request, status) {
 
 .no-actions {
   color: #9aa5b5;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .table-card {
@@ -1065,12 +1065,16 @@ async function decideRequest(request, status) {
 
 .table-heading h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 20px;
 }
 
 .heading-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .filter-wrapper {
@@ -1086,7 +1090,7 @@ async function decideRequest(request, status) {
   border-radius: 8px;
   background: #fff;
   color: #52617a;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   cursor: pointer;
 }
 
@@ -1112,7 +1116,7 @@ async function decideRequest(request, status) {
   padding: 9px 14px;
   border: none;
   background: #fff;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: #52617a;
   cursor: pointer;
 }
@@ -1124,7 +1128,7 @@ async function decideRequest(request, status) {
   padding: 40px 16px;
   text-align: center;
   color: #8ea0ba;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .load-status-error { color: #bd3c3c; }
@@ -1135,7 +1139,7 @@ table { width: 100%; border-collapse: collapse; min-width: 780px; }
 
 thead th {
   text-align: left;
-  font-size: 10.5px;
+  font-size: var(--fs-small);
   letter-spacing: 0.04em;
   color: #8ea0ba;
   padding: 10px 12px;
@@ -1160,7 +1164,7 @@ tbody td {
   height: 34px;
   border-radius: 50%;
   color: #fff;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -1168,10 +1172,10 @@ tbody td {
   flex-shrink: 0;
 }
 
-.requester-name { font-size: 13px; font-weight: 600; }
+.requester-name { font-size: var(--fs-body); font-weight: 600; }
 .requester-cell small,
 .request-type-cell small,
-.date-cell { color: #8ea0ba; font-size: 11.5px; }
+.date-cell { color: #8ea0ba; font-size: var(--fs-small); }
 
 .request-type-cell {
   display: flex;
@@ -1180,9 +1184,9 @@ tbody td {
 }
 
 .type-icon { color: #2563eb; margin-top: 2px; flex-shrink: 0; }
-.request-type-name { font-size: 13px; font-weight: 600; }
+.request-type-name { font-size: var(--fs-body); font-weight: 600; }
 
-.date-cell { font-size: 12.5px; color: #52617a; }
+.date-cell { font-size: var(--fs-small); color: #52617a; }
 
 .detail-button {
   padding: 6px 12px;
@@ -1190,7 +1194,7 @@ tbody td {
   border: 1px solid #e5eaf2;
   background: #f7f8fc;
   color: #52617a;
-  font-size: 11.5px;
+  font-size: var(--fs-small);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -1204,7 +1208,7 @@ tbody td {
   padding: 7px 14px;
   border-radius: 8px;
   border: 1px solid transparent;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
@@ -1228,7 +1232,7 @@ tbody td {
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid #f2f4f8;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: #8ea0ba;
 }
 
@@ -1242,7 +1246,7 @@ tbody td {
   border: 1px solid #e5eaf2;
   background: #fff;
   color: #52617a;
-  font-size: 12px;
+  font-size: var(--fs-small);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1258,7 +1262,7 @@ tbody td {
   border-radius: 8px;
   background: #fff2f2;
   color: #bd3c3c;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .modal-backdrop {
@@ -1286,7 +1290,7 @@ tbody td {
   margin-bottom: 14px;
 }
 
-.modal-header h3 { margin: 0; font-size: 15px; }
+.modal-header h3 { margin: 0; font-size: 18px; }
 
 .modal-close {
   border: none;
@@ -1302,9 +1306,9 @@ tbody td {
 }
 
 .modal dl { margin: 0; }
-.modal dt { font-size: 11px; color: #8ea0ba; margin-top: 12px; }
+.modal dt { font-size: var(--fs-small); color: #8ea0ba; margin-top: 12px; }
 .modal dt:first-child { margin-top: 0; }
-.modal dd { margin: 3px 0 0; font-size: 13px; color: #1c293d; }
+.modal dd { margin: 3px 0 0; font-size: var(--fs-body); color: #1c293d; }
 
 .action-success {
   margin: 12px 0 0;
@@ -1312,7 +1316,7 @@ tbody td {
   align-items: center;
   gap: 6px;
   color: #15803d;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .review-modal {
@@ -1325,7 +1329,7 @@ tbody td {
 .review-eyebrow {
   margin: 0 0 3px;
   color: #8ea0ba;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -1353,7 +1357,7 @@ tbody td {
 .review-section h4 {
   margin: 0 0 10px;
   color: #52617a;
-  font-size: 11px;
+  font-size: var(--fs-small);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -1363,13 +1367,13 @@ tbody td {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
 }
 
 .review-student small {
   color: #8ea0ba;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 400;
 }
 
@@ -1396,7 +1400,7 @@ tbody td {
   border-radius: 6px;
   background: #f7f5ff;
   color: #3b4a61;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   white-space: pre-wrap;
 }
 
@@ -1407,13 +1411,13 @@ tbody td {
   border-radius: 6px;
   background: #fef2f2;
   color: #7f1d1d;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .review-reject-reason strong {
   display: block;
   margin-bottom: 4px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
@@ -1465,7 +1469,7 @@ tbody td {
   align-items: center;
   gap: 8px;
   color: #2f5fdb;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   text-decoration: none;
 }
 
@@ -1490,13 +1494,13 @@ tbody td {
 
 .skill-count {
   color: #52617a;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .review-hint {
   margin: 0 0 10px;
   color: #8ea0ba;
-  font-size: 11.5px;
+  font-size: var(--fs-small);
 }
 
 .skill-readonly {
@@ -1531,12 +1535,12 @@ tbody td {
 }
 
 .skill-readonly-name strong {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .skill-readonly-name small {
   color: #8ea0ba;
-  font-size: 10.5px;
+  font-size: var(--fs-caption);
 }
 
 .skill-readonly-level {
@@ -1564,7 +1568,7 @@ tbody td {
 
 .level-text {
   min-width: 52px;
-  font-size: 11.5px;
+  font-size: var(--fs-small);
   font-weight: 700;
   text-align: right;
 }
@@ -1578,7 +1582,7 @@ tbody td {
   flex-direction: column;
   gap: 6px;
   color: #b42318;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
@@ -1589,7 +1593,7 @@ tbody td {
   background: #fff;
   color: #1c293d;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
   resize: vertical;
 }
 
@@ -1602,7 +1606,7 @@ tbody td {
   gap: 7px;
   background: #fdeaea;
   color: #b42318;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .decision-modal {
@@ -1620,19 +1624,19 @@ tbody td {
 }
 
 .decision-summary strong {
-  font-size: 13.5px;
+  font-size: var(--fs-body);
 }
 
 .decision-summary span {
   color: #64748b;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .decision-text {
   margin: 14px 0 0;
   color: #3b4a61;
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: var(--fs-body);
+  line-height: 1.6;
 }
 
 .decision-modal .reject-field {
@@ -1651,7 +1655,7 @@ tbody td {
 
 .decision-skill-summary h4 {
   margin: 0 0 8px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: #64748b;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -1667,7 +1671,7 @@ tbody td {
 
 .decision-hint {
   color: #8ea0ba;
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 400;
 }
 
@@ -1690,7 +1694,7 @@ tbody td {
   border-radius: 8px;
   background: #dc2626;
   color: #fff;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
   cursor: pointer;
 }

@@ -793,7 +793,7 @@ const summaryCards = computed(() => [
 .dashboard-header h1 {
   margin: 0;
 
-  font-size: 25px;
+  font-size: 27px;
   font-weight: 800;
 
   color: #1d3268;
@@ -802,7 +802,7 @@ const summaryCards = computed(() => [
 .dashboard-header p {
   margin: 6px 0 0;
 
-  font-size: 14px;
+  font-size: var(--fs-body);
 
   color: #8da0bd;
 }
@@ -832,12 +832,12 @@ const summaryCards = computed(() => [
 }
 
 .history-filter-text strong {
-  font-size: 14px;
+  font-size: var(--fs-body);
   color: #1d3268;
 }
 
 .history-filter-text span {
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: #8da0bd;
 }
 
@@ -854,7 +854,7 @@ const summaryCards = computed(() => [
 }
 
 .filter-field span {
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 800;
   color: #60738f;
   letter-spacing: 0.4px;
@@ -869,7 +869,7 @@ const summaryCards = computed(() => [
   outline: none;
   background: #f8faff;
   color: #31508f;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 700;
   cursor: pointer;
 }
@@ -966,7 +966,7 @@ const summaryCards = computed(() => [
 .summary-title {
   margin-top: 3px;
 
-  font-size: 13px;
+  font-size: var(--fs-body);
 
   color: #8da0bd;
 }
@@ -1004,7 +1004,7 @@ const summaryCards = computed(() => [
 .card-header h2 {
   margin: 0;
 
-  font-size: 20px;
+  font-size: 22px;
 
   font-weight: 800;
 
@@ -1015,7 +1015,7 @@ const summaryCards = computed(() => [
 .card-header p {
   margin: 6px 0 0;
 
-  font-size: 13px;
+  font-size: var(--fs-body);
 
   color: #8da0bd;
 }
@@ -1045,7 +1045,7 @@ const summaryCards = computed(() => [
 
   border-radius: 5px;
 
-  font-size: 11px;
+  font-size: var(--fs-small);
 
   font-weight: 700;
 
@@ -1095,7 +1095,7 @@ const summaryCards = computed(() => [
 
   white-space: nowrap;
 
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 700;
 
   color: #8da0bd;
@@ -1117,7 +1117,7 @@ const summaryCards = computed(() => [
 
   transform: translateY(-5px);
 
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 700;
 
   text-align: right;
@@ -1257,14 +1257,14 @@ const summaryCards = computed(() => [
 .x-axis-item span {
   display: block;
   margin-top: 3px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 700;
   letter-spacing: 0.5px;
 }
 
 .activity-count {
   display: block;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 800;
   color: #60738f;
 }
@@ -1288,7 +1288,7 @@ const summaryCards = computed(() => [
   padding: 7px 12px;
   background: transparent;
   border-radius: 5px;
-  font-size: 10px;
+  font-size: var(--fs-small);
   font-weight: 800;
   color: #9aa8bb;
   cursor: pointer;
@@ -1301,7 +1301,7 @@ const summaryCards = computed(() => [
 
 .skill-info strong small {
   margin-left: 5px;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 600;
   color: #9aa8bb;
 }
@@ -1345,7 +1345,7 @@ const summaryCards = computed(() => [
 
 
 .skill-info span {
-  font-size: 12px;
+  font-size: var(--fs-small);
 
   font-weight: 800;
 
@@ -1356,7 +1356,7 @@ const summaryCards = computed(() => [
 
 
 .skill-info strong {
-  font-size: 12px;
+  font-size: var(--fs-small);
 
   color: #31508f;
 }
@@ -1439,7 +1439,7 @@ const summaryCards = computed(() => [
 .score-inner span {
   margin-top: 3px;
 
-  font-size: 10px;
+  font-size: var(--fs-caption);
 
   font-weight: 700;
 
@@ -1456,7 +1456,7 @@ const summaryCards = computed(() => [
 
   text-align: center;
 
-  font-size: 10px;
+  font-size: var(--fs-caption);
 
   font-weight: 700;
 

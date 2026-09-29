@@ -225,7 +225,7 @@ onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside))
   border-radius: 8px;
 
   color: #1f2937;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-family: inherit;
 
   cursor: pointer;
@@ -264,7 +264,7 @@ onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside))
 }
 
 .date-picker-header strong {
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: #1f2937;
 }
 
@@ -296,7 +296,7 @@ onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside))
 
 .date-picker-weekdays span {
   text-align: center;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   color: #94a3b8;
   padding-bottom: 4px;
 }
@@ -311,7 +311,7 @@ onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside))
   border: none;
   border-radius: 6px;
 
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: #1f2937;
 
   cursor: pointer;

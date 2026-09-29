@@ -751,7 +751,7 @@ async function createActivity() {
   align-items: center;
   gap: 7px;
   color: #7e36bd;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 800;
   letter-spacing: 0.08em;
 }
@@ -766,7 +766,7 @@ async function createActivity() {
 .skills-heading p {
   margin: 8px 0 0;
   color: #8290a3;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .steps {
@@ -794,7 +794,7 @@ async function createActivity() {
   place-items: center;
   background: #edf0f5;
   color: #77859a;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 800;
 }
 
@@ -805,14 +805,14 @@ async function createActivity() {
 
 .step strong {
   display: block;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .step small {
   display: block;
   margin-top: 2px;
   color: #96a2b2;
-  font-size: 9px;
+  font-size: var(--fs-badge);
 }
 
 .step-connector {
@@ -832,7 +832,7 @@ async function createActivity() {
   border-radius: 10px;
   background: #fff2f2;
   color: #bc3b3b;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .content-layout {
@@ -880,14 +880,14 @@ async function createActivity() {
 .section-heading h2,
 .skills-heading h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 20px;
   color: #1e2a3e;
 }
 
 .section-heading p {
   margin: 3px 0 0;
   color: #657bbc;
-  font-size: 10px;
+  font-size: var(--fs-caption);
 }
 
 .form-grid {
@@ -904,7 +904,7 @@ async function createActivity() {
 
 .field > span {
   color: #5f6d80;
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 700;
 }
 
@@ -922,7 +922,7 @@ async function createActivity() {
   background: #fff;
   color: #34445a;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
   transition: 0.2s;
 }
 
@@ -962,7 +962,7 @@ async function createActivity() {
 
 .time-field > span {
   color: #5f6d80;
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 700;
 }
 
@@ -1025,7 +1025,7 @@ async function createActivity() {
 
 .date-trigger-text small {
   color: #9a86b8;
-  font-size: 8px;
+  font-size: var(--fs-badge);
   font-weight: 800;
   letter-spacing: 0.08em;
 }
@@ -1033,7 +1033,7 @@ async function createActivity() {
 .date-trigger-text strong {
   overflow: hidden;
   color: #34445a;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1076,13 +1076,13 @@ async function createActivity() {
   display: block;
   margin-bottom: 2px;
   color: #98a4b4;
-  font-size: 9px;
+  font-size: var(--fs-badge);
 }
 
 .calendar-header strong {
   display: block;
   color: #26364b;
-  font-size: 14px;
+  font-size: var(--fs-body);
 }
 
 .calendar-nav {
@@ -1118,7 +1118,7 @@ async function createActivity() {
   display: grid;
   place-items: center;
   color: #9aa5b4;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 800;
 }
 
@@ -1132,7 +1132,7 @@ async function createActivity() {
   place-items: center;
   color: #415168;
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 700;
   cursor: pointer;
   transition: 0.15s;
@@ -1178,8 +1178,8 @@ async function createActivity() {
 
 .calendar-footer span {
   color: #8a97a8;
-  font-size: 9px;
-  line-height: 1.4;
+  font-size: var(--fs-badge);
+  line-height: 1.6;
 }
 
 .calendar-footer button {
@@ -1190,7 +1190,7 @@ async function createActivity() {
   background: #f1ebff;
   color: #6d35aa;
   font-family: inherit;
-  font-size: 10px;
+  font-size: var(--fs-small);
   font-weight: 800;
   cursor: pointer;
 }
@@ -1253,14 +1253,14 @@ async function createActivity() {
 
 .tips-card h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: 18px;
   color: #1e2a3e;
 }
 
 .tips-card p {
   margin: 8px 0 14px;
   color: #8290a2;
-  font-size: 11px;
+  font-size: var(--fs-small);
   line-height: 1.6;
 }
 
@@ -1276,7 +1276,7 @@ async function createActivity() {
   align-items: center;
   gap: 8px;
   color: #647287;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .tips-card li svg {
@@ -1312,7 +1312,7 @@ async function createActivity() {
   background: transparent;
   color: #66758a;
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 700;
   cursor: pointer;
 }

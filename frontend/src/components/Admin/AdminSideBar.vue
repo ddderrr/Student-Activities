@@ -391,7 +391,7 @@ const logout = () => {
 .brand h2 {
   margin: 0;
 
-  font-size: 15px;
+  font-size: var(--fs-lead);
   font-weight: 700;
 
   color: #173f95;
@@ -403,7 +403,7 @@ const logout = () => {
 .brand p {
   margin: 3px 0 0;
 
-  font-size: 9px;
+  font-size: var(--fs-badge);
   letter-spacing: 0.7px;
 
   color: #94a3b8;
@@ -477,7 +477,7 @@ const logout = () => {
 
   gap: 12px;
 
-  font-size: 13px;
+  font-size: var(--fs-small);
 
   color: #52617a;
 
@@ -575,7 +575,7 @@ const logout = () => {
 
   margin-bottom: 8px;
 
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 600;
 
   color: #6d28d9;
@@ -605,7 +605,7 @@ const logout = () => {
 
   color: #7c3aed;
 
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 700;
 
   cursor: pointer;
@@ -657,7 +657,7 @@ const logout = () => {
   align-items: center;
   justify-content: center;
 
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 700;
 
   color: #ffffff;
@@ -689,7 +689,7 @@ const logout = () => {
 
 
 .profile-info strong {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 
   color: #1c293d;
 
@@ -710,14 +710,14 @@ const logout = () => {
 }
 
 .profile-info [data-testid="admin-email"] {
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 
 .profile-info small {
   margin-top: 2px;
 
-  font-size: 10.5px;
+  font-size: var(--fs-caption);
 
   color: #8ea0ba;
 
@@ -843,7 +843,7 @@ const logout = () => {
   border-radius: 6px;
   background: #7c3aed;
   color: #ffffff;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 800;
   cursor: pointer;
 }

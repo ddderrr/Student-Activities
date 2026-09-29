@@ -2639,7 +2639,7 @@ const confirmImportButtonText = computed(() =>
   display: block;
   margin-bottom: 4px;
   color: #8fa0b9;
-  font-size: 10px;
+  font-size: var(--fs-small);
   font-weight: 700;
   letter-spacing: 0.09em;
 }
@@ -2675,7 +2675,7 @@ const confirmImportButtonText = computed(() =>
   display: block;
   margin-bottom: 7px;
   color: #8fa0b8;
-  font-size: 10px;
+  font-size: var(--fs-small);
   font-weight: 700;
   letter-spacing: 0.06em;
 }
@@ -2701,7 +2701,7 @@ const confirmImportButtonText = computed(() =>
   gap: 8px;
   color: #3c4b60;
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
   text-align: left;
   cursor: pointer;
   transition: border-color 0.18s, box-shadow 0.18s;
@@ -2757,7 +2757,7 @@ const confirmImportButtonText = computed(() =>
 
 .filter-calendar-header strong {
   color: #29394f;
-  font-size: 13px;
+  font-size: var(--fs-body);
   text-align: center;
 }
 
@@ -2794,7 +2794,7 @@ const confirmImportButtonText = computed(() =>
   display: grid;
   place-items: center;
   color: #98a5b6;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 800;
 }
 
@@ -2808,7 +2808,7 @@ const confirmImportButtonText = computed(() =>
   place-items: center;
   color: #415168;
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 700;
   cursor: pointer;
 }
@@ -2849,7 +2849,7 @@ const confirmImportButtonText = computed(() =>
   background: #f1ebff;
   color: #6d35aa;
   font-family: inherit;
-  font-size: 10px;
+  font-size: var(--fs-small);
   font-weight: 800;
   cursor: pointer;
 }
@@ -2881,7 +2881,7 @@ const confirmImportButtonText = computed(() =>
   background: #fff;
   color: #3c4b60;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .input-box input {
@@ -2908,6 +2908,7 @@ const confirmImportButtonText = computed(() =>
   font-family: inherit;
   font-weight: 700;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .quick-search-row {
@@ -2935,7 +2936,7 @@ const confirmImportButtonText = computed(() =>
   background: transparent;
   color: #53637a;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .activities-table-card {
@@ -3003,7 +3004,7 @@ thead {
 th {
   padding: 17px 20px;
   color: #8ea0b8;
-  font-size: 10px;
+  font-size: var(--fs-small);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-align: left;
@@ -3014,7 +3015,7 @@ td {
   padding: 15px 20px;
   border-top: 1px solid #edf1f6;
   color: #415269;
-  font-size: 13px;
+  font-size: var(--fs-body);
   vertical-align: middle;
 }
 
@@ -3026,13 +3027,13 @@ td {
 
 .activity-name strong {
   color: #1d2a3f;
-  font-size: 14px;
-  line-height: 1.35;
+  font-size: var(--fs-body);
+  line-height: 1.6;
 }
 
 .activity-name small {
   color: #93a5bc;
-  font-size: 9px;
+  font-size: var(--fs-badge);
 }
 
 .activity-meta {
@@ -3050,7 +3051,7 @@ td {
 
 .date-cell small {
   color: #93a5bc;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .skills-toggle {
@@ -3063,7 +3064,7 @@ td {
   background: #fff;
   color: #4b5d76;
   font: inherit;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 800;
   cursor: pointer;
 }
@@ -3110,7 +3111,7 @@ td {
 .skills-detail-group h4 {
   margin: 0 0 8px;
   color: #8ea0b8;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -3127,19 +3128,19 @@ td {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .skills-detail-group li strong {
   color: #17864d;
-  font-size: 11px;
+  font-size: var(--fs-small);
   white-space: nowrap;
 }
 
 .skills-empty {
   margin: 0;
   color: #93a5bc;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .edit-skills-heading {
@@ -3151,7 +3152,7 @@ td {
 
 .edit-skills-heading > span {
   color: #66758c;
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 700;
 }
 
@@ -3169,7 +3170,7 @@ td {
   background: transparent;
   color: #66758c;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 700;
   cursor: pointer;
 }
@@ -3183,7 +3184,7 @@ td {
 .activity-status {
   padding: 3px 7px;
   border-radius: 999px;
-  font-size: 8px;
+  font-size: var(--fs-badge);
   font-weight: 800;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -3216,7 +3217,7 @@ td {
   display: block;
   margin-bottom: 6px;
   color: #34465e;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .progress-track {
@@ -3251,7 +3252,8 @@ td {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 10px;
+  font-size: var(--fs-small);
+  white-space: nowrap;
 }
 
 .manage-participants {
@@ -3268,7 +3270,7 @@ td {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 700;
 }
 
@@ -3313,7 +3315,7 @@ td {
   display: flex;
   align-items: center;
   gap: 9px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   text-align: left;
 }
 
@@ -3352,7 +3354,7 @@ td {
 
 .rows-info {
   color: #8b9bb0;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .pagination {
@@ -3618,7 +3620,7 @@ td {
 .modal-eyebrow {
   margin: 0 0 5px;
   color: #8da0ba;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -3626,13 +3628,13 @@ td {
 .modal-header h2 {
   margin: 0;
   color: #1b283d;
-  font-size: 21px;
+  font-size: 23px;
 }
 
 .selected-activity {
   margin: 7px 0 0;
   color: #53647c;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
 }
 
@@ -3670,12 +3672,12 @@ td {
 
 .file-dropzone strong {
   color: #34445c;
-  font-size: 14px;
+  font-size: var(--fs-body);
 }
 
 .file-dropzone span {
   color: #92a2b8;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .file-dropzone.dragging {
@@ -3770,14 +3772,14 @@ td {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #34445c;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .selected-file-text span {
   display: block;
   margin-top: 2px;
   color: #92a2b8;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .remove-file-button {
@@ -3805,7 +3807,7 @@ td {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .import-message.error {
@@ -3839,7 +3841,7 @@ td {
 .preview-summary span {
   display: block;
   color: #94a4b8;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 700;
   letter-spacing: 0.07em;
 }
@@ -3848,7 +3850,7 @@ td {
   display: block;
   margin-top: 3px;
   color: #24344a;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .preview-table-wrapper {
@@ -3863,14 +3865,14 @@ td {
 .preview-table td {
   height: auto;
   padding: 10px 13px;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .preview-note {
   margin: 0;
   padding: 9px 13px 12px;
   color: #8b9bb0;
-  font-size: 10px;
+  font-size: var(--fs-caption);
 }
 
 /* Import review */
@@ -3930,7 +3932,7 @@ td {
   display: block;
   margin-top: 2px;
   color: #bd6262;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 600;
 }
 
@@ -3954,14 +3956,14 @@ td {
 .issues-panel-heading strong {
   display: block;
   color: #8f3434;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .issues-panel-heading span {
   display: block;
   margin-top: 2px;
   color: #b16a6a;
-  font-size: 10px;
+  font-size: var(--fs-caption);
 }
 
 .issue-list {
@@ -3987,20 +3989,20 @@ td {
 
 .issue-item-top strong {
   color: #3f4c60;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .issue-item-top span {
   color: #9c7880;
-  font-size: 9px;
+  font-size: var(--fs-badge);
 }
 
 .issue-item ul {
   margin: 6px 0 0 16px;
   padding: 0;
   color: #b24f4f;
-  font-size: 10px;
-  line-height: 1.5;
+  font-size: var(--fs-caption);
+  line-height: 1.6;
 }
 
 .preview-participants-scroll {
@@ -4041,7 +4043,7 @@ td {
   gap: 6px;
   border-bottom: 1px solid #edf1f5;
   color: #6f7f96;
-  font-size: 10px;
+  font-size: var(--fs-caption);
 }
 
 .preview-cell-input {
@@ -4054,7 +4056,7 @@ td {
   background: #fff;
   color: #40516a;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--fs-small);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -4084,9 +4086,9 @@ td {
   margin-top: 4px;
   padding-left: 2px;
   color: #bd4b4b;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.6;
 }
 
 .participants-preview-table thead th {
@@ -4110,7 +4112,7 @@ td {
   background: #fff;
   color: #40516a;
   font: inherit;
-  font-size: 10px;
+  font-size: var(--fs-small);
   font-weight: 700;
   cursor: pointer;
 }
@@ -4129,7 +4131,7 @@ td {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 800;
 }
 
@@ -4227,7 +4229,7 @@ td {
 
 .manual-form label > span {
   color: #66758c;
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 700;
 }
 
@@ -4241,7 +4243,7 @@ td {
   background: #fff;
   color: #34445a;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .manual-form input:focus {
@@ -4291,22 +4293,22 @@ td {
 
 .student-suggestions li strong {
   color: #1f2937;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .student-suggestions li span {
   color: #4b5563;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .student-suggestions li small {
   color: #8c929c;
-  font-size: 11.5px;
+  font-size: var(--fs-small);
 }
 
 .student-lookup-status {
   margin: 4px 0 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: #66758c;
 }
 
@@ -4331,12 +4333,12 @@ td {
   justify-content: space-between;
   gap: 12px;
 
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .student-found-label {
   color: #66758c;
-  font-size: 11.5px;
+  font-size: var(--fs-small);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -4360,7 +4362,7 @@ td {
   justify-content: space-between;
   gap: 10px;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
   text-align: left;
   cursor: pointer;
 }
@@ -4411,7 +4413,7 @@ td {
   display: flex;
   align-items: center;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-small);
   text-align: left;
   cursor: pointer;
 }
@@ -4528,7 +4530,7 @@ td {
 
 .edit-field > span {
   color: #66758c;
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 700;
 }
 
@@ -4542,7 +4544,7 @@ td {
   background: #fff;
   color: #34445a;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .edit-field input,

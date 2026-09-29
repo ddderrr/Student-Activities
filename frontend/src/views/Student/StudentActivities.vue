@@ -1580,7 +1580,7 @@ onBeforeUnmount(() => {
 
   color: #7e8796;
 
-  font-size: 14px;
+  font-size: var(--fs-body);
 }
 
 .page-header > div:first-child {
@@ -1622,7 +1622,7 @@ onBeforeUnmount(() => {
   background: transparent;
   color: #303846;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .search-box input::placeholder {
@@ -1652,8 +1652,10 @@ onBeforeUnmount(() => {
 ===================================================== */
 
 .pending-card {
-  width: 110px;
-  height: 78px;
+  min-width: 110px;
+  min-height: 78px;
+
+  padding: 8px 12px;
 
   display: flex;
 
@@ -1669,7 +1671,7 @@ onBeforeUnmount(() => {
 
 
 .pending-card strong {
-  font-size: 25px;
+  font-size: 27px;
 
   color: #102c8f;
 }
@@ -1678,11 +1680,12 @@ onBeforeUnmount(() => {
 .pending-card span {
   margin-top: 4px;
 
-  font-size: 9px;
+  font-size: var(--fs-badge);
 
   letter-spacing: 0.7px;
 
   color: #6b7280;
+  text-align: center;
 }
 
 
@@ -1701,6 +1704,7 @@ onBeforeUnmount(() => {
   margin-bottom: 22px;
 
   border-bottom: 1px solid #dfe3ea;
+  gap: 12px;
 }
 
 
@@ -1708,6 +1712,9 @@ onBeforeUnmount(() => {
   display: flex;
 
   gap: 22px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 
@@ -1729,7 +1736,7 @@ onBeforeUnmount(() => {
 
   background: #eef1ff;
 
-  font-size: 10px;
+  font-size: var(--fs-caption);
 }
 
 
@@ -1748,6 +1755,8 @@ onBeforeUnmount(() => {
   font-weight: 600;
 
   cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 
@@ -1772,6 +1781,7 @@ onBeforeUnmount(() => {
   color: #656e7d;
 
   cursor: pointer;
+  white-space: nowrap;
 }
 
 
@@ -1899,7 +1909,7 @@ onBeforeUnmount(() => {
 .activity-info h3 {
   margin: 0 0 6px;
 
-  font-size: 15px;
+  font-size: 18px;
 
   color: #212837;
 }
@@ -1908,7 +1918,7 @@ onBeforeUnmount(() => {
 .activity-info p {
   margin: 0;
 
-  font-size: 12px;
+  font-size: var(--fs-small);
 
   color: #858d99;
 }
@@ -1919,7 +1929,7 @@ onBeforeUnmount(() => {
 
   margin-top: 7px;
 
-  font-size: 10px;
+  font-size: var(--fs-caption);
 
   color: #a0a7b2;
 }
@@ -1934,7 +1944,7 @@ onBeforeUnmount(() => {
 
   color: #9da4af;
 
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 
@@ -1952,7 +1962,7 @@ onBeforeUnmount(() => {
 
   border-radius: 12px;
 
-  font-size: 9px;
+  font-size: var(--fs-badge);
 
   font-weight: 700;
 
@@ -2018,7 +2028,7 @@ onBeforeUnmount(() => {
 
   border-radius: 10px;
 
-  font-size: 9px;
+  font-size: var(--fs-badge);
 
   font-weight: 700;
 
@@ -2065,7 +2075,7 @@ onBeforeUnmount(() => {
 
   color: #5b6472;
 
-  font-size: 11px;
+  font-size: var(--fs-small);
 
   font-weight: 600;
 
@@ -2122,7 +2132,7 @@ onBeforeUnmount(() => {
 
   color: #1e45c8;
 
-  font-size: 11px;
+  font-size: var(--fs-small);
 
   font-weight: 600;
 
@@ -2154,7 +2164,7 @@ onBeforeUnmount(() => {
 
   color: white;
 
-  font-size: 10px;
+  font-size: var(--fs-small);
   font-weight: 700;
 
   cursor: pointer;
@@ -2179,7 +2189,7 @@ onBeforeUnmount(() => {
 
   color: white;
 
-  font-size: 10px;
+  font-size: var(--fs-small);
   font-weight: 700;
 
   cursor: pointer;
@@ -2204,7 +2214,7 @@ onBeforeUnmount(() => {
 
   color: #d92d20;
 
-  font-size: 10px;
+  font-size: var(--fs-small);
   font-weight: 700;
 
   cursor: pointer;
@@ -2274,7 +2284,7 @@ onBeforeUnmount(() => {
 .empty-state p {
   margin: 0;
 
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 
@@ -2391,7 +2401,7 @@ onBeforeUnmount(() => {
 .modal-header h2 {
   margin: 0;
 
-  font-size: 25px;
+  font-size: 27px;
 
   color: #202738;
 }
@@ -2400,7 +2410,7 @@ onBeforeUnmount(() => {
 .modal-header p {
   margin: 7px 0 0;
 
-  font-size: 13px;
+  font-size: var(--fs-body);
 
   color: #7c8594;
 }
@@ -2420,7 +2430,7 @@ onBeforeUnmount(() => {
 
   color: #667085;
 
-  font-size: 24px;
+  font-size: 26px;
 
   cursor: pointer;
 }
@@ -2466,7 +2476,7 @@ onBeforeUnmount(() => {
 .detail-card h3 {
   margin: 0;
 
-  font-size: 14px;
+  font-size: 18px;
 
   color: #2d3440;
 }
@@ -2496,7 +2506,7 @@ onBeforeUnmount(() => {
 
   margin-bottom: 6px;
 
-  font-size: 8px;
+  font-size: var(--fs-small);
 
   font-weight: 700;
 
@@ -2507,7 +2517,7 @@ onBeforeUnmount(() => {
 .detail-info-grid p {
   margin: 0;
 
-  font-size: 12px;
+  font-size: var(--fs-small);
 
   color: #343b48;
 }
@@ -2521,7 +2531,7 @@ onBeforeUnmount(() => {
   border-left:
     3px solid #8d00c4;
 
-  font-size: 12px;
+  font-size: var(--fs-small);
 
   line-height: 1.7;
 
@@ -2549,7 +2559,7 @@ onBeforeUnmount(() => {
 
   color: #7e10c6;
 
-  font-size: 10px;
+  font-size: var(--fs-caption);
 
   font-weight: 600;
 }
@@ -2558,7 +2568,7 @@ onBeforeUnmount(() => {
 .no-data {
   color: #9aa2af;
 
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 
@@ -2630,7 +2640,7 @@ onBeforeUnmount(() => {
 
   gap: 8px;
 
-  font-size: 14px;
+  font-size: var(--fs-body);
 
   font-weight: 700;
 
@@ -2639,7 +2649,7 @@ onBeforeUnmount(() => {
 
 
 .status-symbol {
-  font-size: 18px;
+  font-size: 20px;
 }
 
 
@@ -2675,16 +2685,16 @@ onBeforeUnmount(() => {
 
 
 .status-message strong {
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 
 .status-message p {
   margin: 6px 0 0;
 
-  font-size: 10px;
+  font-size: var(--fs-caption);
 
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 
@@ -2747,7 +2757,7 @@ onBeforeUnmount(() => {
 
 
   .page-header h1 {
-    font-size: 23px;
+    font-size: 25px;
   }
 
 
@@ -2775,12 +2785,12 @@ onBeforeUnmount(() => {
 
 
   .modal-header h2 {
-    font-size: 20px;
+    font-size: 22px;
   }
 
 
   .pending-card {
-    width: 90px;
+    min-width: 90px;
   }
 
 

@@ -743,7 +743,7 @@ function roleLabel(role) {
 .eyebrow {
   margin: 0 0 6px;
   color: #8ea0ba;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -756,7 +756,7 @@ function roleLabel(role) {
 .subtitle {
   margin: 7px 0 0;
   color: #8291a6;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .back-button {
@@ -770,7 +770,7 @@ function roleLabel(role) {
   align-items: center;
   gap: 7px;
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 700;
   cursor: pointer;
 }
@@ -800,25 +800,25 @@ function roleLabel(role) {
   display: block;
   margin-bottom: 5px;
   color: #7f8fa5;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 700;
   letter-spacing: 0.07em;
 }
 
 .summary-item strong {
   color: #233248;
-  font-size: 15px;
+  font-size: var(--fs-lead);
 }
 
 .summary-item small {
   display: block;
   margin-top: 3px;
   color: #9aa9bc;
-  font-size: 9px;
+  font-size: var(--fs-badge);
 }
 
 .summary-number {
-  font-size: 20px !important;
+  font-size: 22px !important;
 }
 
 .summary-with-icon {
@@ -847,7 +847,7 @@ function roleLabel(role) {
   display: block;
   margin-bottom: 9px;
   color: #7f8fa5;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 700;
   letter-spacing: 0.07em;
 }
@@ -867,7 +867,7 @@ function roleLabel(role) {
   display: block;
   margin-bottom: 2px;
   color: #9aa9bc;
-  font-size: 8px;
+  font-size: var(--fs-badge);
   font-weight: 700;
   letter-spacing: 0.05em;
 }
@@ -878,9 +878,9 @@ function roleLabel(role) {
   max-width: 100%;
   overflow: hidden;
   color: #33445a;
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.6;
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow-wrap: anywhere;
@@ -911,7 +911,7 @@ function roleLabel(role) {
   background: transparent;
   color: #1769dc;
   font-family: inherit;
-  font-size: 10px;
+  font-size: var(--fs-small);
   font-weight: 700;
   cursor: pointer;
 }
@@ -954,7 +954,7 @@ function roleLabel(role) {
   display: block;
   margin-bottom: 4px;
   color: #8ea0ba;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -962,7 +962,7 @@ function roleLabel(role) {
 .description-modal-header h3 {
   margin: 0;
   color: #233248;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .description-modal-close {
@@ -988,7 +988,7 @@ function roleLabel(role) {
   overflow-y: auto;
   padding: 20px 22px 24px;
   color: #425268;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.75;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1034,7 +1034,7 @@ function roleLabel(role) {
 
 .skills-role-header small {
   color: #8a99ae;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 600;
 }
 
@@ -1075,14 +1075,14 @@ function roleLabel(role) {
 .skill-text strong {
   display: block;
   color: #26364b;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .skill-text small {
   display: block;
   margin-top: 2px;
   color: #94a1b1;
-  font-size: 10px;
+  font-size: var(--fs-caption);
 }
 
 .skill-level {
@@ -1111,7 +1111,7 @@ function roleLabel(role) {
 
 .skill-level strong {
   color: #17864d;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   white-space: nowrap;
 }
 
@@ -1119,7 +1119,7 @@ function roleLabel(role) {
   margin: 0;
   padding: 14px 4px;
   color: #93a5bc;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .table-heading {
@@ -1132,13 +1132,13 @@ function roleLabel(role) {
 
 .table-heading h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 20px;
 }
 
 .table-heading p {
   margin: 4px 0 0;
   color: #8a99ae;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .row-count {
@@ -1146,7 +1146,7 @@ function roleLabel(role) {
   border-radius: 999px;
   background: #eef4fc;
   color: #55708f;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 700;
 }
 
@@ -1167,7 +1167,7 @@ thead {
 th {
   padding: 14px 16px;
   color: #66758a;
-  font-size: 9px;
+  font-size: var(--fs-small);
   font-weight: 700;
   letter-spacing: 0.07em;
   text-align: left;
@@ -1178,7 +1178,7 @@ td {
   padding: 13px 16px;
   border-top: 1px solid #edf1f5;
   color: #425268;
-  font-size: 12px;
+  font-size: var(--fs-small);
   vertical-align: middle;
 }
 
@@ -1199,7 +1199,7 @@ tr.editing {
   border-radius: 999px;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 700;
 }
 
@@ -1230,7 +1230,7 @@ tr.editing {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: var(--fs-small);
   font-weight: 700;
 }
 
@@ -1256,7 +1256,7 @@ tr.editing {
   align-items: center;
   gap: 6px;
   font-family: inherit;
-  font-size: 10px;
+  font-size: var(--fs-small);
   font-weight: 700;
   cursor: pointer;
 }
@@ -1287,7 +1287,7 @@ tr.editing {
   background: #fff;
   color: #34455b;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .row-input:focus,
@@ -1326,7 +1326,7 @@ tr.editing {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: var(--fs-small);
   font-weight: 700;
 }
 
@@ -1360,14 +1360,14 @@ tr.editing {
   border-top: 1px solid #f0dcdc;
   background: #fff2f2;
   color: #bd3c3c;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .load-status {
   padding: 32px 16px;
   text-align: center;
   color: #8ea0ba;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .load-status-error {

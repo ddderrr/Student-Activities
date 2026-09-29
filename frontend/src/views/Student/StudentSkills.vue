@@ -1298,13 +1298,13 @@ onMounted(() => loadSkills())
 .page-heading h1 {
   margin: 0 0 5px;
   color: #172d68;
-  font-size: 24px;
+  font-size: 26px;
 }
 
 .page-heading p {
   margin: 0;
   color: #8793aa;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .period-controls {
@@ -1354,7 +1354,7 @@ onMounted(() => loadSkills())
   background: transparent;
   color: #33415f;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 650;
   white-space: nowrap;
   cursor: pointer;
@@ -1385,8 +1385,8 @@ onMounted(() => loadSkills())
   border-radius: 8px;
   background: #eef3ff;
   color: #315bb0;
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: var(--fs-small);
+  line-height: 1.6;
 }
 
 .track-hint svg {
@@ -1406,8 +1406,8 @@ onMounted(() => loadSkills())
   flex: 1 1 260px;
   margin: 0;
   color: #667085;
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: var(--fs-small);
+  line-height: 1.6;
 }
 
 .scope-badge {
@@ -1417,7 +1417,7 @@ onMounted(() => loadSkills())
   border-radius: 999px;
   background: #eef2f7;
   color: #475467;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 700;
   vertical-align: middle;
 }
@@ -1462,7 +1462,7 @@ onMounted(() => loadSkills())
   gap: 7px;
   margin-bottom: 24px;
   color: #1a2340;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 700;
 }
 
@@ -1472,7 +1472,7 @@ onMounted(() => loadSkills())
   border-radius: 999px;
   background: #eef3ff;
   color: #315bb0;
-  font-size: 10px;
+  font-size: var(--fs-caption);
 }
 
 .overview-grid {
@@ -1505,7 +1505,7 @@ onMounted(() => loadSkills())
   justify-content: space-between;
   gap: 12px;
   min-height: 43px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 650;
 }
 
@@ -1531,7 +1531,7 @@ onMounted(() => loadSkills())
   display: block;
   margin-top: 3px;
   color: #8793aa;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 500;
 }
 
@@ -1597,7 +1597,7 @@ onMounted(() => loadSkills())
   gap: 18px;
   margin-top: -4px;
   color: #667085;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 650;
 }
 
@@ -1670,12 +1670,12 @@ onMounted(() => loadSkills())
 }
 
 .radar-empty strong {
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .radar-empty span {
   color: #929db0;
-  font-size: 9px;
+  font-size: var(--fs-badge);
 }
 
 /* =========================
@@ -1700,7 +1700,7 @@ onMounted(() => loadSkills())
 .activity-title-left {
   gap: 7px;
   color: #1a2340;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 700;
 }
 
@@ -1709,7 +1709,7 @@ onMounted(() => loadSkills())
   border-radius: 999px;
   background: #f2f4f7;
   color: #667085;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 700;
 }
 
@@ -1751,13 +1751,13 @@ td {
 
 th {
   color: #28354e;
-  font-size: 10px;
+  font-size: var(--fs-small);
   letter-spacing: .04em;
 }
 
 td {
   color: #58657b;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .activity-name {
@@ -1776,7 +1776,7 @@ td {
   border-radius: 999px;
   background: #f0e5ff;
   color: #7b20b6;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 650;
 }
 
@@ -1785,7 +1785,7 @@ td {
   padding: 4px 8px;
   border-radius: 999px;
   background: #eef2f7;
-  font-size: 9px;
+  font-size: var(--fs-badge);
   font-weight: 700;
 }
 
@@ -1847,7 +1847,7 @@ td {
   padding: 0 14px;
   background: #8500b7;
   color: #fff;
-  font-size: 9px;
+  font-size: var(--fs-small);
   font-weight: 700;
 }
 
@@ -1885,7 +1885,7 @@ td {
   border-radius: 8px;
   background: #fef3f2;
   color: #b42318;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .spin {
@@ -1934,13 +1934,13 @@ td {
 .export-modal-header h2 {
   margin: 0 0 5px;
   color: #172d68;
-  font-size: 19px;
+  font-size: 21px;
 }
 
 .export-modal-header p {
   margin: 0;
   color: #8793aa;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .modal-close {
@@ -1952,7 +1952,7 @@ td {
   background: #fff;
   color: #667085;
   cursor: pointer;
-  font-size: 23px;
+  font-size: 25px;
   line-height: 1;
 }
 
@@ -1969,12 +1969,12 @@ td {
 
 .export-period-box span {
   color: #7b879c;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .export-period-box strong {
   color: #244d9e;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .export-track-box {
@@ -1988,7 +1988,7 @@ td {
 .export-section h3 {
   margin: 0 0 11px;
   color: #344054;
-  font-size: 12px;
+  font-size: var(--fs-lead);
 }
 
 .export-option {
@@ -2022,13 +2022,13 @@ td {
 
 .export-option strong {
   color: #24324b;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .export-option span {
   color: #8793aa;
-  font-size: 10px;
-  line-height: 1.45;
+  font-size: var(--fs-caption);
+  line-height: 1.6;
 }
 
 .export-modal-actions {
@@ -2047,7 +2047,7 @@ td {
   gap: 8px;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 700;
 }
 
@@ -2146,28 +2146,28 @@ td {
 ========================= */
 
 .skills-page {
-  font-size: 15px;
+  font-size: var(--fs-body);
 }
 
 .skills-page h1 {
-  font-size: 25px;
+  font-size: 27px;
 }
 
 .skills-page .page-subtitle {
-  font-size: 14px;
+  font-size: var(--fs-body);
 }
 
 .skills-page .chart-title,
 .skills-page .activities-title {
-  font-size: 14px;
+  font-size: var(--fs-body);
 }
 
 .skills-page .skill-name {
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .skills-page .skill-score {
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .skills-page .radar-label {
@@ -2175,38 +2175,38 @@ td {
 }
 
 .skills-page .period-select {
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .skills-page .period-badge {
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .skills-page .radar-legend,
 .skills-page .legend-toggle {
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .skills-page .activity-table {
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .skills-page .activity-table th {
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 .skills-page .activity-table td {
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .skills-page .skill-chip,
 .skills-page .status-badge,
 .skills-page .activity-count {
-  font-size: 10px;
+  font-size: var(--fs-caption);
 }
 
 .skills-page .export-button {
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .legend-toggle .student-dot {
