@@ -24,6 +24,11 @@ from models import (
     Student,
 )
 from skill_definitions import PARTICIPANT_SKILL_DEFINITIONS
+from skill_scoring import (
+    average_activity_skills,
+    counted_activity_filter,
+    counted_external_activity_filter,
+)
 
 
 STUDENT_ID_PATTERN = re.compile(r"^(\d{2})\d{7}$")
@@ -141,7 +146,7 @@ def load_internal_items(db: Session, student: Student) -> list[dict]:
         .join(ActivityMember, ActivityMember.activity_id == Activity.id)
         .filter(
             ActivityMember.student_id == student.student_id,
-            Activity.status != "cancelled",
+            counted_activity_filter(),
         )
         .all()
     )
@@ -192,7 +197,7 @@ def load_external_items(db: Session, student: Student) -> list[dict]:
         db.query(ExternalActivity)
         .filter(
             ExternalActivity.student_id == student.student_id,
-            ExternalActivity.status == "approved",
+            counted_external_activity_filter(),
         )
         .all()
     )
@@ -243,17 +248,7 @@ def source_label(item: dict) -> str:
 
 
 def average_skills(items: list[dict]) -> dict[str, float | None]:
-    values: dict[str, list[int]] = {key: [] for key in PARTICIPANT_SKILL_DEFINITIONS}
-
-    for item in items:
-        for skill_key, level in item["skills"].items():
-            if skill_key in values:
-                values[skill_key].append(level)
-
-    return {
-        key: round(sum(levels) / len(levels), 2) if levels else None
-        for key, levels in values.items()
-    }
+    return average_activity_skills(items, PARTICIPANT_SKILL_DEFINITIONS)
 
 
 def collect_transcript(
