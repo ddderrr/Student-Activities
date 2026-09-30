@@ -55,10 +55,13 @@ from database import Base, SessionLocal, engine, get_db
 import transcript_data
 from transcript_pdf import STYLES as TRANSCRIPT_STYLES, render_transcript_pdf
 from skill_scoring import (
+    activity_source,
     average_activity_skills,
     average_skill_levels,
     counted_activity_filter,
     counted_external_activity_filter,
+    faculty_activity_filter,
+    major_activity_filter,
     student_first_average,
 )
 from skill_definitions import (
@@ -869,11 +872,10 @@ def get_admin_student_skills(
         entry["skill_values"][skill_key].append(float(level))
 
         if source == "internal":
-            activity_major = row[8]
-            student_major = (major or "").strip()
-            if activity_major is None:
+            scope = activity_source(row[8], major)
+            if scope == "faculty":
                 entry["faculty_values"][skill_key].append(float(level))
-            elif student_major and activity_major == student_major:
+            elif scope == "major":
                 entry["major_values"][skill_key].append(float(level))
 
     for row in internal_rows:
@@ -3816,10 +3818,10 @@ def scoped_skill_average_for_period(
     )
 
     if major is None:
-        query = query.filter(Activity.major.is_(None))
+        query = query.filter(faculty_activity_filter())
     else:
         query = query.filter(
-            Activity.major == major,
+            major_activity_filter(major),
             func.trim(Student.major) == major,
         )
 
@@ -3863,15 +3865,6 @@ def student_skill_periods(
     student_major = (student.major or "").strip()
 
     activity_map: dict[tuple[str, int], dict] = {}
-
-    def activity_scope(activity_major):
-        # major = กิจกรรมของสาขาตัวเอง, faculty = กิจกรรมของคณะ (ไม่มีเจ้าของสาขา)
-        # other_major = กิจกรรมของสาขาอื่น ไม่นับเข้ากราฟเปรียบเทียบทั้งสองแบบ
-        if activity_major is None:
-            return "faculty"
-        if student_major and activity_major == student_major:
-            return "major"
-        return "other_major"
 
     # กิจกรรมที่สร้างโดย Admin:
     # นับเฉพาะกรณีที่บทบาทของนักศึกษาและ skill ตรงกับ track
@@ -3927,7 +3920,8 @@ def student_skill_periods(
                 "description": description or "",
                 "start_at": start_at,
                 "status": status,
-                "scope": activity_scope(activity_major),
+                # other_major ไม่นับเข้ากราฟเปรียบเทียบทั้งสองแบบ (ดู activity_source)
+                "scope": activity_source(activity_major, student_major),
                 "skills": {},
             }
 

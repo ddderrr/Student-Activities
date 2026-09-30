@@ -6,6 +6,8 @@
 
 from collections.abc import Iterable, Mapping
 
+from sqlalchemy import func, or_
+
 from models import Activity, ExternalActivity
 
 
@@ -17,6 +19,33 @@ def counted_activity_filter():
 def counted_external_activity_filter():
     """กิจกรรมภายนอกที่นับ: เฉพาะที่แอดมินอนุมัติแล้ว"""
     return ExternalActivity.status == "approved"
+
+
+def activity_source(activity_major: str | None, student_major: str | None) -> str:
+    """ประเภทของกิจกรรมของคณะเมื่อมองจากนักศึกษาคนหนึ่ง
+
+    faculty     = กิจกรรมส่วนกลางของคณะ (ไม่มีสาขาเจ้าของ หรือเป็นค่าว่าง)
+    major       = กิจกรรมของสาขาเดียวกับนักศึกษา
+    other_major = กิจกรรมของสาขาอื่น
+    เทียบหลังตัดช่องว่างหน้า-หลัง
+    """
+    owner = (activity_major or "").strip()
+
+    if not owner:
+        return "faculty"
+
+    student = (student_major or "").strip()
+    return "major" if student and owner == student else "other_major"
+
+
+def faculty_activity_filter():
+    """SQL คู่กับ activity_source(...) == "faculty" """
+    return or_(Activity.major.is_(None), func.trim(Activity.major) == "")
+
+
+def major_activity_filter(major: str):
+    """SQL คู่กับ activity_source(...) == "major" ของนักศึกษาสาขา major"""
+    return func.trim(Activity.major) == (major or "").strip()
 
 
 def skill_levels_from_activities(

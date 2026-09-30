@@ -25,6 +25,7 @@ from models import (
 )
 from skill_definitions import PARTICIPANT_SKILL_DEFINITIONS
 from skill_scoring import (
+    activity_source,
     average_activity_skills,
     counted_activity_filter,
     counted_external_activity_filter,
@@ -129,15 +130,6 @@ def validate_year_levels(
 # ------------------------------------------------------------
 
 
-def internal_source(activity_owner: str | None, student_major: str) -> str:
-    owner = (activity_owner or "").strip()
-
-    if not owner:
-        return "faculty"
-
-    return "major" if student_major and owner == student_major else "other_major"
-
-
 def load_internal_items(db: Session, student: Student) -> list[dict]:
     student_major = (student.major or "").strip()
 
@@ -169,7 +161,7 @@ def load_internal_items(db: Session, student: Student) -> list[dict]:
 
     items = []
     for activity, role in rows:
-        source = internal_source(activity.major, student_major)
+        source = activity_source(activity.major, student_major)
 
         items.append(
             {
