@@ -355,7 +355,7 @@ def get_admin_dashboard(
     period_activities = (
         scope_activity_query(db.query(Activity), admin, include_unowned=False)
         .filter(
-            Activity.status != "cancelled",
+            counted_activity_filter(),
             func.extract("year", Activity.start_at) == selected_year,
             func.extract("month", Activity.start_at).in_(selected_months),
         )
@@ -443,7 +443,7 @@ def get_admin_dashboard(
         )
         .filter(
             ActivitySkill.target_role == "staff",
-            Activity.status != "cancelled",
+            counted_activity_filter(),
             func.extract("year", Activity.start_at) == selected_year,
             func.extract("month", Activity.start_at).in_(selected_months),
         )
@@ -477,7 +477,7 @@ def get_admin_dashboard(
             admin,
             include_unowned=False,
         )
-        .filter(Activity.status != "cancelled")
+        .filter(counted_activity_filter())
         .distinct()
         .order_by(func.extract("year", Activity.start_at).desc())
         .all()
@@ -522,7 +522,7 @@ def get_dashboard_external_activities(
     activities = scope_student_query(
         db.query(ExternalActivity.id, ExternalActivity.start_date)
         .join(Student, Student.student_id == ExternalActivity.student_id)
-        .filter(ExternalActivity.status == "approved"),
+        .filter(counted_external_activity_filter()),
         admin,
     ).all()
 
@@ -538,7 +538,7 @@ def get_dashboard_external_activities(
             ExternalActivity.id == ExternalActivitySkill.external_activity_id,
         )
         .join(Student, Student.student_id == ExternalActivity.student_id)
-        .filter(ExternalActivity.status == "approved"),
+        .filter(counted_external_activity_filter()),
         admin,
     ).all()
 
@@ -3618,7 +3618,7 @@ def list_my_activities(
         db.query(ExternalActivity)
         .filter(
             ExternalActivity.student_id == student.student_id,
-            ExternalActivity.status == "approved",
+            counted_external_activity_filter(),
         )
         .all()
     )
