@@ -10,9 +10,10 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 
 from database import Base
+from major_utils import normalize_major
 
 
 class Activity(Base):
@@ -62,6 +63,12 @@ class Activity(Base):
         cascade="all, delete-orphan",
     )
 
+    @validates("major")
+    def _normalize_major(self, _key, value):
+        # normalize ตอนบันทึก: ตัดช่องว่าง ค่าว่าง = NULL (กิจกรรมส่วนกลางของคณะ)
+        # query ที่เทียบ Activity.major ตรงตัว (เช่น admin_scope) พึ่งกติกานี้
+        return normalize_major(value)
+
 
 class Student(Base):
     __tablename__ = "students"
@@ -98,6 +105,11 @@ class Student(Base):
         back_populates="student",
         cascade="all, delete-orphan",
     )
+
+    @validates("major")
+    def _normalize_major(self, _key, value):
+        # normalize ตอนบันทึก: ตัดช่องว่าง ค่าว่าง = "" (คอลัมน์ NOT NULL ใช้ "" แทนไม่มีสาขา)
+        return normalize_major(value) or ""
 
 
 class ActivityMember(Base):

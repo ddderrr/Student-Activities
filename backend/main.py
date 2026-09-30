@@ -54,6 +54,16 @@ import academic_calendar
 from database import Base, SessionLocal, engine, get_db
 import transcript_data
 from transcript_pdf import STYLES as TRANSCRIPT_STYLES, render_transcript_pdf
+from skill_scoring import (
+    activity_source,
+    average_activity_skills,
+    average_skill_levels,
+    counted_activity_filter,
+    counted_external_activity_filter,
+    faculty_activity_filter,
+    major_activity_filter,
+    student_first_average,
+)
 from skill_definitions import (
     PARTICIPANT_SKILL_DEFINITIONS,
     SKILL_DEFINITIONS,
@@ -348,7 +358,7 @@ def get_admin_dashboard(
     period_activities = (
         scope_activity_query(db.query(Activity), admin, include_unowned=False)
         .filter(
-            Activity.status != "cancelled",
+            counted_activity_filter(),
             func.extract("year", Activity.start_at) == selected_year,
             func.extract("month", Activity.start_at).in_(selected_months),
         )
@@ -436,7 +446,7 @@ def get_admin_dashboard(
         )
         .filter(
             ActivitySkill.target_role == "staff",
-            Activity.status != "cancelled",
+            counted_activity_filter(),
             func.extract("year", Activity.start_at) == selected_year,
             func.extract("month", Activity.start_at).in_(selected_months),
         )
@@ -470,7 +480,7 @@ def get_admin_dashboard(
             admin,
             include_unowned=False,
         )
-        .filter(Activity.status != "cancelled")
+        .filter(counted_activity_filter())
         .distinct()
         .order_by(func.extract("year", Activity.start_at).desc())
         .all()
@@ -515,7 +525,7 @@ def get_dashboard_external_activities(
     activities = scope_student_query(
         db.query(ExternalActivity.id, ExternalActivity.start_date)
         .join(Student, Student.student_id == ExternalActivity.student_id)
-        .filter(ExternalActivity.status == "approved"),
+        .filter(counted_external_activity_filter()),
         admin,
     ).all()
 
@@ -531,7 +541,7 @@ def get_dashboard_external_activities(
             ExternalActivity.id == ExternalActivitySkill.external_activity_id,
         )
         .join(Student, Student.student_id == ExternalActivity.student_id)
-        .filter(ExternalActivity.status == "approved"),
+        .filter(counted_external_activity_filter()),
         admin,
     ).all()
 
@@ -771,12 +781,12 @@ def get_admin_student_skills(
     # Years come from both internal activities and approved external activities.
     internal_years = {
         int(value) for (value,) in db.query(func.extract("year", Activity.start_at))
-        .filter(Activity.status != "cancelled")
+        .filter(counted_activity_filter())
         .distinct().all() if value is not None
     }
     external_years = {
         int(value) for (value,) in db.query(func.extract("year", ExternalActivity.start_date))
-        .filter(ExternalActivity.status == "approved", ExternalActivity.role == member_role)
+        .filter(counted_external_activity_filter(), ExternalActivity.role == member_role)
         .distinct().all() if value is not None
     }
     available_years = sorted(internal_years | external_years | {now_value.year}, reverse=True)
@@ -800,7 +810,7 @@ def get_admin_student_skills(
         .filter(
             ActivityMember.role == member_role,
             ActivitySkill.target_role == target_role,
-            Activity.status != "cancelled",
+            counted_activity_filter(),
             func.extract("year", Activity.start_at) == selected_year,
         ),
         admin,
@@ -820,7 +830,7 @@ def get_admin_student_skills(
         .join(ExternalActivity, ExternalActivity.student_id == Student.student_id)
         .join(ExternalActivitySkill, ExternalActivitySkill.external_activity_id == ExternalActivity.id)
         .filter(
-            ExternalActivity.status == "approved",
+            counted_external_activity_filter(),
             ExternalActivity.role == member_role,
             ExternalActivitySkill.target_role == target_role,
             func.extract("year", ExternalActivity.start_date) == selected_year,
@@ -862,11 +872,10 @@ def get_admin_student_skills(
         entry["skill_values"][skill_key].append(float(level))
 
         if source == "internal":
-            activity_major = row[8]
-            student_major = (major or "").strip()
-            if activity_major is None:
+            scope = activity_source(row[8], major)
+            if scope == "faculty":
                 entry["faculty_values"][skill_key].append(float(level))
-            elif student_major and activity_major == student_major:
+            elif scope == "major":
                 entry["major_values"][skill_key].append(float(level))
 
     for row in internal_rows:
@@ -880,19 +889,9 @@ def get_admin_student_skills(
         selected_semester,
         now_value.date(),
     )
-    def average_values(values_by_skill):
-        return {
-            skill_key: (
-                round(sum(values) / len(values), 2)
-                if values
-                else None
-            )
-            for skill_key, values in values_by_skill.items()
-        }
-
     students = []
     for entry in grouped.values():
-        skills = average_values(entry["skill_values"])
+        skills = average_skill_levels(entry["skill_values"])
         skill_activity_counts = {
             skill_key: len(entry["skill_activity_ids"][skill_key])
             for skill_key in definitions
@@ -913,8 +912,8 @@ def get_admin_student_skills(
             "activityCount": len(entry["activity_ids"]),
             "skillActivityCounts": skill_activity_counts,
             "skills": skills,
-            "majorSkills": average_values(entry["major_values"]),
-            "facultySkills": average_values(entry["faculty_values"]),
+            "majorSkills": average_skill_levels(entry["major_values"]),
+            "facultySkills": average_skill_levels(entry["faculty_values"]),
         })
 
     students.sort(key=lambda item: item["id"])
@@ -3621,7 +3620,7 @@ def list_my_activities(
         db.query(ExternalActivity)
         .filter(
             ExternalActivity.student_id == student.student_id,
-            ExternalActivity.status == "approved",
+            counted_external_activity_filter(),
         )
         .all()
     )
@@ -3734,7 +3733,7 @@ def faculty_skill_average_for_period(
         .filter(
             ActivityMember.role == member_role,
             ActivitySkill.target_role == target_role,
-            Activity.status != "cancelled",
+            counted_activity_filter(),
             func.extract("year", Activity.start_at) == year,
         )
         .all()
@@ -3756,7 +3755,7 @@ def faculty_skill_average_for_period(
             ExternalActivitySkill.external_activity_id == ExternalActivity.id,
         )
         .filter(
-            ExternalActivity.status == "approved",
+            counted_external_activity_filter(),
             ExternalActivity.role == member_role,
             ExternalActivitySkill.target_role == target_role,
             func.extract("year", ExternalActivity.start_date) == year,
@@ -3770,26 +3769,7 @@ def faculty_skill_average_for_period(
     for student_id, when, skill_key, level in external_rows:
         add_value(student_id, when, skill_key, level)
 
-    faculty_values = {
-        key: []
-        for key in definitions
-    }
-
-    for student_skills in grouped.values():
-        for skill_key, levels in student_skills.items():
-            if levels:
-                faculty_values[skill_key].append(
-                    sum(levels) / len(levels)
-                )
-
-    return {
-        skill_key: (
-            round(sum(values) / len(values), 2)
-            if values
-            else None
-        )
-        for skill_key, values in faculty_values.items()
-    }
+    return student_first_average(grouped, definitions)
 
 
 def scoped_skill_average_for_period(
@@ -3832,16 +3812,16 @@ def scoped_skill_average_for_period(
         .filter(
             ActivityMember.role == member_role,
             ActivitySkill.target_role == target_role,
-            Activity.status != "cancelled",
+            counted_activity_filter(),
             func.extract("year", Activity.start_at) == year,
         )
     )
 
     if major is None:
-        query = query.filter(Activity.major.is_(None))
+        query = query.filter(faculty_activity_filter())
     else:
         query = query.filter(
-            Activity.major == major,
+            major_activity_filter(major),
             func.trim(Student.major) == major,
         )
 
@@ -3860,39 +3840,7 @@ def scoped_skill_average_for_period(
             {key: [] for key in definitions},
         )[skill_key].append(float(level))
 
-    values = {key: [] for key in definitions}
-
-    for student_skills in grouped.values():
-        for skill_key, levels in student_skills.items():
-            if levels:
-                values[skill_key].append(sum(levels) / len(levels))
-
-    return {
-        skill_key: (
-            round(sum(items) / len(items), 2)
-            if items
-            else None
-        )
-        for skill_key, items in values.items()
-    }
-
-
-def average_activity_skills(activities: list[dict], definitions: dict) -> dict:
-    values = {skill_key: [] for skill_key in definitions}
-
-    for activity in activities:
-        for skill_key, level in activity["skills"].items():
-            if skill_key in values:
-                values[skill_key].append(float(level))
-
-    return {
-        skill_key: (
-            round(sum(levels) / len(levels), 2)
-            if levels
-            else None
-        )
-        for skill_key, levels in values.items()
-    }
+    return student_first_average(grouped, definitions)
 
 
 def student_skill_periods(
@@ -3917,15 +3865,6 @@ def student_skill_periods(
     student_major = (student.major or "").strip()
 
     activity_map: dict[tuple[str, int], dict] = {}
-
-    def activity_scope(activity_major):
-        # major = กิจกรรมของสาขาตัวเอง, faculty = กิจกรรมของคณะ (ไม่มีเจ้าของสาขา)
-        # other_major = กิจกรรมของสาขาอื่น ไม่นับเข้ากราฟเปรียบเทียบทั้งสองแบบ
-        if activity_major is None:
-            return "faculty"
-        if student_major and activity_major == student_major:
-            return "major"
-        return "other_major"
 
     # กิจกรรมที่สร้างโดย Admin:
     # นับเฉพาะกรณีที่บทบาทของนักศึกษาและ skill ตรงกับ track
@@ -3953,7 +3892,7 @@ def student_skill_periods(
             ActivityMember.student_id == student.student_id,
             ActivityMember.role == member_role,
             ActivitySkill.target_role == target_role,
-            Activity.status != "cancelled",
+            counted_activity_filter(),
         )
         .all()
     )
@@ -3981,7 +3920,8 @@ def student_skill_periods(
                 "description": description or "",
                 "start_at": start_at,
                 "status": status,
-                "scope": activity_scope(activity_major),
+                # other_major ไม่นับเข้ากราฟเปรียบเทียบทั้งสองแบบ (ดู activity_source)
+                "scope": activity_source(activity_major, student_major),
                 "skills": {},
             }
 
@@ -4005,7 +3945,7 @@ def student_skill_periods(
         )
         .filter(
             ExternalActivity.student_id == student.student_id,
-            ExternalActivity.status == "approved",
+            counted_external_activity_filter(),
             ExternalActivity.role == member_role,
             ExternalActivitySkill.target_role == target_role,
         )
