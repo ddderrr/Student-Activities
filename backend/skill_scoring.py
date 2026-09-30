@@ -5,6 +5,7 @@
 """
 
 from collections.abc import Iterable, Mapping
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import func, or_
 
@@ -113,3 +114,14 @@ def student_first_average(
                 per_skill[skill_key].append(value)
 
     return average_skill_levels(per_skill)
+
+
+def round_half_up(value: float, ndigits: int = 0) -> float | int:
+    """ปัดเศษครึ่งขึ้นจากค่าจริงของ float (เหมือน JavaScript Math.round / toFixed)
+
+    ต่างจาก round() ของ Python ที่ปัดครึ่งไปหาเลขคู่ เช่น round(62.5) = 62 แต่ตรงนี้ = 63
+    ใช้กับตัวเลขที่ต้องตรงกับที่หน้าเว็บเคยคำนวณเอง (กราฟ Skill Distribution)
+    """
+    quantum = Decimal(1).scaleb(-ndigits)
+    rounded = Decimal(value).quantize(quantum, rounding=ROUND_HALF_UP)
+    return int(rounded) if ndigits == 0 else float(rounded)

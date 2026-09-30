@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, reactive, onMounted } from 'vue'
+import { ref, computed, reactive, onMounted, watch } from 'vue'
 import { CalendarDays, Users, CheckCircle, TrendingUp } from 'lucide-vue-next'
 import { useLanguage } from '../../composables/useLanguage'
 import { adminFetch } from '../../constants/currentAdmin'
@@ -298,74 +298,89 @@ const yAxisTicks = computed(() => {
 
 // ============================================================
 // Skill Distribution
-// Participant และ Staff คำนวณแยกกัน
-// ไม่มี skill ใน activity = ไม่นับเป็น 0 และไม่นำมาหาร
-// กิจกรรม cancelled ไม่นับ ให้ตรงกับคะแนนทักษะฝั่ง backend
+// คำนวณที่ backend (GET /api/admin/dashboard/skill-distribution) ด้วยกติกาเดียวกับ
+// คะแนนทักษะส่วนอื่น: ไม่นับกิจกรรม cancelled, ขอบเขตตามสิทธิ์แอดมินเหมือน KPI
+// Participant และ Staff คำนวณแยกกัน ไม่มี skill ใน activity = ไม่นับเป็น 0 และไม่นำมาหาร
+// ช่วงเวลา: เดือน/ไตรมาสที่เลือกในกราฟ Activity Growth (ภายในภาคเรียนที่เลือก)
 // ============================================================
-const activitiesInSelectedPeriod = computed(() => {
-  const year = Number(selectedYear.value)
+const skillChartMonthNumbers = computed(() => {
+  const indexes = semesterMonthIndexes.value
 
-  return activityDetails.value.filter(activity => {
-    if (!activity.start_at || activity.status === 'cancelled') return false
-    const date = new Date(activity.start_at)
-    if (Number.isNaN(date.getTime()) || date.getFullYear() !== year) return false
+  if (selectedPeriod.value === 'MONTHLY') {
+    const index = MONTH_LABELS.indexOf(selectedItem.value)
+    return indexes.includes(index) ? [index + 1] : []
+  }
 
-    const monthIndex = date.getMonth()
-    if (!semesterMonthIndexes.value.includes(monthIndex)) return false
-
-    if (selectedPeriod.value === 'MONTHLY') {
-      return MONTH_LABELS[monthIndex] === selectedItem.value
-    }
-
-    const quarter = `Q${Math.floor(monthIndex / 3) + 1}`
-    return quarter === selectedItem.value
-  })
+  const quarterNumber = Number(String(selectedItem.value).replace('Q', ''))
+  return indexes
+    .filter(index => Math.floor(index / 3) + 1 === quarterNumber)
+    .map(index => index + 1)
 })
 
 const skillDefinitions = computed(() =>
   selectedSkillRole.value === 'participant' ? PARTICIPANT_SKILLS : STAFF_SKILLS
 )
 
+const skillDistribution = ref({ skills: [], averagePercentage: 0 })
+
+// เปลี่ยนตัวเลือกเร็ว ๆ: ผลของคำขอเก่าต้องไม่ทับของใหม่
+let skillRequest = 0
+
+const fetchSkillDistribution = async () => {
+  const request = ++skillRequest
+  const months = skillChartMonthNumbers.value
+
+  if (!months.length) {
+    skillDistribution.value = { skills: [], averagePercentage: 0 }
+    return
+  }
+
+  const params = new URLSearchParams({
+    year: String(selectedYear.value),
+    semester: selectedSemester.value,
+    months: months.join(','),
+    track: selectedSkillRole.value
+  })
+
+  if (selectedBranch.value !== ALL_BRANCHES_VALUE) {
+    params.set('major', selectedBranch.value)
+  }
+
+  try {
+    const response = await adminFetch(`${API_BASE}/api/admin/dashboard/skill-distribution?${params}`)
+    if (!response.ok) throw new Error('Cannot load skill distribution')
+    const data = await response.json()
+    if (request === skillRequest) skillDistribution.value = data
+  } catch (err) {
+    console.error('Skill distribution API Error:', err)
+    if (request === skillRequest) skillDistribution.value = { skills: [], averagePercentage: 0 }
+  }
+}
+
+watch(
+  [selectedYear, selectedSemester, selectedBranch, selectedPeriod, selectedItem, selectedSkillRole],
+  fetchSkillDistribution,
+  { immediate: true }
+)
+
 const displayedSkills = computed(() => {
-  const skillField = selectedSkillRole.value === 'participant'
-    ? 'participant_skills'
-    : 'staff_skills'
+  const byKey = new Map(skillDistribution.value.skills.map(skill => [skill.key, skill]))
 
   return skillDefinitions.value.map(([key, name]) => {
-    const values = []
-
-    for (const activity of activitiesInSelectedPeriod.value) {
-      const raw = activity?.[skillField]?.[key]
-      if (raw === undefined || raw === null || raw === '') continue
-
-      const level = Number(raw)
-      if (Number.isFinite(level) && level > 0) values.push(level)
-    }
-
-    if (values.length === 0) {
-      return { key, name, percentage: 0, averageLevel: null, evidenceCount: 0 }
-    }
-
-    const averageLevel = values.reduce((sum, value) => sum + value, 0) / values.length
+    const skill = byKey.get(key)
 
     return {
       key,
       name,
-      averageLevel: Number(averageLevel.toFixed(2)),
-      percentage: Math.round((averageLevel / 5) * 100),
-      evidenceCount: values.length
+      averageLevel: skill?.averageLevel ?? null,
+      percentage: skill?.percentage ?? 0,
+      evidenceCount: skill?.evidenceCount ?? 0
     }
   })
 })
 
-// Average รวมเฉพาะ skill ที่มีข้อมูลจริง
-const averageSkill = computed(() => {
-  const available = displayedSkills.value.filter(skill => skill.evidenceCount > 0)
-  if (available.length === 0) return 0
-  return Math.round(
-    available.reduce((sum, skill) => sum + skill.percentage, 0) / available.length
-  )
-})
+// Average รวมเฉพาะ skill ที่มีข้อมูลจริง (คำนวณที่ backend)
+const averageSkill = computed(() => skillDistribution.value.averagePercentage ?? 0)
 
 const monthLabelMap = computed(() => ({
   JAN: t.value.adminDashboard.monthJan,
