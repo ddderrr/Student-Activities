@@ -25,7 +25,9 @@ import {
   CircleCheckBig,
   RotateCcw,
   Ban,
-  Trash2
+  Trash2,
+  ArrowDown,
+  ArrowUp
 } from 'lucide-vue-next'
 import SkillLevelEditor from '../../components/Admin/SkillLevelEditor.vue'
 import BranchFilterSelect from '../../components/common/BranchFilterSelect.vue'
@@ -45,6 +47,10 @@ const searchText = ref('')
 // filter สาขา สำหรับแอดมินกลางเท่านั้น (BranchFilterSelect ซ่อนตัวเองให้แอดมินสาขา)
 const selectedBranch = ref(ALL_BRANCHES_VALUE)
 const quickSearch = ref('')
+
+// เรียงตาราง: latest = created_at, start = start_at (ค่าเริ่มต้น: รายการล่าสุดขึ้นก่อน)
+const sortField = ref('latest')
+const sortDirection = ref('desc')
 const selectedCategory = ref('all')
 const selectedDate = ref('')
 const showFilterCalendar = ref(false)
@@ -392,6 +398,33 @@ const filteredActivities = computed(() => {
   })
 })
 
+function sortTime(value) {
+  const time = value ? new Date(value).getTime() : NaN
+  return Number.isNaN(time) ? 0 : time
+}
+
+const sortedActivities = computed(() => {
+  const key = sortField.value === 'start' ? 'start_at' : 'created_at'
+  const direction = sortDirection.value === 'asc' ? 1 : -1
+
+  // id เป็นตัวตัดสินเมื่อเวลาเท่ากัน ลำดับจึงไม่สลับไปมาตอนโหลดใหม่
+  return [...filteredActivities.value].sort((a, b) =>
+    (sortTime(a[key]) - sortTime(b[key]) || a.id - b.id) * direction
+  )
+})
+
+function setSortField(field) {
+  sortField.value = field
+  // รายการล่าสุด = ใหม่ก่อน, วันที่เริ่ม = เริ่มก่อนขึ้นก่อน
+  sortDirection.value = field === 'latest' ? 'desc' : 'asc'
+  currentPage.value = 1
+}
+
+function toggleSortDirection() {
+  sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
+  currentPage.value = 1
+}
+
 const totalPages = computed(() =>
   Math.max(1, Math.ceil(filteredActivities.value.length / rowsPerPage))
 )
@@ -402,7 +435,7 @@ const paginatedActivities = computed(() => {
   }
 
   const start = (currentPage.value - 1) * rowsPerPage
-  return filteredActivities.value.slice(start, start + rowsPerPage)
+  return sortedActivities.value.slice(start, start + rowsPerPage)
 })
 
 const monthlyParticipants = computed(() => {
@@ -1528,7 +1561,36 @@ const confirmImportButtonText = computed(() =>
         <table>
           <thead>
             <tr>
-              <th>{{ t.adminStudentActivities.tableHeaderActivityName }}</th>
+              <th class="name-header">
+                <div class="name-header-inner">
+                  <span>{{ t.adminStudentActivities.tableHeaderActivityName }}</span>
+
+                  <div class="sort-control" role="group" :aria-label="t.adminStudentActivities.sortAriaLabel">
+                    <select
+                      :value="sortField"
+                      class="sort-select"
+                      :aria-label="t.adminStudentActivities.sortAriaLabel"
+                      data-testid="activity-sort-field"
+                      @change="setSortField($event.target.value)"
+                    >
+                      <option value="latest">{{ t.adminStudentActivities.sortByLatest }}</option>
+                      <option value="start">{{ t.adminStudentActivities.sortByStartDate }}</option>
+                    </select>
+
+                    <button
+                      type="button"
+                      class="sort-direction"
+                      :title="sortDirection === 'asc' ? t.adminStudentActivities.sortDirectionAsc : t.adminStudentActivities.sortDirectionDesc"
+                      :aria-label="sortDirection === 'asc' ? t.adminStudentActivities.sortDirectionAsc : t.adminStudentActivities.sortDirectionDesc"
+                      data-testid="activity-sort-direction"
+                      @click="toggleSortDirection"
+                    >
+                      <ArrowUp v-if="sortDirection === 'asc'" :size="14" />
+                      <ArrowDown v-else :size="14" />
+                    </button>
+                  </div>
+                </div>
+              </th>
               <th>{{ t.adminStudentActivities.tableHeaderOrganizer }}</th>
               <th>{{ t.adminStudentActivities.tableHeaderStartDate }}</th>
               <th>{{ t.adminStudentActivities.tableHeaderEndDate }}</th>
@@ -4588,4 +4650,60 @@ td {
   }
 }
 
+
+/* =========================
+   Sort (หัวคอลัมน์ชื่อกิจกรรม)
+========================= */
+.name-header-inner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.sort-control {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid #dce5ef;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.sort-select {
+  height: 30px;
+  padding: 0 26px 0 10px;
+  border: 0;
+  outline: none;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none' stroke='%237b8ba3' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E") no-repeat right 9px center;
+  color: #34445a;
+  font: inherit;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.sort-direction {
+  width: 30px;
+  border: 0;
+  border-left: 1px solid #dce5ef;
+  display: grid;
+  place-items: center;
+  background: #f5f8fc;
+  color: #2f5fdb;
+  cursor: pointer;
+}
+
+.sort-select:hover,
+.sort-direction:hover {
+  background-color: #eef3fb;
+}
+
+.sort-control:focus-within {
+  border-color: #7bb1f5;
+  box-shadow: 0 0 0 3px rgba(47, 95, 219, 0.12);
+}
 </style>

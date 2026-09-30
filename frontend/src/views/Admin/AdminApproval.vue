@@ -1,8 +1,9 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import {
   AlertTriangle,
   CheckCircle2,
+  CircleX,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
@@ -67,7 +68,9 @@ const STATUS_TABS = computed(() => [
 const statusFilter = ref('pending')
 
 const detailRequest = ref(null)
-const successMessage = ref('')
+// popup ผลการอนุมัติ/ไม่อนุมัติ: { status, name } ปิดด้วยปุ่มตกลงเท่านั้น
+const decisionResult = ref(null)
+const resultOkButton = ref(null)
 
 // /api/requests รวม 2 แหล่ง id ซ้ำกันได้ ต้องใช้ source ประกอบ key
 function rowKey(request) {
@@ -141,7 +144,6 @@ async function openReview(request) {
   reviewError.value = ''
   reviewItem.value = null
   releaseEvidenceUrls()
-  successMessage.value = ''
 
   try {
     const response = await adminFetch(`${API_BASE}/api/external-activities/${request.id}`)
@@ -197,7 +199,6 @@ async function openDecision(request, status) {
   decisionTarget.value = { request, status }
   decisionComment.value = ''
   decisionError.value = ''
-  successMessage.value = ''
   decisionSkillItem.value = null
 
   if (status !== 'approved' || !isExternal(request)) return
@@ -256,21 +257,26 @@ async function confirmDecision() {
 
     if (!response.ok) throw new Error(data?.detail || t.value.adminApproval.saveFailed)
 
-    const label = request.detail || request.requester_name
-
-    successMessage.value =
-      status === 'approved'
-        ? `${t.value.adminApproval.approvedMessagePrefix}"${label}"${t.value.adminApproval.approvedMessageSuffix}`
-        : `${t.value.adminApproval.rejectedMessagePrefix}"${label}"${t.value.adminApproval.rejectedMessageSuffix}`
-
     deciding.value = false
     closeDecision()
-    refreshAll()
+    showDecisionResult(request, status)
   } catch (error) {
     decisionError.value = error.message || t.value.adminApproval.saveFailed
   } finally {
     deciding.value = false
   }
+}
+
+async function showDecisionResult(request, status) {
+  decisionResult.value = { status, name: request.detail || request.requester_name }
+  await nextTick()
+  resultOkButton.value?.focus()
+}
+
+// กดตกลง: ปิด popup แล้วโหลดรายการใหม่ (รายการที่ตัดสินแล้วจะหายไปจากแท็บ)
+function closeDecisionResult() {
+  decisionResult.value = null
+  refreshAll()
 }
 
 function formatDay(value) {
@@ -439,7 +445,7 @@ async function decideRequest(request, status) {
       throw new Error(errorBody?.detail || t.value.adminApproval.saveFailed)
     }
 
-    refreshAll()
+    showDecisionResult(request, status)
   } catch (error) {
     actionError.value = error.message || t.value.adminApproval.saveFailed
   } finally {
@@ -675,10 +681,6 @@ async function decideRequest(request, status) {
       </div>
 
       <div v-if="actionError" class="action-error">{{ actionError }}</div>
-      <div v-if="successMessage" class="action-success" role="status">
-        <CheckCircle2 :size="15" />
-        {{ successMessage }}
-      </div>
     </section>
 
     <div v-if="detailRequest" class="modal-backdrop" @click.self="detailRequest = null">
@@ -955,6 +957,45 @@ async function decideRequest(request, status) {
             {{ t.adminApproval.confirmRejectButton }}
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- ผลการอนุมัติ / ไม่อนุมัติ: ปิดด้วยปุ่มตกลงเท่านั้น -->
+    <div v-if="decisionResult" class="modal-backdrop" data-testid="decision-result">
+      <div
+        class="modal result-modal"
+        :class="decisionResult.status"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="decision-result-title"
+        aria-describedby="decision-result-message"
+      >
+        <span class="result-icon" aria-hidden="true">
+          <CheckCircle2 v-if="decisionResult.status === 'approved'" :size="40" />
+          <CircleX v-else :size="40" />
+        </span>
+
+        <h3 id="decision-result-title">
+          {{ decisionResult.status === 'approved' ? t.adminApproval.resultApprovedTitle : t.adminApproval.resultRejectedTitle }}
+        </h3>
+
+        <p id="decision-result-message">
+          {{
+            (decisionResult.status === 'approved'
+              ? t.adminApproval.resultApprovedMessage
+              : t.adminApproval.resultRejectedMessage
+            ).replace('{name}', decisionResult.name)
+          }}
+        </p>
+
+        <button
+          ref="resultOkButton"
+          type="button"
+          class="result-ok-button"
+          @click="closeDecisionResult"
+        >
+          {{ t.adminApproval.resultOkButton }}
+        </button>
       </div>
     </div>
   </section>
@@ -1309,15 +1350,6 @@ tbody td {
 .modal dt { font-size: var(--fs-small); color: #8ea0ba; margin-top: 12px; }
 .modal dt:first-child { margin-top: 0; }
 .modal dd { margin: 3px 0 0; font-size: var(--fs-body); color: #1c293d; }
-
-.action-success {
-  margin: 12px 0 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #15803d;
-  font-size: var(--fs-small);
-}
 
 .review-modal {
   width: min(960px, calc(100vw - 32px));
@@ -1716,5 +1748,82 @@ tbody td {
   .review-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* popup ผลการตัดสิน */
+.result-modal {
+  width: min(400px, calc(100vw - 32px));
+  padding: 32px 28px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  box-shadow: 0 24px 60px rgba(28, 41, 61, 0.25);
+  animation: result-pop 0.18s ease-out;
+}
+
+.result-icon {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 16px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #e8f7ee;
+  color: #16a34a;
+}
+
+.result-modal.rejected .result-icon {
+  background: #fdecec;
+  color: #dc2626;
+}
+
+.result-modal h3 {
+  margin: 0 0 8px;
+  color: #1c293d;
+  font-size: 20px;
+}
+
+.result-modal p {
+  margin: 0 0 24px;
+  color: #5b6b82;
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.result-ok-button {
+  min-width: 140px;
+  padding: 11px 24px;
+  border: none;
+  border-radius: 10px;
+  background: #16a34a;
+  color: #fff;
+  font: inherit;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.result-modal.rejected .result-ok-button {
+  background: #dc2626;
+}
+
+.result-ok-button:hover {
+  filter: brightness(0.95);
+}
+
+.result-ok-button:focus-visible {
+  outline: 3px solid rgba(22, 163, 74, 0.35);
+  outline-offset: 2px;
+}
+
+.result-modal.rejected .result-ok-button:focus-visible {
+  outline-color: rgba(220, 38, 38, 0.35);
+}
+
+@keyframes result-pop {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
 }
 </style>

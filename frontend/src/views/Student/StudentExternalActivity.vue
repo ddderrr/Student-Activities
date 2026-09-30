@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   CheckCircle2,
   ImagePlus,
@@ -63,6 +63,7 @@ const emptyForm = () => ({
 })
 
 const route = useRoute()
+const router = useRouter()
 
 const form = ref(emptyForm())
 const skillLevels = ref(emptySkillLevels())
@@ -72,7 +73,12 @@ const fileInput = ref(null)
 const isDragging = ref(false)
 
 const formError = ref('')
-const successMessage = ref('')
+// ขั้นตอนส่ง: กดส่ง -> popup ยืนยัน -> ส่งจริง -> popup สำเร็จ
+// ทั้งสอง popup ปิดด้วยปุ่มในกรอบเท่านั้น (ยืนยันกด Esc = ยกเลิกได้)
+const showSubmitConfirm = ref(false)
+const submitConfirmButton = ref(null)
+const submitResult = ref(null)
+const submitResultPrimary = ref(null)
 const submitting = ref(false)
 
 /* =========================
@@ -267,6 +273,7 @@ function saveSkillsModal() {
 
 function onKeydown(event) {
   if (event.key === 'Escape' && showSkillsModal.value) cancelSkillsModal()
+  if (event.key === 'Escape' && showSubmitConfirm.value) cancelSubmitConfirm()
 }
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
@@ -396,10 +403,38 @@ function errorDetail(data, fallback) {
   return data?.detail || fallback
 }
 
+// ล้างทั้งฟอร์มกลับเป็นค่าเริ่มต้น (ทักษะกลับไป level 3) และออกจากโหมดแก้ไข
+function resetForm() {
+  form.value = emptyForm()
+  applyCategoryFromValue('')
+  skillLevels.value = emptySkillLevels()
+  newEvidenceFiles.value = []
+  existingEvidence.value = []
+  removedEvidenceIds.value = []
+  editingId.value = null
+  formError.value = ''
+  skillsError.value = ''
+  if (fileInput.value) fileInput.value.value = ''
+}
+
+async function addAnotherActivity() {
+  submitResult.value = null
+  resetForm()
+
+  // มาจากลิงก์แก้ไข: ล้าง ?edit ออก ไม่งั้น refresh แล้วจะพยายามโหลดรายการเดิม
+  if (route.query.edit) await router.replace({ query: {} })
+
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function viewSubmissions() {
+  submitResult.value = null
+  router.push({ path: '/student/activities', query: { tab: 'submissions' } })
+}
+
 async function submitActivity() {
   if (submitting.value) return
 
-  successMessage.value = ''
   formError.value = validateForm()
   skillsError.value = relatedSkillCount.value === 0
     ? t.value.studentExternalActivity.skillRequiredError
@@ -413,6 +448,19 @@ async function submitActivity() {
   }
 
   if (formError.value || skillsError.value) return
+
+  showSubmitConfirm.value = true
+  await nextTick()
+  submitConfirmButton.value?.focus()
+}
+
+function cancelSubmitConfirm() {
+  if (submitting.value) return
+  showSubmitConfirm.value = false
+}
+
+async function confirmSubmit() {
+  if (submitting.value) return
 
   const body = new FormData()
 
@@ -451,17 +499,15 @@ async function submitActivity() {
       throw new Error(errorDetail(data, t.value.studentExternalActivity.submitFailedFallback))
     }
 
-    successMessage.value = editingId.value
-      ? `${t.value.studentExternalActivity.resubmitSuccessPrefix} "${data.title}" ${t.value.studentExternalActivity.resubmitSuccessSuffix}`
-      : `${t.value.studentExternalActivity.submitSuccessPrefix} "${data.title}" ${t.value.studentExternalActivity.submitSuccessSuffix}`
-    form.value = emptyForm()
-    applyCategoryFromValue('')
-    skillLevels.value = emptySkillLevels()
-    newEvidenceFiles.value = []
-    existingEvidence.value = []
-    removedEvidenceIds.value = []
-    editingId.value = null
+    const resubmit = Boolean(editingId.value)
+    showSubmitConfirm.value = false
+    resetForm()
+    submitResult.value = { resubmit, title: data.title }
+    await nextTick()
+    submitResultPrimary.value?.focus()
   } catch (error) {
+    // ส่งไม่สำเร็จ: ปิด popup ยืนยัน กลับไปที่ฟอร์ม (ข้อมูลยังอยู่) แสดง error ข้างปุ่มส่ง
+    showSubmitConfirm.value = false
     formError.value =
       error instanceof TypeError
         ? `${t.value.studentExternalActivity.connectionError} (${API_BASE})`
@@ -762,33 +808,119 @@ async function submitActivity() {
           {{ formError }}
         </div>
 
-        <div v-if="successMessage" class="alert success" role="status">
-          <CheckCircle2 :size="16" />
-          <span>
-            {{ successMessage }}
-            <RouterLink
-              class="status-link"
-              :to="{ path: '/student/activities', query: { tab: 'submissions' } }"
-            >
-              {{ t.studentExternalActivity.viewStatusLink }}
-            </RouterLink>
-          </span>
-        </div>
-
         <div class="form-actions">
           <button type="submit" class="primary-button" :disabled="submitting">
-            <LoaderCircle v-if="submitting" class="spin" :size="18" />
-            <Send v-else :size="18" />
-            {{
-              submitting
-                ? (editingId ? t.studentExternalActivity.resubmittingButton : t.studentExternalActivity.submittingButton)
-                : (editingId ? t.studentExternalActivity.resubmitButton : t.studentExternalActivity.submitButton)
-            }}
+            <Send :size="18" />
+            {{ editingId ? t.studentExternalActivity.resubmitButton : t.studentExternalActivity.submitButton }}
           </button>
         </div>
       </div>
 
     </form>
+
+    <!-- ยืนยันก่อนส่ง: ไม่มี @click.self คลิกนอกกรอบจึงไม่ปิด -->
+    <div v-if="showSubmitConfirm" class="modal-backdrop" data-testid="submit-confirm">
+      <div
+        class="submit-result-modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="submit-confirm-title"
+        aria-describedby="submit-confirm-message"
+      >
+        <span class="submit-result-icon confirm" aria-hidden="true">
+          <Send :size="34" />
+        </span>
+
+        <h2 id="submit-confirm-title">
+          {{
+            editingId
+              ? t.studentExternalActivity.confirmResubmitTitle
+              : t.studentExternalActivity.confirmSubmitTitle
+          }}
+        </h2>
+
+        <p id="submit-confirm-message">
+          {{
+            (editingId
+              ? t.studentExternalActivity.confirmResubmitMessage
+              : t.studentExternalActivity.confirmSubmitMessage
+            ).replace('{name}', form.title.trim())
+          }}
+        </p>
+
+        <div class="submit-result-actions">
+          <button
+            type="button"
+            class="modal-secondary-button"
+            :disabled="submitting"
+            @click="cancelSubmitConfirm"
+          >
+            {{ t.studentExternalActivity.confirmCancelButton }}
+          </button>
+          <button
+            ref="submitConfirmButton"
+            type="button"
+            class="modal-confirm-button"
+            :disabled="submitting"
+            data-testid="submit-confirm-button"
+            @click="confirmSubmit"
+          >
+            <LoaderCircle v-if="submitting" class="spin" :size="17" />
+            {{
+              submitting
+                ? (editingId ? t.studentExternalActivity.resubmittingButton : t.studentExternalActivity.submittingButton)
+                : t.studentExternalActivity.confirmSubmitButton
+            }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ส่งสำเร็จ: ไม่มี @click.self คลิกนอกกรอบจึงไม่ปิด ต้องเลือกปุ่มใดปุ่มหนึ่ง -->
+    <div v-if="submitResult" class="modal-backdrop" data-testid="submit-result">
+      <div
+        class="submit-result-modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="submit-result-title"
+        aria-describedby="submit-result-message"
+      >
+        <span class="submit-result-icon" aria-hidden="true">
+          <CheckCircle2 :size="40" />
+        </span>
+
+        <h2 id="submit-result-title">
+          {{
+            submitResult.resubmit
+              ? t.studentExternalActivity.resubmitResultTitle
+              : t.studentExternalActivity.submitResultTitle
+          }}
+        </h2>
+
+        <p id="submit-result-message">
+          {{
+            (submitResult.resubmit
+              ? t.studentExternalActivity.resubmitResultMessage
+              : t.studentExternalActivity.submitResultMessage
+            ).replace('{name}', submitResult.title)
+          }}
+        </p>
+
+        <div class="submit-result-actions">
+          <button type="button" class="modal-secondary-button" @click="addAnotherActivity">
+            {{ t.studentExternalActivity.addAnotherActivityButton }}
+          </button>
+          <button
+            ref="submitResultPrimary"
+            type="button"
+            class="modal-confirm-button"
+            @click="viewSubmissions"
+          >
+            {{ t.studentExternalActivity.viewSubmissionsButton }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- SKILLS MODAL -->
     <div
@@ -1253,17 +1385,6 @@ async function submitActivity() {
 .alert.error {
   background: #fdeaea;
   color: #b42318;
-}
-
-.alert.success {
-  background: #e6f8ed;
-  color: #116c3f;
-}
-
-.status-link {
-  margin-left: 6px;
-  color: #116c3f;
-  font-weight: 700;
 }
 
 .form-actions {
@@ -1790,6 +1911,97 @@ async function submitActivity() {
 
   .skills-modal-actions > button {
     flex: 1;
+  }
+}
+
+/* =========================
+   Submit result modal
+========================= */
+.submit-result-modal {
+  width: min(440px, 100%);
+  padding: 32px 28px 24px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #fff;
+  box-shadow: 0 24px 65px rgba(15, 23, 42, 0.2);
+  text-align: center;
+  animation: submit-result-pop 0.18s ease-out;
+}
+
+.submit-result-icon {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 16px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #e6f8ed;
+  color: #16a34a;
+}
+
+.submit-result-icon.confirm {
+  background: #f3e8ff;
+  color: #7e10c6;
+}
+
+.submit-result-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.submit-result-actions .modal-confirm-button {
+  gap: 8px;
+}
+
+.submit-result-modal h2 {
+  margin: 0 0 8px;
+  color: #1b283d;
+  font-size: 20px;
+}
+
+.submit-result-modal p {
+  margin: 0 0 24px;
+  color: #526279;
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.submit-result-actions {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.submit-result-actions button {
+  min-height: 46px;
+  font-size: var(--fs-body);
+}
+
+.submit-result-actions .modal-secondary-button:hover {
+  background: #f7f8fb;
+}
+
+.submit-result-actions button:focus-visible {
+  outline: 3px solid rgba(126, 16, 198, 0.3);
+  outline-offset: 2px;
+}
+
+@keyframes submit-result-pop {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 420px) {
+  .submit-result-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .submit-result-actions .modal-confirm-button {
+    order: -1;
   }
 }
 </style>
