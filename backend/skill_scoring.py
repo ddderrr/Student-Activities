@@ -8,6 +8,7 @@ from collections.abc import Iterable, Mapping
 
 from sqlalchemy import func, or_
 
+from major_utils import normalize_major
 from models import Activity, ExternalActivity
 
 
@@ -29,12 +30,12 @@ def activity_source(activity_major: str | None, student_major: str | None) -> st
     other_major = กิจกรรมของสาขาอื่น
     เทียบหลังตัดช่องว่างหน้า-หลัง
     """
-    owner = (activity_major or "").strip()
+    owner = normalize_major(activity_major)
 
-    if not owner:
+    if owner is None:
         return "faculty"
 
-    student = (student_major or "").strip()
+    student = normalize_major(student_major)
     return "major" if student and owner == student else "other_major"
 
 

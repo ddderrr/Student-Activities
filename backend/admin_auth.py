@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from fastapi import Depends, Header, HTTPException
 
 import admin_accounts
+from major_utils import normalize_major
 
 
 BYPASS_DISABLED_DETAIL = (
@@ -46,7 +47,7 @@ def list_bypass_admins() -> list[AdminContext]:
         AdminContext(
             email=account["email"].strip().lower(),
             name=account.get("name") or account["email"],
-            major=(account.get("major") or "").strip() or None,
+            major=normalize_major(account.get("major")),
         )
         for account in admin_accounts.ADMIN_ACCOUNTS
     ]
