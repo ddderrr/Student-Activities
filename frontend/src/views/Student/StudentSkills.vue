@@ -43,8 +43,10 @@ const selectedPeriod = ref('')
 const showMySkills = ref(true)
 const showFacultyAverage = ref(true)
 
-// กราฟเปรียบเทียบ: major = กิจกรรมสาขา vs ค่าเฉลี่ยสาขา,
-// faculty = กิจกรรมคณะ vs ค่าเฉลี่ยคณะ (ไม่นับกิจกรรมภายนอก)
+// กราฟเปรียบเทียบ (คำนวณที่ backend ทั้งหมด):
+// major    = กิจกรรมสาขา vs ค่าเฉลี่ยสาขา
+// faculty  = กิจกรรมคณะ vs ค่าเฉลี่ยคณะ
+// external = กิจกรรมภายนอก vs ค่าเฉลี่ยกิจกรรมภายนอกของทั้งคณะ
 const comparison = ref('major')
 
 const comparisonOptions = computed(() => [
@@ -55,6 +57,10 @@ const comparisonOptions = computed(() => [
   {
     key: 'faculty',
     label: t.value.studentSkills.comparisonFacultyOption
+  },
+  {
+    key: 'external',
+    label: t.value.studentSkills.comparisonExternalOption
   }
 ])
 
@@ -62,6 +68,14 @@ const isMajorComparison = computed(() => comparison.value === 'major')
 
 const comparisonText = computed(() => {
   const text = t.value.studentSkills
+
+  if (comparison.value === 'external') {
+    return {
+      hint: text.comparisonExternalHint,
+      mySkillsLegend: text.mySkillsExternalLegend,
+      averageLegend: text.externalAverageLegend
+    }
+  }
 
   return isMajorComparison.value
     ? {

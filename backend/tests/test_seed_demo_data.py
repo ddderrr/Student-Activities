@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
 import academic_calendar
-from models import Activity, ActivityMember, Student
+from models import Activity, ActivityMember, ExternalActivity, Student
 from seed_demo_data import is_demo_student_id, remove_demo_data, seed_demo_data
 
 
@@ -44,11 +44,25 @@ def test_seed_creates_demo_data_and_remove_keeps_real_data(db_session):
         "students": 60,
         "activities": 19,
         "major_activities": 11,
+        "external_activities": result["external_activities"],
         "memberships": result["memberships"],
         "mock_student_activities": 9,
+        "mock_student_external_activities": 4,
         "year": 2026,
     }
     assert result["memberships"] >= 60 * 2
+
+    # กิจกรรมภายนอก demo: มีทั้งอนุมัติแล้วและรออนุมัติ
+    demo_externals = (
+        db_session.query(ExternalActivity)
+        .filter(ExternalActivity.title.startswith("[Demo] "))
+        .all()
+    )
+    assert len(demo_externals) == result["external_activities"] > 20
+    assert {external.status for external in demo_externals} == {"approved", "pending"}
+    assert all(external.skill_levels for external in demo_externals)
+    mock_externals = [e for e in demo_externals if e.student_id == "670510659"]
+    assert sorted(e.status for e in mock_externals) == ["approved", "approved", "approved", "pending"]
 
     # กิจกรรมคณะ 8 กิจกรรมไม่มีเจ้าของสาขา, กิจกรรมสาขามีครบทุกสาขา
     demo_activities = db_session.query(Activity).filter(Activity.name.startswith("[Demo] ")).all()
@@ -71,6 +85,8 @@ def test_seed_creates_demo_data_and_remove_keeps_real_data(db_session):
     # นักศึกษาจำลองของหน้าฝั่งนักศึกษาได้เข้ากิจกรรม demo และได้สาขา (เดิมว่าง)
     mock_student = db_session.get(Student, "670510659")
     assert mock_student.major == "เคมี"
+    # อีเมลเดิมมีอยู่แล้ว ไม่ทับ
+    assert mock_student.email == "real@cmu.ac.th"
     assert db_session.query(ActivityMember).filter_by(student_id="670510659").count() == 9
 
     demo_students = [
@@ -104,3 +120,5 @@ def test_seed_creates_demo_data_and_remove_keeps_real_data(db_session):
     assert [activity.name for activity in db_session.query(Activity).all()] == ["Real Activity"]
     # การเข้าร่วมกิจกรรม demo ของนักศึกษาจำลองถูกลบตามกิจกรรมไปด้วย
     assert db_session.query(ActivityMember).filter_by(student_id="670510659").count() == 0
+    # กิจกรรมภายนอก demo ถูกลบหมด รวมของนักศึกษาจำลองที่ยังอยู่
+    assert db_session.query(ExternalActivity).count() == 0

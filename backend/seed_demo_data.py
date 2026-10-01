@@ -11,9 +11,11 @@
 นักศึกษาจำลองของหน้าฝั่งนักศึกษา (MOCK_STUDENT_ID ใน frontend/src/constants/currentStudent.js)
 จะถูกเพิ่มเข้ากิจกรรม demo ด้วย หน้า My Skills จึงมีข้อมูลให้ดู (--remove ลบแค่การเข้าร่วม ไม่ลบตัวนักศึกษา)
 
-กิจกรรม demo มี 2 แบบ ให้กราฟเปรียบเทียบ "กิจกรรมสาขา" / "กิจกรรมคณะ" มีข้อมูลทั้งคู่:
+กิจกรรม demo มี 3 แบบ ให้กราฟเปรียบเทียบ "กิจกรรมสาขา" / "กิจกรรมคณะ" / "กิจกรรมภายนอก" มีข้อมูลครบ:
 - กิจกรรมคณะ (ACTIVITY_TEMPLATES): Activity.major = None
 - กิจกรรมสาขา (MAJOR_ACTIVITY_TEMPLATES): Activity.major = ชื่อสาขา
+- กิจกรรมภายนอก (EXTERNAL_ACTIVITY_TEMPLATES): ExternalActivity ที่นักศึกษาส่งเอง
+  ชื่อขึ้นต้นด้วย "[Demo] " เหมือนกัน ส่วนใหญ่อนุมัติแล้ว บางรายการยังรออนุมัติ (ไม่นับในกราฟ)
 """
 
 import random
@@ -25,7 +27,14 @@ from sqlalchemy.orm import Session
 import academic_calendar
 from database import SessionLocal
 from main import report_academic_year_be
-from models import Activity, ActivityMember, ActivitySkill, Student
+from models import (
+    Activity,
+    ActivityMember,
+    ActivitySkill,
+    ExternalActivity,
+    ExternalActivitySkill,
+    Student,
+)
 
 DEMO_ID_MARKER = "0519"
 DEMO_ACTIVITY_PREFIX = "[Demo] "
@@ -43,6 +52,8 @@ STUDENTS_PER_MAJOR_PER_YEAR = 3
 # ต้องตรงกับ MOCK_STUDENT_ID ใน frontend/src/constants/currentStudent.js
 MOCK_STUDENT_ID = "670510659"
 MOCK_STUDENT_MAJOR = "เคมี"
+# อีเมลสำหรับเข้าสู่ระบบที่หน้า /login (รหัสผ่านร่วมของนักศึกษา: STUDENT_MOCK_PASSWORD)
+MOCK_STUDENT_EMAIL = "demo.student@cmu.ac.th"
 # (กิจกรรม, บทบาท)
 MOCK_STUDENT_ACTIVITIES = [
     ("nature_camp", "participant"),
@@ -56,6 +67,15 @@ MOCK_STUDENT_ACTIVITIES = [
     ("chem_green_workshop", "organizer"),
     # กิจกรรมของสาขาอื่น: ไม่นับในกราฟสาขา / คณะ (แสดงป้าย "สาขาอื่น" ในตาราง)
     ("cs_tech_talk", "participant"),
+]
+
+# กิจกรรมภายนอกของนักศึกษาจำลอง (กิจกรรม, บทบาท, สถานะ)
+MOCK_STUDENT_EXTERNAL_ACTIVITIES = [
+    ("tedx_volunteer", "participant", "approved"),
+    ("beach_cleanup", "participant", "approved"),
+    ("startup_weekend", "organizer", "approved"),
+    # ยังรออนุมัติ: ไม่นับในกราฟ
+    ("youth_exchange", "participant", "pending"),
 ]
 
 FIRST_NAMES = [
@@ -133,6 +153,32 @@ MAJOR_ACTIVITY_TEMPLATES = [
      {"creative_leadership": 4, "entrepreneurship": 2}),
 ]
 
+# กิจกรรมภายนอกที่นักศึกษาส่งเอง (key, ชื่อ, หน่วยงาน, เดือน, participant skills, staff skills)
+EXTERNAL_ACTIVITY_TEMPLATES = [
+    ("tedx_volunteer", "อาสาสมัครงาน TEDx Chiang Mai", "TEDx Chiang Mai", 2,
+     {"volunteerism": 4, "internationalization": 4, "arts_culture_traditions": 2},
+     {"creative_leadership": 4, "promote_equality": 3}),
+    ("beach_cleanup", "เก็บขยะชายหาดกับ Trash Hero", "Trash Hero Thailand", 4,
+     {"nature_environmental_conservation": 5, "volunteerism": 5},
+     {"nature_environmental": 5, "promote_equality": 3}),
+    ("startup_weekend", "Startup Weekend Chiang Mai", "Techstars", 8,
+     {"academics": 3, "internationalization": 3},
+     {"entrepreneurship": 5, "innovation": 4}),
+    ("youth_exchange", "ASEAN Youth Exchange", "ASEAN Foundation", 9,
+     {"internationalization": 5, "arts_culture_traditions": 4},
+     {"creative_leadership": 3, "promote_equality": 4}),
+    ("blood_donation", "รณรงค์บริจาคโลหิต สภากาชาดไทย", "สภากาชาดไทย", 7,
+     {"health_promotion": 5, "volunteerism": 4},
+     {"promote_equality": 4, "creative_leadership": 3}),
+    ("science_olympiad_tutor", "ติวโอลิมปิกวิชาการให้น้อง ม.ปลาย", "สอวน.", 9,
+     {"academics": 5, "volunteerism": 3},
+     {"academic": 5, "creative_leadership": 3}),
+]
+
+# โอกาสที่นักศึกษา demo ส่งกิจกรรมภายนอกแต่ละรายการ / โอกาสที่ยังรออนุมัติ
+EXTERNAL_JOIN_CHANCE = 0.25
+EXTERNAL_PENDING_CHANCE = 0.2
+
 # โอกาสที่นักศึกษาเข้าร่วมกิจกรรมของสาขาตัวเอง / ของสาขาอื่น (ต่อกิจกรรม)
 OWN_MAJOR_JOIN_CHANCE = 0.6
 OTHER_MAJOR_JOIN_CHANCE = 0.03
@@ -170,15 +216,24 @@ def remove_demo_data(db: Session) -> tuple[int, int]:
         .filter(Activity.name.startswith(DEMO_ACTIVITY_PREFIX))
         .all()
     )
+    external_activities = (
+        db.query(ExternalActivity)
+        .filter(ExternalActivity.title.startswith(DEMO_ACTIVITY_PREFIX))
+        .all()
+    )
     students = [
         student
         for student in db.query(Student).all()
         if is_demo_student_id(student.student_id)
     ]
 
-    # ORM cascade ลบ activity_members / activity_skills ที่ผูกอยู่ให้ด้วย
+    # ORM cascade ลบ activity_members / activity_skills / external_activity_skills ที่ผูกอยู่ให้ด้วย
+    # ลบกิจกรรมภายนอก demo ก่อนตัวนักศึกษา (รวมของนักศึกษาจำลองที่ไม่ถูกลบ)
     for activity in activities:
         db.delete(activity)
+    for external in external_activities:
+        db.delete(external)
+    db.flush()
     for student in students:
         db.delete(student)
 
@@ -227,6 +282,39 @@ def seed_demo_data(db: Session, today: date | None = None) -> dict:
         add_activity(key, name, month, participant_skills, staff_skills, major=major)
 
     db.flush()
+
+    external_templates = {template[0]: template for template in EXTERNAL_ACTIVITY_TEMPLATES}
+    # แยก random ของกิจกรรมภายนอก ไม่ให้ข้อมูลกิจกรรมคณะ / สาขาเดิมเปลี่ยน
+    external_rng = random.Random(7)
+    external_count = 0
+
+    def add_external(student_id, key, role, status):
+        _key, title, organization, month, participant_skills, staff_skills = external_templates[key]
+        start_date = date(year, month, 15)
+        skills = participant_skills if role == "participant" else staff_skills
+        db.add(
+            ExternalActivity(
+                student_id=student_id,
+                title=f"{DEMO_ACTIVITY_PREFIX}{title}",
+                organization=organization,
+                activity_type="Demo",
+                start_date=start_date,
+                end_date=start_date,
+                location="เชียงใหม่",
+                role=role,
+                description="ข้อมูลตัวอย่างกิจกรรมภายนอกสำหรับทดสอบหน้า Student Skills",
+                status=status,
+                decided_at=datetime(year, month, 20) if status != "pending" else None,
+                skill_levels=[
+                    ExternalActivitySkill(
+                        skill_key=skill_key,
+                        target_role="participant" if role == "participant" else "staff",
+                        level=level,
+                    )
+                    for skill_key, level in skills.items()
+                ],
+            )
+        )
 
     student_count = 0
     membership_count = 0
@@ -293,6 +381,21 @@ def seed_demo_data(db: Session, today: date | None = None) -> dict:
                     )
                     membership_count += 1
 
+                # กิจกรรมภายนอก: ปี 1 ส่งได้เฉพาะกิจกรรมหลังเข้าเรียน
+                for key, _title, _org, month, _p, _s in EXTERNAL_ACTIVITY_TEMPLATES:
+                    if level == 1 and month < academic_calendar.ACADEMIC_YEAR_START_MONTH:
+                        continue
+                    if external_rng.random() >= EXTERNAL_JOIN_CHANCE:
+                        continue
+                    role = "organizer" if external_rng.random() < 0.05 * level else "participant"
+                    status = (
+                        "pending"
+                        if external_rng.random() < EXTERNAL_PENDING_CHANCE
+                        else "approved"
+                    )
+                    add_external(student_id, key, role, status)
+                    external_count += 1
+
     # นักศึกษาจำลองของหน้าฝั่งนักศึกษา: สร้างแบบเดียวกับ backend ถ้ายังไม่มี และเติมสาขาถ้ายังว่าง
     mock_student = db.get(Student, MOCK_STUDENT_ID)
     if not mock_student:
@@ -300,13 +403,17 @@ def seed_demo_data(db: Session, today: date | None = None) -> dict:
             student_id=MOCK_STUDENT_ID,
             first_name="Demo",
             last_name="Student",
-            email="",
+            email=MOCK_STUDENT_EMAIL,
             faculty="Faculty of Science",
             major=MOCK_STUDENT_MAJOR,
         )
         db.add(mock_student)
-    elif not mock_student.major:
-        mock_student.major = MOCK_STUDENT_MAJOR
+    else:
+        if not mock_student.major:
+            mock_student.major = MOCK_STUDENT_MAJOR
+        # ไม่มีอีเมลจะเข้าสู่ระบบไม่ได้ (ไม่ทับอีเมลเดิมที่มีอยู่แล้ว)
+        if not (mock_student.email or "").strip():
+            mock_student.email = MOCK_STUDENT_EMAIL
 
     db.flush()
 
@@ -319,14 +426,19 @@ def seed_demo_data(db: Session, today: date | None = None) -> dict:
             )
         )
 
+    for key, role, status in MOCK_STUDENT_EXTERNAL_ACTIVITIES:
+        add_external(MOCK_STUDENT_ID, key, role, status)
+
     db.commit()
 
     return {
         "students": student_count,
         "activities": len(activities),
         "major_activities": len(MAJOR_ACTIVITY_TEMPLATES),
+        "external_activities": external_count + len(MOCK_STUDENT_EXTERNAL_ACTIVITIES),
         "memberships": membership_count,
         "mock_student_activities": len(MOCK_STUDENT_ACTIVITIES),
+        "mock_student_external_activities": len(MOCK_STUDENT_EXTERNAL_ACTIVITIES),
         "year": year,
     }
 
@@ -343,8 +455,10 @@ def main() -> None:
             f"เพิ่มข้อมูล demo แล้ว: นักศึกษา {result['students']} คน, "
             f"กิจกรรม {result['activities']} กิจกรรม "
             f"(กิจกรรมสาขา {result['major_activities']}), "
+            f"กิจกรรมภายนอก {result['external_activities']} รายการ, "
             f"การเข้าร่วม {result['memberships']} รายการ (ปี {result['year']}) "
-            f"+ นักศึกษาจำลอง {MOCK_STUDENT_ID} เข้าร่วม {result['mock_student_activities']} กิจกรรม"
+            f"+ นักศึกษาจำลอง {MOCK_STUDENT_ID} เข้าร่วม {result['mock_student_activities']} กิจกรรม "
+            f"และกิจกรรมภายนอก {result['mock_student_external_activities']} รายการ"
         )
 
 

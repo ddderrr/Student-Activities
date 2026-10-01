@@ -330,6 +330,7 @@ const loadStudentSkills = async () => {
     skillKeys.splice(0, skillKeys.length, ...SKILL_KEYS_BY_TRACK[loadedTrack.value])
     students.value = Array.isArray(data.students) ? data.students : []
     facultyActivityAverage.value = data.facultyActivityAverage || {}
+    externalActivityAverage.value = data.externalActivityAverage || {}
 
     // หน้ารายละเอียดนักศึกษาที่เปิดค้างไว้ ให้ใช้ข้อมูลชุดใหม่ของคนเดิม (ถ้าไม่มีในชุดนี้ให้ปิด)
     if (selectedStudent.value) {
@@ -812,16 +813,67 @@ const filteredStudents = computed(() => {
 const selectedStudent = ref(null)
 const imageErrors = ref({})
 
-// กราฟรายบุคคลสลับได้ 2 แบบ (ใช้กับ radar, คะแนนรายทักษะ และ Skill Gap):
-// MAJOR   = ทักษะจากกิจกรรมสาขาของนักศึกษา   vs ค่าเฉลี่ยกิจกรรมสาขาของนักศึกษาสาขาเดียวกัน
-// FACULTY = ทักษะจากกิจกรรมคณะของนักศึกษา vs ค่าเฉลี่ยกิจกรรมคณะของนักศึกษาทั้งคณะ
-// ไม่นับกิจกรรมภายนอกและกิจกรรมของสาขาอื่น
+// กราฟรายบุคคลสลับได้ 3 แบบ (ใช้กับ radar, คะแนนรายทักษะ และ Skill Gap):
+// MAJOR    = ทักษะจากกิจกรรมสาขาของนักศึกษา   vs ค่าเฉลี่ยกิจกรรมสาขาของนักศึกษาสาขาเดียวกัน
+// FACULTY  = ทักษะจากกิจกรรมคณะของนักศึกษา vs ค่าเฉลี่ยกิจกรรมคณะของนักศึกษาทั้งคณะ
+// EXTERNAL = ทักษะจากกิจกรรมภายนอกของนักศึกษา vs ค่าเฉลี่ยกิจกรรมภายนอกของนักศึกษาทั้งคณะ
+// กิจกรรมของสาขาอื่นไม่นับในกราฟใดเลย
 const gapBasis = ref('MAJOR')
 const facultyActivityAverage = ref({})
+const externalActivityAverage = ref({})
 
-const scopedSkillsField = computed(() =>
-  gapBasis.value === 'MAJOR' ? 'majorSkills' : 'facultySkills'
-)
+const GAP_BASIS_OPTIONS = ['MAJOR', 'FACULTY', 'EXTERNAL']
+
+// field ของข้อมูลนักศึกษา + class สีของแต่ละแบบ
+const GAP_BASIS_CONFIG = {
+  MAJOR: { field: 'majorSkills', area: 'student-major-area', swatch: 'major' },
+  FACULTY: { field: 'facultySkills', area: 'student-faculty-area', swatch: 'faculty' },
+  EXTERNAL: { field: 'externalSkills', area: 'student-external-area', swatch: 'external' }
+}
+
+const gapBasisConfig = computed(() => GAP_BASIS_CONFIG[gapBasis.value])
+
+// ข้อความของแต่ละแบบ
+const gapBasisText = computed(() => {
+  const text = t.value.adminStudentSkills
+
+  return {
+    MAJOR: {
+      option: text.gapCompareMajor,
+      analysisSub: text.skillAnalysisSubMajor,
+      studentLegend: text.studentMajorActivities,
+      averageLegend: text.majorAvgShort,
+      gapSub: text.skillGapSubMajor,
+      below: text.belowMajorAverage,
+      shortLabel: text.major,
+      noGap: text.noGapSubMajor
+    },
+    FACULTY: {
+      option: text.gapCompareFaculty,
+      analysisSub: text.skillAnalysisSubFaculty,
+      studentLegend: text.studentFacultyActivities,
+      averageLegend: text.facultyAvgShort,
+      gapSub: text.skillGapSub,
+      below: text.belowFacultyAverage,
+      shortLabel: text.faculty,
+      noGap: text.noGapSub
+    },
+    EXTERNAL: {
+      option: text.gapCompareExternal,
+      analysisSub: text.skillAnalysisSubExternal,
+      studentLegend: text.studentExternalActivities,
+      averageLegend: text.externalAvgShort,
+      gapSub: text.skillGapSubExternal,
+      below: text.belowExternalAverage,
+      shortLabel: text.externalShort,
+      noGap: text.noGapSubExternal
+    }
+  }
+})
+
+const currentGapBasisText = computed(() => gapBasisText.value[gapBasis.value])
+
+const scopedSkillsField = computed(() => gapBasisConfig.value.field)
 
 const scopedSkillValueOf = (student, skillKey) =>
   skillValueOf({ skills: student?.[scopedSkillsField.value] }, skillKey)
@@ -851,11 +903,11 @@ const selectedMajorAverages = computed(() =>
 )
 
 // ค่าเฉลี่ยที่ใช้เทียบตามกราฟที่เลือก
-const selectedCompareAverages = computed(() =>
-  gapBasis.value === 'MAJOR'
-    ? selectedMajorAverages.value
-    : facultyActivityAverage.value
-)
+const selectedCompareAverages = computed(() => {
+  if (gapBasis.value === 'MAJOR') return selectedMajorAverages.value
+  if (gapBasis.value === 'EXTERNAL') return externalActivityAverage.value
+  return facultyActivityAverage.value
+})
 
 const selectedCompareRadarPoints = computed(() =>
   buildRadarPoints(
@@ -2017,26 +2069,20 @@ onBeforeUnmount(() => {
             <div class="detail-section-heading">
               <div>
                 <h4>{{ t.adminStudentSkills.skillAnalysis }}</h4>
-                <p>{{ gapBasis === 'MAJOR' ? t.adminStudentSkills.skillAnalysisSubMajor : t.adminStudentSkills.skillAnalysisSubFaculty }}</p>
+                <p>{{ currentGapBasisText.analysisSub }}</p>
               </div>
 
               <div class="gap-basis-switch" role="group" :aria-label="t.adminStudentSkills.gapCompareLabel">
                 <span>{{ t.adminStudentSkills.gapCompareLabel }}</span>
                 <button
+                  v-for="basis in GAP_BASIS_OPTIONS"
+                  :key="basis"
                   type="button"
-                  :class="{ active: gapBasis === 'MAJOR' }"
-                  :aria-pressed="gapBasis === 'MAJOR'"
-                  @click="gapBasis = 'MAJOR'"
+                  :class="{ active: gapBasis === basis }"
+                  :aria-pressed="gapBasis === basis"
+                  @click="gapBasis = basis"
                 >
-                  {{ t.adminStudentSkills.gapCompareMajor }}
-                </button>
-                <button
-                  type="button"
-                  :class="{ active: gapBasis === 'FACULTY' }"
-                  :aria-pressed="gapBasis === 'FACULTY'"
-                  @click="gapBasis = 'FACULTY'"
-                >
-                  {{ t.adminStudentSkills.gapCompareFaculty }}
+                  {{ gapBasisText[basis].option }}
                 </button>
               </div>
             </div>
@@ -2044,14 +2090,11 @@ onBeforeUnmount(() => {
             <div class="detail-legend">
               <span>
                 <i class="legend-swatch student"></i>
-                {{ gapBasis === 'MAJOR' ? t.adminStudentSkills.studentMajorActivities : t.adminStudentSkills.studentFacultyActivities }}
+                {{ currentGapBasisText.studentLegend }}
               </span>
-              <span v-if="gapBasis === 'MAJOR'" :title="selectedMajorLabel">
-                <i class="legend-swatch major"></i>
-                {{ t.adminStudentSkills.majorAvgShort }} ({{ selectedMajorStudents.length }})
-              </span>
-              <span v-else>
-                <i class="legend-swatch faculty"></i> {{ t.adminStudentSkills.facultyAvgShort }}
+              <span :title="gapBasis === 'MAJOR' ? selectedMajorLabel : undefined">
+                <i class="legend-swatch" :class="gapBasisConfig.swatch"></i>
+                {{ currentGapBasisText.averageLegend }}<template v-if="gapBasis === 'MAJOR'"> ({{ selectedMajorStudents.length }})</template>
               </span>
             </div>
 
@@ -2073,7 +2116,7 @@ onBeforeUnmount(() => {
 
                 <polygon
                   :points="selectedCompareRadarPoints"
-                  :class="gapBasis === 'MAJOR' ? 'student-major-area' : 'student-faculty-area'"
+                  :class="gapBasisConfig.area"
                 />
                 <polygon :points="selectedStudentRadarPoints" class="student-profile-area" />
 
@@ -2104,7 +2147,7 @@ onBeforeUnmount(() => {
                 <div class="score-item-text">
                   <span>{{ skillDisplay(skill.label) }}</span>
                   <small>
-                    <i class="legend-swatch" :class="gapBasis === 'MAJOR' ? 'major' : 'faculty'"></i>{{ formatScore(selectedCompareAverages[skill.key]) }}
+                    <i class="legend-swatch" :class="gapBasisConfig.swatch"></i>{{ formatScore(selectedCompareAverages[skill.key]) }}
                   </small>
                 </div>
                 <strong>{{ scopedSkillValueOf(selectedStudent, skill.key) !== null ? scopedSkillValueOf(selectedStudent, skill.key).toFixed(1) : t.adminStudentSkills.notAvailable }}</strong>
@@ -2130,7 +2173,7 @@ onBeforeUnmount(() => {
             <section class="detail-panel skill-gap-panel">
               <div class="gap-heading">
                 <h4>{{ t.adminStudentSkills.skillGapAnalysis }}</h4>
-                <p>{{ gapBasis === 'MAJOR' ? t.adminStudentSkills.skillGapSubMajor : t.adminStudentSkills.skillGapSub }}</p>
+                <p>{{ currentGapBasisText.gapSub }}</p>
               </div>
 
               <div v-if="selectedTopGaps.length" class="gap-list">
@@ -2144,7 +2187,7 @@ onBeforeUnmount(() => {
                     <div>
                       <strong>{{ skillDisplay(gap.label) }}</strong>
                       <span>
-                        {{ Math.abs(gap.percentDifference).toFixed(0) }}% {{ gapBasis === 'MAJOR' ? t.adminStudentSkills.belowMajorAverage : t.adminStudentSkills.belowFacultyAverage }}
+                        {{ Math.abs(gap.percentDifference).toFixed(0) }}% {{ currentGapBasisText.below }}
                       </span>
                     </div>
                     <AlertTriangle v-if="gap.difference <= -0.5" :size="16" />
@@ -2153,7 +2196,7 @@ onBeforeUnmount(() => {
 
                   <div class="gap-comparison">
                     <span>{{ t.adminStudentSkills.student }} {{ gap.studentScore.toFixed(1) }}</span>
-                    <span>{{ gapBasis === 'MAJOR' ? t.adminStudentSkills.major : t.adminStudentSkills.faculty }} {{ gap.compareScore.toFixed(1) }}</span>
+                    <span>{{ currentGapBasisText.shortLabel }} {{ gap.compareScore.toFixed(1) }}</span>
                   </div>
 
                   <div class="gap-recommendation">
@@ -2166,7 +2209,7 @@ onBeforeUnmount(() => {
               <div v-else class="no-gap-state">
                 <CheckCircle :size="22" />
                 <strong>{{ t.adminStudentSkills.noSignificantGaps }}</strong>
-                <span>{{ gapBasis === 'MAJOR' ? t.adminStudentSkills.noGapSubMajor : t.adminStudentSkills.noGapSub }}</span>
+                <span>{{ currentGapBasisText.noGap }}</span>
               </div>
             </section>
           </aside>
@@ -3831,6 +3874,10 @@ td {
   background: #eb6834;
 }
 
+.legend-swatch.external {
+  background: #8a4fd6;
+}
+
 .detail-radar-wrap {
   min-height: 360px;
   display: flex;
@@ -3860,6 +3907,13 @@ td {
 .student-major-area {
   fill: rgba(235, 104, 52, 0.08);
   stroke: #eb6834;
+  stroke-width: 2;
+}
+
+/* ค่าเฉลี่ยกิจกรรมภายนอก: ม่วง แสดงคู่กับเขียว (นักศึกษา) ทีละกราฟ */
+.student-external-area {
+  fill: rgba(138, 79, 214, 0.08);
+  stroke: #8a4fd6;
   stroke-width: 2;
 }
 

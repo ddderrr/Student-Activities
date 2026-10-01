@@ -89,6 +89,31 @@ def seed(db_session):
     db_session.commit()
 
 
+def add_external(db_session, student_id, level, status="approved"):
+    external = ExternalActivity(
+        student_id=student_id,
+        title=f"Outside {student_id} {status}",
+        organization="Outside Org",
+        activity_type="Volunteer",
+        start_date=date(2026, 8, 3),
+        end_date=date(2026, 8, 3),
+        location="Outside",
+        role="participant",
+        status=status,
+    )
+    db_session.add(external)
+    db_session.commit()
+    db_session.add(
+        ExternalActivitySkill(
+            external_activity_id=external.id,
+            skill_key="volunteerism",
+            target_role="participant",
+            level=level,
+        )
+    )
+    db_session.commit()
+
+
 def my_period(client, student_id="670510001"):
     response = client.get(
         "/api/student/me/skills",
@@ -157,6 +182,34 @@ def test_admin_report_splits_each_student_by_major_and_faculty(client, db_sessio
 
     assert by_id["670510002"]["facultySkills"]["volunteerism"] is None
     assert body["facultyActivityAverage"]["volunteerism"] == 3
+
+
+def test_external_comparison_uses_approved_external_activities_only(client, db_session):
+    seed(db_session)
+    add_external(db_session, "670510003", 5)
+    add_external(db_session, "670510003", 1, status="pending")  # ยังไม่อนุมัติ ไม่นับ
+
+    external = my_period(client)["comparisons"]["external"]
+
+    # ของฉัน: เฉพาะ Outside (ไม่นับกิจกรรมสาขา / คณะ)
+    assert external["skills"]["volunteerism"] == 1
+    # ทั้งคณะ แบบ student-first: (1 + 5) / 2
+    assert external["average"]["volunteerism"] == 3
+
+
+def test_admin_report_has_external_skills_and_average(client, db_session):
+    seed(db_session)
+    add_external(db_session, "670510003", 5)
+
+    body = client.get("/api/admin/student-skills?year=2026").json()
+    by_id = {student["id"]: student for student in body["students"]}
+
+    assert by_id["670510001"]["externalSkills"]["volunteerism"] == 1
+    assert by_id["670510003"]["externalSkills"]["volunteerism"] == 5
+    assert by_id["670510002"]["externalSkills"]["volunteerism"] is None
+    # กิจกรรมภายนอกไม่ปนในกราฟสาขา / คณะ
+    assert by_id["670510003"]["facultySkills"]["volunteerism"] == 4
+    assert body["externalActivityAverage"]["volunteerism"] == 3
 
 
 def test_student_without_major_has_empty_major_comparison(client, db_session):

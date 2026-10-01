@@ -957,10 +957,11 @@ def get_admin_student_skills(
                 "name": f"{first_name} {last_name}".strip(),
                 "major": major or "",
                 "skill_values": {key: [] for key in definitions},
-                # แยกตามขอบเขตกิจกรรม ให้หน้ารายละเอียดนักศึกษาสลับกราฟ สาขา / คณะ
-                # (ไม่นับกิจกรรมภายนอกและกิจกรรมของสาขาอื่น)
+                # แยกตามขอบเขตกิจกรรม ให้หน้ารายละเอียดนักศึกษาสลับกราฟ สาขา / คณะ / ภายนอก
+                # (กิจกรรมของสาขาอื่นไม่นับในกราฟใดเลย)
                 "major_values": {key: [] for key in definitions},
                 "faculty_values": {key: [] for key in definitions},
+                "external_values": {key: [] for key in definitions},
                 "skill_activity_ids": {key: set() for key in definitions},
                 "activity_ids": set(),
             }
@@ -976,6 +977,8 @@ def get_admin_student_skills(
                 entry["faculty_values"][skill_key].append(float(level))
             elif scope == "major":
                 entry["major_values"][skill_key].append(float(level))
+        else:
+            entry["external_values"][skill_key].append(float(level))
 
     for row in internal_rows:
         add_row(row, "internal")
@@ -1013,6 +1016,7 @@ def get_admin_student_skills(
             "skills": skills,
             "majorSkills": average_skill_levels(entry["major_values"]),
             "facultySkills": average_skill_levels(entry["faculty_values"]),
+            "externalSkills": average_skill_levels(entry["external_values"]),
         })
 
     students.sort(key=lambda item: item["id"])
@@ -1020,12 +1024,19 @@ def get_admin_student_skills(
 
     # ค่าเฉลี่ยกิจกรรมคณะของนักศึกษาทั้งคณะ (ไม่ขึ้นกับ scope สาขาของแอดมิน)
     # ให้ตรงกับกราฟ "กิจกรรมคณะ" ในหน้า My Skills ของนักศึกษา
+    selected_semester_no = {"SEMESTER_1": 1, "SEMESTER_2": 2}.get(selected_semester)
     faculty_activity_average = scoped_skill_average_for_period(
         db,
         selected_year,
-        {"SEMESTER_1": 1, "SEMESTER_2": 2}.get(selected_semester),
+        selected_semester_no,
         track,
         None,
+    )
+    external_activity_average = external_skill_average_for_period(
+        db,
+        selected_year,
+        selected_semester_no,
+        track,
     )
 
     # จำนวนนักศึกษาทั้งหมดแยกตามชั้นปี (ในปีการศึกษาที่ใช้) และสาขา
@@ -1070,6 +1081,7 @@ def get_admin_student_skills(
         "benchmarkScores": [benchmarks[key] for key in definitions],
         "benchmarkBySkill": benchmarks,
         "facultyActivityAverage": faculty_activity_average,
+        "externalActivityAverage": external_activity_average,
         "skillDefinitions": [
             {"key": key, "label": label}
             for key, label in definitions.items()
@@ -4432,6 +4444,58 @@ def scoped_skill_average_for_period(
     return student_first_average(grouped, definitions)
 
 
+def external_skill_average_for_period(
+    db: Session,
+    year: int,
+    semester: int | None,
+    track: str,
+) -> dict:
+    """
+    ค่าเฉลี่ยทักษะจากกิจกรรมภายนอกที่อนุมัติแล้ว ของนักศึกษาทั้งคณะ แบบ student-first
+    ใช้กับกราฟ "กิจกรรมภายนอก" ทั้งหน้า My Skills และหน้ารายละเอียดนักศึกษาฝั่ง admin
+    """
+    member_role = SKILL_TRACKS[track]["member_role"]
+    target_role = SKILL_TRACKS[track]["target_role"]
+    definitions = SKILL_TRACKS[track]["definitions"]
+
+    rows = (
+        db.query(
+            ExternalActivity.student_id,
+            ExternalActivity.start_date,
+            ExternalActivitySkill.skill_key,
+            ExternalActivitySkill.level,
+        )
+        .join(
+            ExternalActivitySkill,
+            ExternalActivitySkill.external_activity_id == ExternalActivity.id,
+        )
+        .filter(
+            counted_external_activity_filter(),
+            ExternalActivity.role == member_role,
+            ExternalActivitySkill.target_role == target_role,
+            func.extract("year", ExternalActivity.start_date) == year,
+        )
+        .all()
+    )
+
+    grouped: dict[str, dict[str, list[float]]] = {}
+
+    for student_id, when, skill_key, level in rows:
+        if when is None or skill_key not in definitions:
+            continue
+
+        sem_no = 1 if when.month <= 6 else 2
+        if semester is not None and sem_no != semester:
+            continue
+
+        grouped.setdefault(
+            student_id,
+            {key: [] for key in definitions},
+        )[skill_key].append(float(level))
+
+    return student_first_average(grouped, definitions)
+
+
 def student_skill_periods(
     student: Student,
     db: Session,
@@ -4678,6 +4742,19 @@ def student_skill_periods(
                     period["semester"],
                     track,
                     None,
+                ),
+            },
+            # external: กิจกรรมภายนอกของฉัน vs ค่าเฉลี่ยกิจกรรมภายนอกของนักศึกษาทั้งคณะ
+            "external": {
+                "skills": average_activity_skills(
+                    [a for a in period_activities if a["scope"] == "external"],
+                    definitions,
+                ),
+                "average": external_skill_average_for_period(
+                    db,
+                    period["year"],
+                    period["semester"],
+                    track,
                 ),
             },
         }
