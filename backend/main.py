@@ -40,6 +40,7 @@ from admin_auth import (
     admin_context,
     get_current_admin,
     get_optional_admin,
+    is_admin_bypass_enabled,
     require_central_admin,
 )
 from admin_scope import (
@@ -3427,10 +3428,12 @@ def get_current_student(
 
         return student
 
-    # ทางเดิม (header) ยังใช้ได้สำหรับเทสต์/เครื่องมือพัฒนา
-    # ยังไม่มีระบบ login นักศึกษา: frontend ส่ง student ID จำลองมาใน header
-    # เปลี่ยนเป็นอ่านจาก session/token เมื่อมีระบบ login จริง
-    #
+    # ทางเดิม (header) ใช้ได้เฉพาะเทสต์/เครื่องมือพัฒนา ตอนเปิด ADMIN_BYPASS_ENABLED
+    # (สวิตช์เดียวกับ header X-Admin-Email) ปิดอยู่ = ต้องใช้ Bearer token เท่านั้น
+    # ไม่งั้นใครส่ง X-Student-Id ของคนอื่นก็เป็นคนนั้นได้
+    if not is_admin_bypass_enabled():
+        raise HTTPException(status_code=401, detail="กรุณาเข้าสู่ระบบ")
+
     # หน้า /student/login ให้เลือก mock student จากอีเมล (เหมือนแอดมิน) ส่งมาเป็น
     # X-Student-Email แทน X-Student-Id -- ต้องเป็นนักศึกษาที่มีอยู่จริงในตาราง
     # students เท่านั้น (ไม่ auto-create เหมือน path X-Student-Id ด้านล่าง)
