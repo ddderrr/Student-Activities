@@ -81,7 +81,15 @@ from skill_definitions import (
     STAFF_SKILL_DEFINITIONS,
 )
 from student_bypass import STUDENT_LOGIN_ACCOUNTS, STUDENT_MOCK_PASSWORD
-from auth_tokens import bearer_token, hash_password, issue_token, read_token, verify_password
+from auth_tokens import (
+    bearer_token,
+    hash_password,
+    is_auth_configured,
+    issue_token,
+    read_token,
+    verify_password,
+    warn_if_auth_secret_missing,
+)
 from branches import BRANCHES
 from models import (
     Admin,
@@ -136,6 +144,7 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     seed_skills()
     EXTERNAL_ACTIVITY_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    warn_if_auth_secret_missing()
 
     yield
 
@@ -236,6 +245,13 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
     if not email or not payload.password:
         raise HTTPException(status_code=400, detail="กรุณากรอกอีเมลและรหัสผ่าน")
+
+    # ไม่มี AUTH_SECRET ออก token ไม่ได้: ตอบก่อนตรวจบัญชี (ดู auth_tokens.py)
+    if not is_auth_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="ระบบเข้าสู่ระบบยังไม่พร้อม: ผู้ดูแลต้องตั้ง AUTH_SECRET ใน .env",
+        )
 
     admin = db.query(Admin).filter(Admin.email == email).first()
 

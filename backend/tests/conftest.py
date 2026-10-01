@@ -1,3 +1,4 @@
+import secrets
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -39,6 +40,12 @@ def upload_dir(tmp_path, monkeypatch):
     directory.mkdir()
     monkeypatch.setattr(main_module, "EXTERNAL_ACTIVITY_UPLOAD_DIR", directory)
     return directory
+
+
+@pytest.fixture(autouse=True)
+def auth_secret(monkeypatch):
+    # ทุกเทสต์ใช้ AUTH_SECRET สุ่มของตัวเอง ไม่พึ่งค่าตายตัวในโค้ดหรือ .env
+    monkeypatch.setenv("AUTH_SECRET", secrets.token_urlsafe(48))
 
 
 @pytest.fixture(autouse=True)
