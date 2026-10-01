@@ -131,6 +131,24 @@ def test_student_login_unknown_email_returns_404(client, db_session):
     assert response.json()["detail"] == "ไม่พบอีเมลนี้ในระบบ"
 
 
+def test_student_login_imported_student_by_own_email(client, db_session):
+    # นักศึกษาที่นำเข้าจากหน้า Settings ไม่อยู่ใน STUDENT_LOGIN_ACCOUNTS
+    make_student(db_session, "670510676", "สมชาย", "สะอาดดี", "Test01@Gmail.com ", "")
+
+    response = client.post("/api/student/auth/login", json={"email": "test01@gmail.com", "password": "1234"})
+    assert response.status_code == 200
+    assert response.json()["student_id"] == "670510676"
+
+    wrong = client.post("/api/student/auth/login", json={"email": "test01@gmail.com", "password": "0000"})
+    assert wrong.status_code == 401
+    assert wrong.json()["detail"] == "รหัสผ่านไม่ถูกต้อง"
+
+    # session หลัง login (อีเมลตามที่เก็บ + student_id) ใช้ endpoint นักศึกษาได้
+    me = client.get("/api/student/me", headers={"X-Student-Email": response.json()["email"], "X-Student-Id": "670510676"})
+    assert me.status_code == 200
+    assert me.json()["student_id"] == "670510676"
+
+
 def test_student_login_requires_email_and_password(client):
     response = client.post("/api/student/auth/login", json={"email": "chem@test.com", "password": ""})
     assert response.status_code == 400

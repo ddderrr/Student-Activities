@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from datetime import date, datetime
-from io import BytesIO
+from io import BytesIO, StringIO
 import json
 import math
 from pathlib import Path
@@ -8,6 +8,8 @@ import shutil
 from uuid import uuid4
 import unicodedata
 
+import openpyxl
+import openpyxl.styles
 import pandas as pd
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -209,25 +211,32 @@ class StudentLoginRequest(BaseModel):
 
 @app.post("/api/student/auth/login")
 def login_student(payload: StudentLoginRequest, db: Session = Depends(get_db)):
-    # MOCK LOGIN (dev): รับเฉพาะบัญชีใน student_bypass.STUDENT_LOGIN_ACCOUNTS
-    # รหัสผ่านร่วมค่าเดียว -- เปลี่ยนเป็นตรวจกับระบบยืนยันตัวตนจริงเมื่อมี
+    # MOCK LOGIN (dev): ทุกบัญชีใช้รหัสผ่านร่วมค่าเดียว (STUDENT_MOCK_PASSWORD)
+    # -- เปลี่ยนเป็นตรวจกับระบบยืนยันตัวตนจริงเมื่อมี
     email = payload.email.strip().lower()
 
     if not email or not payload.password:
         raise HTTPException(status_code=400, detail="กรุณากรอกอีเมลและรหัสผ่าน")
 
+    # อีเมล mock ที่ใช้ร่วมกันทั้งสาขา ระบุคนไว้ใน STUDENT_LOGIN_ACCOUNTS
+    # อีเมลอื่น (เช่นนักศึกษาที่นำเข้าจากหน้า Settings) ค้นจากตาราง students
     student_id = STUDENT_LOGIN_ACCOUNTS.get(email)
 
-    if student_id is None:
+    if student_id is not None:
+        student = db.get(Student, student_id)
+    else:
+        student = (
+            db.query(Student)
+            .filter(func.lower(func.trim(Student.email)) == email)
+            .order_by(Student.student_id)
+            .first()
+        )
+
+    if not student:
         raise HTTPException(status_code=404, detail="ไม่พบอีเมลนี้ในระบบ")
 
     if payload.password != STUDENT_MOCK_PASSWORD:
         raise HTTPException(status_code=401, detail="รหัสผ่านไม่ถูกต้อง")
-
-    student = db.get(Student, student_id)
-
-    if not student:
-        raise HTTPException(status_code=404, detail="ไม่พบอีเมลนี้ในระบบ")
 
     return serialize_student_account(student)
 
@@ -2286,6 +2295,362 @@ async def import_students(
 
 
 # ============================================================
+# ADMIN SETTINGS: IMPORT STUDENTS (central admin)
+# ============================================================
+
+# หัวคอลัมน์ของไฟล์ template (ชื่อเดียวกับ COLUMN_ALIASES ด้านบน)
+STUDENT_IMPORT_TEMPLATE_HEADERS = [
+    ("รหัสนักศึกษา", "student_id"),
+    ("ชื่อ", "first_name"),
+    ("นามสกุล", "last_name"),
+    ("อีเมล", "email"),
+    ("สาขาวิชา", "major"),
+]
+STUDENT_IMPORT_MAX_BYTES = 5 * 1024 * 1024
+STUDENT_IMPORT_MAX_ROWS = 5000
+STUDENT_IMPORT_FIELD_LIMITS = {
+    "student_id": 30,
+    "first_name": 150,
+    "last_name": 150,
+    "email": 255,
+    "major": 255,
+}
+
+
+def clean_import_cell(value) -> str:
+    text = normalize_text(value if value is not None else "")
+    # Excel เก็บรหัสเป็นตัวเลขแล้วอ่านออกมาเป็น "670510301.0"
+    if text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+    return text
+
+
+STUDENT_IMPORT_EXTENSIONS = {".xlsx", ".xls", ".csv"}
+# CSV ภาษาไทยจาก Excel: UTF-8 (มัก BOM) หรือ Windows-874 (TIS-620) ตามเครื่องที่บันทึก
+STUDENT_IMPORT_CSV_ENCODINGS = ("utf-8-sig", "cp874")
+
+
+def read_student_import_csv(contents: bytes) -> pd.DataFrame:
+    for encoding in STUDENT_IMPORT_CSV_ENCODINGS:
+        try:
+            text = contents.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+
+        # sep=None: เดาตัวคั่นเอง (Excel บางภาษาบันทึกเป็น ; แทน ,)
+        return pd.read_csv(
+            StringIO(text),
+            sep=None,
+            engine="python",
+            dtype=str,
+            keep_default_na=False,
+            skip_blank_lines=True,
+        )
+
+    raise ValueError("unsupported encoding")
+
+
+def build_student_import_rows(contents: bytes, extension: str, db: Session) -> list[dict]:
+    try:
+        # keep_default_na=False: ช่องว่างเป็น "" ไม่ใช่ "nan"
+        if extension == ".csv":
+            df = read_student_import_csv(contents)
+        else:
+            df = pd.read_excel(BytesIO(contents), dtype=str, keep_default_na=False)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ไม่สามารถอ่านไฟล์ได้ กรุณาใช้ไฟล์ .xlsx, .xls หรือ .csv")
+
+    aliases = {normalize_text(key): value for key, value in COLUMN_ALIASES.items()}
+    df = df.rename(columns={column: aliases.get(normalize_text(column), column) for column in df.columns})
+
+    if "student_id" not in df.columns:
+        expected = ", ".join(label for label, _ in STUDENT_IMPORT_TEMPLATE_HEADERS)
+        raise HTTPException(status_code=400, detail=f"ไม่พบคอลัมน์ รหัสนักศึกษา (คอลัมน์ที่ต้องมี: {expected})")
+
+    if len(df) > STUDENT_IMPORT_MAX_ROWS:
+        raise HTTPException(status_code=400, detail=f"นำเข้าได้ครั้งละไม่เกิน {STUDENT_IMPORT_MAX_ROWS} แถว")
+
+    records = []
+    for index, raw in enumerate(df.to_dict("records")):
+        record = {field: clean_import_cell(raw.get(field, "")) for _, field in STUDENT_IMPORT_TEMPLATE_HEADERS}
+        # ข้ามแถวว่างทั้งแถว (มักเป็นแถวท้ายไฟล์)
+        if any(record.values()):
+            records.append({"row": index + 2, **record})
+
+    ids = {record["student_id"] for record in records if record["student_id"]}
+    existing = {
+        student_id
+        for (student_id,) in db.query(Student.student_id).filter(Student.student_id.in_(ids)).all()
+    } if ids else set()
+
+    seen = set()
+    for record in records:
+        problems = []
+        if not record["student_id"]:
+            problems.append("ไม่มีรหัสนักศึกษา")
+        if not record["first_name"]:
+            problems.append("ไม่มีชื่อ")
+        if not record["last_name"]:
+            problems.append("ไม่มีนามสกุล")
+        if record["email"] and "@" not in record["email"]:
+            problems.append("รูปแบบอีเมลไม่ถูกต้อง")
+        for field, limit in STUDENT_IMPORT_FIELD_LIMITS.items():
+            if len(record[field]) > limit:
+                problems.append(f"{field} ยาวเกิน {limit} ตัวอักษร")
+
+        if problems:
+            record["status"], record["message"] = "invalid", ", ".join(problems)
+        elif record["student_id"] in existing:
+            record["status"], record["message"] = "duplicate", "มีรหัสนักศึกษานี้ในระบบแล้ว"
+        elif record["student_id"] in seen:
+            record["status"], record["message"] = "duplicate", "รหัสนักศึกษาซ้ำในไฟล์"
+        else:
+            record["status"], record["message"] = "new", ""
+            seen.add(record["student_id"])
+
+    return records
+
+
+@app.get("/api/admin/students/import/template")
+def download_student_import_template(_admin: AdminContext = Depends(require_central_admin)):
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "students"
+    sheet.append([label for label, _ in STUDENT_IMPORT_TEMPLATE_HEADERS])
+
+    for cell in sheet[1]:
+        cell.font = openpyxl.styles.Font(bold=True)
+    for letter, width in zip("ABCDE", (18, 22, 22, 32, 30)):
+        sheet.column_dimensions[letter].width = width
+        # คอลัมน์เป็นข้อความ: รหัสนักศึกษาไม่ถูกแปลงเป็นตัวเลข
+        for row in range(2, 1001):
+            sheet[f"{letter}{row}"].number_format = "@"
+    sheet.freeze_panes = "A2"
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="student-import-template.xlsx"'},
+    )
+
+
+@app.post("/api/admin/students/import")
+async def import_students_from_settings(
+    file: UploadFile = File(...),
+    dry_run: bool = False,
+    db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(require_central_admin),
+):
+    """
+    นำเข้านักศึกษาจากหน้า Settings: dry_run=true = พรีวิวอย่างเดียว ไม่บันทึก
+    รหัสที่มีอยู่แล้ว (หรือซ้ำในไฟล์) ข้ามโดยไม่ error, แถวไม่ถูกต้องนับเป็น failed
+    """
+    extension = Path(file.filename or "").suffix.lower()
+
+    if extension not in STUDENT_IMPORT_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="รองรับเฉพาะไฟล์ .xlsx, .xls และ .csv เท่านั้น")
+
+    contents = await file.read(STUDENT_IMPORT_MAX_BYTES + 1)
+    if not contents:
+        raise HTTPException(status_code=400, detail="ไฟล์ว่าง")
+    if len(contents) > STUDENT_IMPORT_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="ไฟล์ใหญ่เกิน 5MB")
+
+    rows = build_student_import_rows(contents, extension, db)
+
+    if not dry_run:
+        for record in rows:
+            if record["status"] == "new":
+                db.add(
+                    Student(
+                        student_id=record["student_id"],
+                        first_name=record["first_name"],
+                        last_name=record["last_name"],
+                        email=record["email"],
+                        faculty="Faculty of Science",
+                        major=record["major"],
+                    )
+                )
+        db.commit()
+
+    count = lambda status: sum(1 for record in rows if record["status"] == status)  # noqa: E731
+
+    return {
+        "dry_run": dry_run,
+        "total": len(rows),
+        "success": count("new"),
+        "skipped": count("duplicate"),
+        "failed": count("invalid"),
+        "errors": [
+            {
+                "row": record["row"],
+                "student_id": record["student_id"],
+                "type": record["status"],
+                "message": record["message"],
+            }
+            for record in rows
+            if record["status"] != "new"
+        ],
+        "rows": rows,
+    }
+
+
+# ============================================================
+# ADMIN SETTINGS: MANAGE STUDENTS (central admin)
+# ============================================================
+
+
+def serialize_settings_student(student: Student, activity_count: int, external_count: int) -> dict:
+    return {
+        "student_id": student.student_id,
+        "first_name": student.first_name,
+        "last_name": student.last_name,
+        "email": student.email,
+        "faculty": student.faculty,
+        "major": student.major,
+        "created_at": student.created_at,
+        "activity_count": activity_count,
+        "external_activity_count": external_count,
+    }
+
+
+@app.get("/api/admin/students")
+def list_students_for_settings(
+    search: str = "",
+    page: int = 1,
+    page_size: int = 20,
+    db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(require_central_admin),
+):
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
+    query = db.query(Student)
+    keyword = search.strip()
+
+    if keyword:
+        pattern = f"%{keyword.lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(Student.student_id).like(pattern),
+                func.lower(Student.first_name).like(pattern),
+                func.lower(Student.last_name).like(pattern),
+                func.lower(Student.email).like(pattern),
+                func.lower(Student.major).like(pattern),
+            )
+        )
+
+    total = query.count()
+    students = (
+        query.order_by(Student.created_at.desc(), Student.student_id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    ids = [student.student_id for student in students]
+
+    def counts(model, column):
+        if not ids:
+            return {}
+        return dict(
+            db.query(column, func.count())
+            .filter(column.in_(ids))
+            .group_by(column)
+            .all()
+        )
+
+    activity_counts = counts(ActivityMember, ActivityMember.student_id)
+    external_counts = counts(ExternalActivity, ExternalActivity.student_id)
+
+    return {
+        "total": total,
+        "all_total": db.query(func.count(Student.student_id)).scalar(),
+        "page": page,
+        "page_size": page_size,
+        "students": [
+            serialize_settings_student(
+                student,
+                activity_counts.get(student.student_id, 0),
+                external_counts.get(student.student_id, 0),
+            )
+            for student in students
+        ],
+    }
+
+
+def delete_students_and_related(db: Session, students: list[Student]) -> dict:
+    """ลบนักศึกษา + ข้อมูลที่ผูกอยู่ทั้งหมด คืนจำนวนที่ลบแต่ละประเภท
+
+    memberships / external activities ลบตาม ORM cascade (skills, evidence,
+    notification ของ external activity ลบตาม FK CASCADE) ส่วน notification
+    และคำขอทั่วไปไม่มี FK ไปที่ students จึงลบเองตาม student_id
+    """
+    ids = [student.student_id for student in students]
+    if not ids:
+        return {"students": 0, "activity_memberships": 0, "external_activities": 0, "requests": 0, "notifications": 0}
+
+    external = db.query(ExternalActivity).filter(ExternalActivity.student_id.in_(ids)).all()
+    # เก็บ path ไฟล์ไว้ก่อน (ลบหลัง commit สำเร็จเท่านั้น)
+    evidence_paths = [
+        path
+        for activity in external
+        for evidence in activity.evidence_files
+        if (path := find_evidence_path(evidence)) is not None
+    ]
+    folders = [evidence_folder(activity.id) for activity in external]
+
+    summary = {
+        "students": len(ids),
+        "activity_memberships": db.query(ActivityMember).filter(ActivityMember.student_id.in_(ids)).count(),
+        "external_activities": len(external),
+        "requests": db.query(StudentRequest).filter(StudentRequest.requester_student_id.in_(ids)).count(),
+        "notifications": db.query(Notification).filter(Notification.student_id.in_(ids)).count(),
+    }
+
+    db.query(Notification).filter(Notification.student_id.in_(ids)).delete(synchronize_session=False)
+    db.query(StudentRequest).filter(StudentRequest.requester_student_id.in_(ids)).delete(synchronize_session=False)
+    for student in students:
+        db.delete(student)
+    db.commit()
+
+    for path in evidence_paths:
+        path.unlink(missing_ok=True)
+    for folder in folders:
+        shutil.rmtree(folder, ignore_errors=True)
+
+    return summary
+
+
+@app.delete("/api/admin/students/{student_id}")
+def delete_student_from_settings(
+    student_id: str,
+    db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(require_central_admin),
+):
+    student = db.get(Student, student_id.strip())
+
+    if not student:
+        raise HTTPException(status_code=404, detail="ไม่พบนักศึกษานี้ในระบบ")
+
+    return delete_students_and_related(db, [student])
+
+
+@app.delete("/api/admin/students")
+def delete_all_students_from_settings(
+    confirm: str = "",
+    db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(require_central_admin),
+):
+    # กันกดพลาด/เรียกผิด: ต้องส่ง ?confirm=all มาเท่านั้น
+    if confirm != "all":
+        raise HTTPException(status_code=400, detail="ต้องยืนยันการลบทั้งหมด (confirm=all)")
+
+    return delete_students_and_related(db, db.query(Student).all())
+
+
+# ============================================================
 # PARTICIPANTS
 # ============================================================
 
@@ -2807,7 +3172,7 @@ def get_current_student(
     if email:
         # mock student สาขาเดียวกันใช้อีเมลร่วมกัน: หลัง login frontend ส่ง
         # X-Student-Id มาด้วย ใช้ระบุตัวคนให้ตรง (อีเมลต้องตรงกับคนนั้นด้วย)
-        query = db.query(Student).filter(func.lower(Student.email) == email)
+        query = db.query(Student).filter(func.lower(func.trim(Student.email)) == email)
         student_id = (x_student_id or "").strip()
 
         if student_id:
