@@ -8,6 +8,6 @@
 
 INSERT INTO students (student_id, first_name, last_name, email, faculty, major)
 VALUES
-    ('670510001', 'นักศึกษา', 'เคมี', 'chem@test.com', 'คณะวิทยาศาสตร์', 'เคมี'),
-    ('670510002', 'นักศึกษา', 'คอมพิวเตอร์', 'cs@test.com', 'คณะวิทยาศาสตร์', 'วิทยาการคอมพิวเตอร์')
+    ('670510001', 'นักศึกษา', 'เคมี', 'chem@test.com', 'Faculty of Science', 'เคมี'),
+    ('670510002', 'นักศึกษา', 'คอมพิวเตอร์', 'cs@test.com', 'Faculty of Science', 'วิทยาการคอมพิวเตอร์')
 ON CONFLICT (student_id) DO NOTHING;
