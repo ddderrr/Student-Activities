@@ -1,37 +1,34 @@
 export const API_BASE = 'http://127.0.0.1:8000'
 
-// ยังไม่มีระบบ login นักศึกษา: ใช้ student ID จำลอง (สร้างไว้แล้วผ่าน Add Student ในกิจกรรม)
-// เมื่อมีระบบ login จริง ให้เปลี่ยนมาอ่านจาก session แทน
-export const MOCK_STUDENT_ID = '670510659'
-
 // ศูนย์ช่วยเหลือของนักศึกษา: ติดต่อทางอีเมล
 export const HELP_CENTER_EMAIL = 'natthanon_t@cmu.ac.th'
 
-// โหมด bypass ให้เลือกอีเมลนักศึกษาทดสอบที่หน้า /student/login (เหมือนแอดมิน)
-// backend รายชื่ออยู่ที่ backend/student_bypass.py เก็บ session ไว้ใน localStorage
-// เมื่อมีระบบ login จริง ให้แก้ที่ไฟล์นี้ไฟล์เดียว (เก็บ/ส่ง token แทนอีเมล)
+// session นักศึกษาหลัง login ที่หน้า /login (ดู constants/auth.js) เก็บ token ไว้ใน localStorage
+// ทุกคำขอฝั่งนักศึกษาส่ง token เป็น Authorization: Bearer ผ่าน studentHeaders
 const STORAGE_KEY = 'studentSession'
 
 export function getStudentSession() {
   try {
     const session = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')
-    return session?.email ? session : null
+    return session?.student_id && session?.token ? session : null
   } catch {
     return null
   }
 }
 
-export function setStudentSession(student) {
+// token ว่าง = ใช้ token เดิม (เช่นอัปเดตข้อมูลจาก /api/student/me)
+export function setStudentSession(student, token = getStudentSession()?.token) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       student_id: student.student_id,
       email: student.email,
       name: student.name,
       major: student.major,
-      faculty: student.faculty
+      faculty: student.faculty,
+      token
     }))
   } catch {
-    // เก็บไม่ได้ (เช่น private mode) ก็ยังใช้หน้านี้ต่อได้ แต่รีเฟรชแล้วต้องเลือกใหม่
+    // เก็บไม่ได้ (เช่น private mode): รีเฟรชแล้วต้อง login ใหม่
   }
 }
 
@@ -46,23 +43,13 @@ export function clearStudentSession() {
 export function studentHeaders(extra = {}) {
   const session = getStudentSession()
 
-  if (session) {
-    // นักศึกษาจำลองสาขาเดียวกันใช้อีเมลร่วมกัน: ส่ง student_id ไปด้วยเพื่อระบุตัวคน
-    return {
-      'X-Student-Email': session.email,
-      ...(session.student_id ? { 'X-Student-Id': session.student_id } : {}),
-      ...extra
-    }
-  }
-
-  // ยังไม่ได้เลือก mock student จากหน้า login: fallback ไป student ID จำลองเดิม
   return {
-    'X-Student-Id': MOCK_STUDENT_ID,
+    ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
     ...extra
   }
 }
 
-// ตรวจกับ backend ว่าอีเมลที่เลือกไว้ยังใช้ได้ คืน null ถ้าใช้ไม่ได้ / throw ถ้าต่อ backend ไม่ได้
+// ตรวจกับ backend ว่า token ยังใช้ได้ คืน null ถ้าใช้ไม่ได้ / throw ถ้าต่อ backend ไม่ได้
 export async function verifyStudentSession() {
   if (!getStudentSession()) return null
 
@@ -84,26 +71,7 @@ export async function verifyStudentSession() {
   return student
 }
 
-// หน้า login ฝั่งนักศึกษา (mock: อีเมล + รหัสผ่าน ดู backend/student_bypass.py)
-// โยน error ที่มี .status ไว้แยก 404 (ไม่พบอีเมล) / 401 (รหัสผ่านผิด)
-// ออกจากปัญหาต่อ backend ไม่ได้
-export async function loginStudentWithPassword(email, password) {
-  const response = await fetch(`${API_BASE}/api/student/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password })
-  })
-
-  if (!response.ok) {
-    const error = new Error(`HTTP ${response.status}`)
-    error.status = response.status
-    throw error
-  }
-
-  return response.json()
-}
-
-// ไฟล์หลักฐานต้องแนบ X-Student-Id จึงเปิดด้วย <a href> ตรง ๆ ไม่ได้: โหลดเป็น blob แล้วเปิดในแท็บใหม่
+// ไฟล์หลักฐานต้องแนบ token จึงเปิดด้วย <a href> ตรง ๆ ไม่ได้: โหลดเป็น blob แล้วเปิดในแท็บใหม่
 // เปิดแท็บก่อน await เพื่อไม่ให้ browser บล็อก popup
 export async function openStudentFile(url) {
   const tab = window.open('', '_blank')

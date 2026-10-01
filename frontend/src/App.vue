@@ -59,8 +59,7 @@ onBeforeUnmount(() => {
 
 const isLoginPage = computed(() => {
   return (
-    route.path === '/' ||
-    route.path === '/admin/login'
+    route.path === '/login'
   )
 })
 
@@ -72,7 +71,7 @@ const isLoginPage = computed(() => {
 const isAdminPage = computed(() => {
   return (
     route.path.startsWith('/admin/') &&
-    route.path !== '/admin/login'
+    route.path !== '/login'
   )
 })
 </script>

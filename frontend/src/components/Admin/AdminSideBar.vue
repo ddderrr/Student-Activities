@@ -16,9 +16,9 @@ import {
 
 import { useLanguage } from '../../composables/useLanguage'
 import {
-  clearAdminSession,
   getAdminSession
 } from '../../constants/currentAdmin'
+import { logout as logoutAll } from '../../constants/auth'
 
 // สถานะเปิด/ปิดอยู่ที่ App.vue (มือถือเป็น drawer ต้องคุมจาก layout)
 const props = defineProps({
@@ -128,8 +128,8 @@ const adminInitials = computed(() =>
 )
 
 const logout = () => {
-  clearAdminSession()
-  router.push('/admin/login')
+  logoutAll()
+  router.push('/login')
 }
 </script>
 

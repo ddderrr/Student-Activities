@@ -10,15 +10,19 @@ import {
   RotateCcw,
   Search,
   ShieldAlert,
+  Info,
+  ShieldCheck,
   Trash2,
   TriangleAlert,
   Upload,
+  UserPlus,
   Users,
   X
 } from 'lucide-vue-next'
 
 import { useLanguage } from '../../composables/useLanguage'
 import { adminFetch, getAdminSession } from '../../constants/currentAdmin'
+import { BRANCHES } from '../../constants/branches'
 import { API_BASE } from '../../constants/currentStudent'
 
 const { t, currentLanguage } = useLanguage()
@@ -169,7 +173,11 @@ async function downloadTemplate() {
    นักศึกษาทั้งหมด
 ========================= */
 
+// ปกติแสดง 5 คนล่าสุด กด "ดูทั้งหมด" แล้วจึงแบ่งหน้า หน้าละ 20 คน
+const PREVIEW_SIZE = 5
 const PAGE_SIZE = 20
+const showAllStudents = ref(false)
+const studentsPageSize = computed(() => (showAllStudents.value ? PAGE_SIZE : PREVIEW_SIZE))
 
 const students = ref([])
 const studentsTotal = ref(0)
@@ -180,7 +188,7 @@ const studentsError = ref('')
 const studentSearch = ref('')
 const notice = ref('')
 
-const studentsPages = computed(() => Math.max(1, Math.ceil(studentsTotal.value / PAGE_SIZE)))
+const studentsPages = computed(() => Math.max(1, Math.ceil(studentsTotal.value / studentsPageSize.value)))
 
 const fill = (text, values) =>
   Object.entries(values).reduce((out, [key, value]) => out.replaceAll(`{${key}}`, value), text)
@@ -206,7 +214,7 @@ async function loadStudents() {
   studentsLoading.value = true
   studentsError.value = ''
 
-  const params = new URLSearchParams({ page: studentsPage.value, page_size: PAGE_SIZE })
+  const params = new URLSearchParams({ page: studentsPage.value, page_size: studentsPageSize.value })
   if (studentSearch.value.trim()) params.set('search', studentSearch.value.trim())
 
   try {
@@ -221,7 +229,7 @@ async function loadStudents() {
 
     // ลบรายการสุดท้ายของหน้าสุดท้าย: ถอยไปหน้าก่อนหน้าแทนการแสดงหน้าว่าง
     if (!data.students.length && studentsPage.value > 1) {
-      studentsPage.value = Math.max(1, Math.ceil(data.total / PAGE_SIZE))
+      studentsPage.value = Math.max(1, Math.ceil(data.total / studentsPageSize.value))
       return loadStudents()
     }
   } catch {
@@ -240,13 +248,19 @@ watch(studentSearch, () => {
   }, 300)
 })
 
+function toggleShowAllStudents() {
+  showAllStudents.value = !showAllStudents.value
+  studentsPage.value = 1
+  loadStudents()
+}
+
 function goToStudentsPage(page) {
   if (page < 1 || page > studentsPages.value || page === studentsPage.value) return
   studentsPage.value = page
   loadStudents()
 }
 
-// ---- ลบ: { mode: 'one', student } | { mode: 'all' }
+// ---- ลบ: { mode: 'one', student } | { mode: 'all' } | { mode: 'admin', admin }
 const deleteTarget = ref(null)
 const deleteConfirmText = ref('')
 const deleting = ref(false)
@@ -262,6 +276,7 @@ async function openDelete(target) {
   deleteConfirmText.value = ''
   deleteError.value = ''
   notice.value = ''
+  adminNotice.value = ''
   await nextTick()
   deleteCancelButton.value?.focus()
 }
@@ -279,20 +294,29 @@ async function confirmDelete() {
   deleting.value = true
   deleteError.value = ''
 
-  const url = target.mode === 'all'
-    ? `${API_BASE}/api/admin/students?confirm=all`
-    : `${API_BASE}/api/admin/students/${encodeURIComponent(target.student.student_id)}`
+  const url = {
+    all: `${API_BASE}/api/admin/students?confirm=all`,
+    one: () => `${API_BASE}/api/admin/students/${encodeURIComponent(target.student.student_id)}`,
+    admin: () => `${API_BASE}/api/admin/admins/${target.admin.id}`
+  }[target.mode]
 
   try {
-    const response = await adminFetch(url, { method: 'DELETE' })
+    const response = await adminFetch(typeof url === 'function' ? url() : url, { method: 'DELETE' })
     const data = await response.json().catch(() => null)
     if (!response.ok) throw new Error(typeof data?.detail === 'string' ? data.detail : '')
+
+    deleting.value = false
+    deleteTarget.value = null
+
+    if (target.mode === 'admin') {
+      adminNotice.value = fill(t.value.adminSettings.adminDeleted, { name: target.admin.name || target.admin.email })
+      loadAdmins()
+      return
+    }
 
     notice.value = target.mode === 'all'
       ? fill(t.value.adminSettings.deletedAll, { count: data.students })
       : fill(t.value.adminSettings.deletedOne, { name: fullName(target.student) })
-    deleting.value = false
-    deleteTarget.value = null
     if (target.mode === 'all') studentsPage.value = 1
     loadStudents()
   } catch (error) {
@@ -302,13 +326,105 @@ async function confirmDelete() {
   }
 }
 
+/* =========================
+   แอดมินสาขา
+========================= */
+
+const admins = ref([])
+const adminsLoading = ref(false)
+const adminsError = ref('')
+const adminNotice = ref('')
+
+async function loadAdmins() {
+  adminsLoading.value = true
+  adminsError.value = ''
+
+  try {
+    const response = await adminFetch(`${API_BASE}/api/admin/admins`)
+    const data = await response.json().catch(() => null)
+    if (!response.ok) throw new Error()
+    admins.value = data.admins
+  } catch {
+    adminsError.value = t.value.adminSettings.adminsLoadError
+  } finally {
+    adminsLoading.value = false
+  }
+}
+
+// กรอกแค่อีเมล + สาขา: backend ตั้งชื่อ "แอดมินสาขา <สาขา>" และรหัสผ่านเริ่มต้นให้
+const emptyAdminForm = () => ({ email: '', major: '' })
+
+const showAddAdmin = ref(false)
+const adminForm = ref(emptyAdminForm())
+const adminFormError = ref('')
+const savingAdmin = ref(false)
+const adminEmailField = ref(null)
+
+async function openAddAdmin() {
+  adminForm.value = emptyAdminForm()
+  adminFormError.value = ''
+  adminNotice.value = ''
+  showAddAdmin.value = true
+  await nextTick()
+  adminEmailField.value?.focus()
+}
+
+function closeAddAdmin() {
+  if (!savingAdmin.value) showAddAdmin.value = false
+}
+
+async function saveAdmin() {
+  if (savingAdmin.value) return
+
+  const form = adminForm.value
+  const email = form.email.trim()
+
+  if (!email || !form.major) {
+    adminFormError.value = t.value.adminSettings.adminRequiredError
+    return
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    adminFormError.value = t.value.adminSettings.adminEmailError
+    return
+  }
+
+  savingAdmin.value = true
+  adminFormError.value = ''
+
+  try {
+    const response = await adminFetch(`${API_BASE}/api/admin/admins`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...form, email })
+    })
+    const data = await response.json().catch(() => null)
+    if (!response.ok) {
+      throw new Error(typeof data?.detail === 'string' ? data.detail : t.value.adminSettings.adminSaveFailed)
+    }
+
+    adminNotice.value = fill(t.value.adminSettings.adminCreated, { name: data.name || data.email })
+    savingAdmin.value = false
+    showAddAdmin.value = false
+    loadAdmins()
+  } catch (error) {
+    adminFormError.value = error.message || t.value.adminSettings.adminSaveFailed
+  } finally {
+    savingAdmin.value = false
+  }
+}
+
 function onKeydown(event) {
-  if (event.key === 'Escape' && deleteTarget.value) closeDelete()
+  if (event.key !== 'Escape') return
+  if (deleteTarget.value) closeDelete()
+  else if (showAddAdmin.value) closeAddAdmin()
 }
 
 onMounted(() => {
   document.addEventListener('keydown', onKeydown)
-  if (isCentral.value) loadStudents()
+  if (isCentral.value) {
+    loadStudents()
+    loadAdmins()
+  }
 })
 
 onBeforeUnmount(() => {
@@ -333,6 +449,11 @@ onBeforeUnmount(() => {
 
     <!-- แอดมินกลาง: นำเข้าข้อมูลนักศึกษา -->
     <template v-else>
+    <h2 class="section-heading">
+      <Users :size="20" />
+      {{ t.adminSettings.sectionStudents }}
+    </h2>
+
     <section class="card import-card" data-testid="student-import">
       <div class="card-header">
         <div class="card-title">
@@ -624,7 +745,23 @@ onBeforeUnmount(() => {
         </table>
       </div>
 
-      <div v-if="studentsTotal > PAGE_SIZE" class="pagination">
+      <div v-if="studentsTotal > PREVIEW_SIZE" class="view-all-row">
+        <button
+          type="button"
+          class="secondary-button"
+          :aria-expanded="showAllStudents"
+          data-testid="toggle-all-students"
+          @click="toggleShowAllStudents"
+        >
+          {{
+            showAllStudents
+              ? t.adminSettings.showLess
+              : fill(t.adminSettings.viewAll, { count: studentsTotal })
+          }}
+        </button>
+      </div>
+
+      <div v-if="showAllStudents && studentsTotal > PAGE_SIZE" class="pagination">
         <button
           type="button"
           class="secondary-button square"
@@ -646,7 +783,134 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </section>
+
+    <!-- Section B: จัดการแอดมิน -->
+    <h2 class="section-heading">
+      <ShieldCheck :size="20" />
+      {{ t.adminSettings.sectionAdmins }}
+    </h2>
+
+    <section class="card admins-card" data-testid="admins-list">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="card-icon"><ShieldCheck :size="18" /></span>
+          <div>
+            <h2>{{ t.adminSettings.adminsTitle }}</h2>
+            <p>
+              {{ t.adminSettings.adminsDescription }} ·
+              <strong>{{ fill(t.adminSettings.adminsCount, { count: admins.length }) }}</strong>
+            </p>
+          </div>
+        </div>
+
+        <button type="button" class="primary-button" data-testid="add-admin" @click="openAddAdmin">
+          <UserPlus :size="16" />
+          {{ t.adminSettings.addAdminButton }}
+        </button>
+      </div>
+
+      <div v-if="adminNotice" class="alert success" role="status">
+        <CheckCircle2 :size="16" />
+        <span>{{ adminNotice }}</span>
+      </div>
+
+      <div v-if="adminsError" class="alert error" role="alert">
+        <TriangleAlert :size="16" />
+        <span>{{ adminsError }}</span>
+        <button type="button" class="link-button" @click="loadAdmins">{{ t.adminSettings.retry }}</button>
+      </div>
+
+      <p v-else-if="adminsLoading && !admins.length" class="empty-state">{{ t.adminSettings.adminsLoading }}</p>
+
+      <p v-else-if="!admins.length" class="empty-state">{{ t.adminSettings.adminsEmpty }}</p>
+
+      <div v-else class="table-wrap admins-table">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ t.adminSettings.columnName }}</th>
+              <th>{{ t.adminSettings.columnEmail }}</th>
+              <th>{{ t.adminSettings.columnBranch }}</th>
+              <th class="actions-column">{{ t.adminSettings.columnActions }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="admin in admins" :key="admin.id" :data-admin="admin.email">
+              <td>{{ admin.name || '—' }}</td>
+              <td>{{ admin.email }}</td>
+              <td><span class="branch-chip">{{ admin.major }}</span></td>
+              <td class="actions-column">
+                <button
+                  type="button"
+                  class="icon-danger-button"
+                  :aria-label="fill(t.adminSettings.deleteAdminAria, { name: admin.name || admin.email })"
+                  :title="fill(t.adminSettings.deleteAdminAria, { name: admin.name || admin.email })"
+                  @click="openDelete({ mode: 'admin', admin })"
+                >
+                  <Trash2 :size="16" />
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
     </template>
+
+    <!-- เพิ่มแอดมินสาขา: คลิกนอกกรอบไม่ปิด (Esc / ยกเลิก = ปิด) -->
+    <div v-if="showAddAdmin" class="modal-backdrop" data-testid="add-admin-modal">
+      <form
+        class="modal form-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-admin-title"
+        novalidate
+        @submit.prevent="saveAdmin"
+        @input="adminFormError = ''"
+      >
+        <div class="form-modal-header">
+          <span class="form-modal-icon" aria-hidden="true"><UserPlus :size="22" /></span>
+          <div>
+            <h3 id="add-admin-title">{{ t.adminSettings.addAdminTitle }}</h3>
+            <p>{{ t.adminSettings.addAdminSubtitle }}</p>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <label class="form-field full">
+            <span>{{ t.adminSettings.fieldEmail }} <b>*</b></span>
+            <input ref="adminEmailField" v-model="adminForm.email" type="email" maxlength="255" autocomplete="off" name="email" placeholder="name@example.com" />
+          </label>
+          <label class="form-field full">
+            <span>{{ t.adminSettings.fieldBranch }} <b>*</b></span>
+            <select v-model="adminForm.major" name="major">
+              <option disabled value="">{{ t.adminSettings.selectBranch }}</option>
+              <option v-for="branch in BRANCHES" :key="branch" :value="branch">{{ branch }}</option>
+            </select>
+          </label>
+        </div>
+
+        <p class="default-password-note">
+          <Info :size="16" />
+          <span>{{ t.adminSettings.defaultPasswordNote }}</span>
+        </p>
+
+        <div v-if="adminFormError" class="alert error" role="alert">
+          <TriangleAlert :size="16" />
+          <span>{{ adminFormError }}</span>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-button" :disabled="savingAdmin" @click="closeAddAdmin">
+            {{ t.adminSettings.cancelButton }}
+          </button>
+          <button type="submit" class="primary-button" :disabled="savingAdmin" data-testid="save-admin">
+            <LoaderCircle v-if="savingAdmin" class="spin" :size="16" />
+            {{ savingAdmin ? t.adminSettings.saving : t.adminSettings.saveButton }}
+          </button>
+        </div>
+      </form>
+    </div>
 
     <!-- ยืนยันการลบ: คลิกนอกกรอบไม่ปิด (Esc = ยกเลิก) -->
     <div v-if="deleteTarget" class="modal-backdrop" data-testid="delete-modal">
@@ -660,11 +924,20 @@ onBeforeUnmount(() => {
         <span class="modal-icon" aria-hidden="true"><Trash2 :size="26" /></span>
 
         <h3 id="delete-modal-title">
-          {{ deleteTarget.mode === 'all' ? t.adminSettings.deleteAllTitle : t.adminSettings.deleteOneTitle }}
+          {{
+            deleteTarget.mode === 'all'
+              ? t.adminSettings.deleteAllTitle
+              : deleteTarget.mode === 'admin' ? t.adminSettings.deleteAdminTitle : t.adminSettings.deleteOneTitle
+          }}
         </h3>
 
         <div id="delete-modal-message" class="modal-text">
-          <template v-if="deleteTarget.mode === 'one'">
+          <template v-if="deleteTarget.mode === 'admin'">
+            <p>{{ fill(t.adminSettings.deleteAdminMessage, { name: deleteTarget.admin.name || deleteTarget.admin.email, email: deleteTarget.admin.email }) }}</p>
+            <p class="modal-warning">{{ t.adminSettings.deleteAdminWarning }}</p>
+          </template>
+
+          <template v-else-if="deleteTarget.mode === 'one'">
             <p>{{ fill(t.adminSettings.deleteOneMessage, { name: fullName(deleteTarget.student), id: deleteTarget.student.student_id }) }}</p>
             <p
               v-if="deleteTarget.student.activity_count || deleteTarget.student.external_activity_count"
@@ -1379,6 +1652,141 @@ tr.row-invalid .status-reason {
   padding: 0;
 }
 
+.view-all-row {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+}
+
+/* หัวข้อ section */
+.section-heading {
+  max-width: 1100px;
+  margin: 28px auto 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #1d3268;
+  font-size: 19px;
+}
+
+.section-heading:first-of-type {
+  margin-top: 0;
+}
+
+.admins-table {
+  margin-top: 16px;
+}
+
+.branch-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  display: inline-block;
+  background: #eaf0ff;
+  color: #2f5fdb;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+
+/* popup เพิ่มแอดมิน (.modal.form-modal: ชนะ .modal ที่ประกาศทีหลัง) */
+.modal.form-modal {
+  width: min(520px, 100%);
+  align-items: stretch;
+  text-align: left;
+}
+
+.form-modal-header {
+  margin-bottom: 18px;
+  display: flex;
+  gap: 14px;
+}
+
+.form-modal-icon {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: #eaf0ff;
+  color: #2f5fdb;
+}
+
+.form-modal-header h3 {
+  margin: 0 0 2px;
+  font-size: 20px;
+}
+
+.form-modal-header p {
+  margin: 0;
+  color: #6b7a90;
+  font-size: var(--fs-small);
+}
+
+.form-grid {
+  margin-bottom: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.form-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.form-field.full {
+  grid-column: 1 / -1;
+}
+
+.form-field b {
+  color: #dc2626;
+}
+
+.form-field small {
+  color: #8a97ab;
+  font-weight: 400;
+}
+
+.form-field input,
+.form-field select {
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid #dce5ef;
+  border-radius: 10px;
+  background: #fff;
+  color: #1c293d;
+  font: inherit;
+  font-weight: 400;
+}
+
+.form-field input:focus,
+.form-field select:focus {
+  outline: none;
+  border-color: #7bb1f5;
+  box-shadow: 0 0 0 3px rgba(47, 95, 219, 0.12);
+}
+
+.default-password-note {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #eef4ff;
+  color: #1e45c8;
+  font-size: var(--fs-small);
+}
+
+.default-password-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 /* popup ยืนยันการลบ */
 .modal-backdrop {
   position: fixed;
@@ -1501,8 +1909,14 @@ tr.row-invalid .status-reason {
   }
 
   .actions > button,
-  .card-header .secondary-button {
+  .card-header .secondary-button,
+  .card-header .primary-button,
+  .card-header .danger-outline-button {
     width: 100%;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

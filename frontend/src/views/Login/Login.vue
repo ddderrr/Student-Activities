@@ -1,24 +1,22 @@
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   GraduationCap,
-  BriefcaseBusiness,
   LockKeyhole,
   Mail,
   Eye,
   EyeOff,
   ArrowRight,
+  Info,
   TriangleAlert
 } from 'lucide-vue-next'
 import { useLanguage } from '../../composables/useLanguage'
-import {
-  loginStudentWithPassword,
-  setStudentSession
-} from '../../constants/currentStudent'
+import { currentHome, loginWithPassword } from '../../constants/auth'
 
-const { t } = useLanguage()
+const { t, currentLanguage, setLanguage } = useLanguage()
 
+const route = useRoute()
 const router = useRouter()
 
 const email = ref('')
@@ -28,11 +26,22 @@ const showPassword = ref(false)
 const loginError = ref('')
 const loginSubmitting = ref(false)
 
+// มาจาก 401 (token หมดอายุ / บัญชีถูกลบ): บอกให้ login ใหม่
+const sessionExpired = route.query.reason === 'expired'
+
+// redirect กลับหน้าเดิมได้เฉพาะหน้าของบทบาทที่ login (กันพาออกนอกแอป)
+function targetAfterLogin(role, home) {
+  const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+  const prefix = role === 'admin' ? '/admin/' : '/student'
+  return redirect.startsWith(prefix) && !redirect.startsWith('//') ? redirect : home
+}
+
 /*
-  MOCK LOGIN (dev): อีเมล + รหัสผ่านของบัญชีทดสอบใน backend/student_bypass.py
-  (chem@test.com / cs@test.com / demo@test.com รหัสผ่าน 1234)
+  หน้า login เดียวสำหรับทุกคน: backend หาในตาราง admins ก่อน แล้วจึง students
+  (บัญชีทดสอบ: central@gmail.com / cs@gmail.com / chem@gmail.com รหัสผ่าน 1234
+  นักศึกษาใช้อีเมลของตัวเอง รหัสผ่าน 1234)
 */
-const loginStudent = async () => {
+const login = async () => {
   loginError.value = ''
 
   const value = email.value.trim()
@@ -50,12 +59,11 @@ const loginStudent = async () => {
   loginSubmitting.value = true
 
   try {
-    const student = await loginStudentWithPassword(value, password.value)
-    setStudentSession(student)
-    router.push('/student/activities')
+    const { role, home } = await loginWithPassword(value, password.value)
+    router.replace(targetAfterLogin(role, home))
   } catch (error) {
     if (error.status === 404) {
-      loginError.value = t.value.studentLogin.emailNotFoundError
+      loginError.value = t.value.studentLogin.accountNotFoundError
     } else if (error.status === 401) {
       loginError.value = t.value.studentLogin.wrongPasswordError
       password.value = ''
@@ -67,9 +75,11 @@ const loginStudent = async () => {
   }
 }
 
-const goAdminLogin = () => {
-  router.push('/admin/login')
-}
+// login อยู่แล้ว (และไม่ได้ถูกส่งมาเพราะหมดอายุ): ไปหน้าหลักของบทบาทเลย
+onMounted(() => {
+  const home = currentHome()
+  if (home && !sessionExpired) router.replace(home)
+})
 </script>
 
 <template>
@@ -90,22 +100,40 @@ const goAdminLogin = () => {
           </div>
         </div>
 
-        <button
-          class="admin-btn"
-          type="button"
-          @click="goAdminLogin"
-        >
-          <BriefcaseBusiness :size="15" />
-          {{ t.studentLogin.adminLogin }}
-        </button>
+        <div class="language-switch" role="group" :aria-label="t.studentLogin.languageLabel">
+          <button
+            type="button"
+            :class="{ active: currentLanguage === 'TH' }"
+            :aria-pressed="currentLanguage === 'TH'"
+            @click="setLanguage('TH')"
+          >
+            ไทย
+          </button>
+          <button
+            type="button"
+            :class="{ active: currentLanguage === 'EN' }"
+            :aria-pressed="currentLanguage === 'EN'"
+            @click="setLanguage('EN')"
+          >
+            EN
+          </button>
+        </div>
       </div>
+
+      <h2 class="login-title">{{ t.studentLogin.loginTitle }}</h2>
+      <p class="login-subtitle">{{ t.studentLogin.loginSubtitle }}</p>
+
+      <p v-if="sessionExpired" class="info-text" role="status">
+        <Info :size="16" />
+        {{ t.studentLogin.sessionExpired }}
+      </p>
 
 
       <!-- Login Form -->
-      <form novalidate @submit.prevent="loginStudent">
+      <form novalidate @submit.prevent="login">
 
         <div class="form-group">
-          <label for="student-login-email">{{ t.studentLogin.emailLabel }}</label>
+          <label for="login-email">{{ t.studentLogin.emailLabel }}</label>
 
           <div class="input-wrapper">
             <Mail
@@ -114,7 +142,7 @@ const goAdminLogin = () => {
             />
 
             <input
-              id="student-login-email"
+              id="login-email"
               v-model="email"
               type="email"
               name="email"
@@ -127,7 +155,7 @@ const goAdminLogin = () => {
 
 
         <div class="form-group">
-          <label for="student-login-password">{{ t.studentLogin.passwordLabel }}</label>
+          <label for="login-password">{{ t.studentLogin.passwordLabel }}</label>
 
           <div class="input-wrapper">
             <LockKeyhole
@@ -136,7 +164,7 @@ const goAdminLogin = () => {
             />
 
             <input
-              id="student-login-password"
+              id="login-password"
               v-model="password"
               :type="showPassword ? 'text' : 'password'"
               name="password"
@@ -252,7 +280,7 @@ const goAdminLogin = () => {
   justify-content: space-between;
   align-items: center;
 
-  margin-bottom: 120px;
+  margin-bottom: 72px;
 }
 
 .brand {
@@ -296,29 +324,55 @@ const goAdminLogin = () => {
    Admin Button
 ========================= */
 
-.admin-btn {
-  height: 38px;
-
-  padding: 0 14px;
-
-  display: flex;
-  align-items: center;
-  gap: 7px;
-
-  background: white;
-
-  border: 1px solid #9ca3af;
-  border-radius: 6px;
-
-  color: #111827;
-
-  cursor: pointer;
-
-  transition: 0.2s;
+.language-switch {
+  padding: 3px;
+  border: 1px solid #e3e6ee;
+  border-radius: 9px;
+  display: inline-flex;
+  gap: 2px;
+  background: #f7f7fb;
 }
 
-.admin-btn:hover {
-  background: #f5f5f5;
+.language-switch button {
+  min-width: 46px;
+  height: 32px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #6b6f80;
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.language-switch button.active {
+  background: #fff;
+  color: #a100d4;
+  box-shadow: 0 1px 3px rgba(7, 20, 66, 0.12);
+}
+
+.login-title {
+  margin: 0 0 6px;
+  color: #071442;
+  font-size: 26px;
+}
+
+.login-subtitle {
+  margin: 0 0 28px;
+  color: #777b85;
+}
+
+.info-text {
+  margin: -12px 0 22px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #eef4ff;
+  color: #1e45c8;
+  font-size: var(--fs-small);
 }
 
 
@@ -546,7 +600,7 @@ const goAdminLogin = () => {
   }
 
   .header {
-    margin-bottom: 70px;
+    margin-bottom: 48px;
   }
 
   .brand h1 {
@@ -557,10 +611,5 @@ const goAdminLogin = () => {
     font-size: var(--fs-caption);
   }
 
-  .admin-btn {
-    padding: 0 10px;
-
-    font-size: var(--fs-small);
-  }
 }
 </style>

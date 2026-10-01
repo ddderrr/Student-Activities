@@ -98,35 +98,37 @@ def make_branch_mock_students(db_session):
 def test_student_login_chem_email_returns_chemistry_student(client, db_session):
     make_branch_mock_students(db_session)
 
-    response = client.post("/api/student/auth/login", json={"email": "chem@test.com", "password": "1234"})
+    response = client.post("/api/auth/login", json={"email": "chem@test.com", "password": "1234"})
     assert response.status_code == 200
     body = response.json()
-    assert body["student_id"] == "670510001"
-    assert body["major"] == "เคมี"
-    assert body["email"] == "chem@test.com"
+    assert body["role"] == "student"
+    assert body["token"]
+    assert body["student"]["student_id"] == "670510001"
+    assert body["student"]["major"] == "เคมี"
+    assert body["student"]["email"] == "chem@test.com"
 
 
 def test_student_login_cs_email_is_case_insensitive(client, db_session):
     make_branch_mock_students(db_session)
 
-    response = client.post("/api/student/auth/login", json={"email": "  CS@Test.com ", "password": "1234"})
+    response = client.post("/api/auth/login", json={"email": "  CS@Test.com ", "password": "1234"})
     assert response.status_code == 200
-    assert response.json()["student_id"] == "670510002"
-    assert response.json()["major"] == "วิทยาการคอมพิวเตอร์"
+    assert response.json()["student"]["student_id"] == "670510002"
+    assert response.json()["student"]["major"] == "วิทยาการคอมพิวเตอร์"
 
 
 def test_student_login_demo_email_returns_transcript_demo_student(client, db_session):
     make_student(db_session, "670510999", "สมหญิง", "ใจดีมีน้ำใจ", "demo@test.com", "เคมี")
 
-    response = client.post("/api/student/auth/login", json={"email": "demo@test.com", "password": "1234"})
+    response = client.post("/api/auth/login", json={"email": "demo@test.com", "password": "1234"})
     assert response.status_code == 200
-    assert response.json()["student_id"] == "670510999"
+    assert response.json()["student"]["student_id"] == "670510999"
 
 
 def test_student_login_wrong_password_returns_401(client, db_session):
     make_branch_mock_students(db_session)
 
-    response = client.post("/api/student/auth/login", json={"email": "chem@test.com", "password": "0000"})
+    response = client.post("/api/auth/login", json={"email": "chem@test.com", "password": "0000"})
     assert response.status_code == 401
     assert response.json()["detail"] == "รหัสผ่านไม่ถูกต้อง"
 
@@ -134,31 +136,31 @@ def test_student_login_wrong_password_returns_401(client, db_session):
 def test_student_login_unknown_email_returns_404(client, db_session):
     make_branch_mock_students(db_session)
 
-    response = client.post("/api/student/auth/login", json={"email": "nobody@test.com", "password": "1234"})
+    response = client.post("/api/auth/login", json={"email": "nobody@test.com", "password": "1234"})
     assert response.status_code == 404
-    assert response.json()["detail"] == "ไม่พบอีเมลนี้ในระบบ"
+    assert response.json()["detail"] == "ไม่พบบัญชีผู้ใช้นี้ในระบบ"
 
 
 def test_student_login_imported_student_by_own_email(client, db_session):
     # นักศึกษาที่นำเข้าจากหน้า Settings ไม่อยู่ใน STUDENT_LOGIN_ACCOUNTS
     make_student(db_session, "670510676", "สมชาย", "สะอาดดี", "Test01@Gmail.com ", "")
 
-    response = client.post("/api/student/auth/login", json={"email": "test01@gmail.com", "password": "1234"})
+    response = client.post("/api/auth/login", json={"email": "test01@gmail.com", "password": "1234"})
     assert response.status_code == 200
-    assert response.json()["student_id"] == "670510676"
+    assert response.json()["student"]["student_id"] == "670510676"
 
-    wrong = client.post("/api/student/auth/login", json={"email": "test01@gmail.com", "password": "0000"})
+    wrong = client.post("/api/auth/login", json={"email": "test01@gmail.com", "password": "0000"})
     assert wrong.status_code == 401
     assert wrong.json()["detail"] == "รหัสผ่านไม่ถูกต้อง"
 
     # session หลัง login (อีเมลตามที่เก็บ + student_id) ใช้ endpoint นักศึกษาได้
-    me = client.get("/api/student/me", headers={"X-Student-Email": response.json()["email"], "X-Student-Id": "670510676"})
+    me = client.get("/api/student/me", headers={"Authorization": f"Bearer {response.json()['token']}"})
     assert me.status_code == 200
     assert me.json()["student_id"] == "670510676"
 
 
 def test_student_login_requires_email_and_password(client):
-    response = client.post("/api/student/auth/login", json={"email": "chem@test.com", "password": ""})
+    response = client.post("/api/auth/login", json={"email": "chem@test.com", "password": ""})
     assert response.status_code == 400
 
 
@@ -166,6 +168,7 @@ def test_old_student_lookup_endpoints_are_removed(client):
     # หน้า login เดิมใช้ 2 endpoint นี้ (ไม่ตรวจรหัสผ่าน) ตอนนี้ใช้ /login แทน
     assert client.get("/api/student/auth/lookup", params={"identifier": "670510001"}).status_code in (404, 405)
     assert client.get("/api/student/auth/bypass").status_code in (404, 405)
+    assert client.post("/api/student/auth/login", json={"email": "x", "password": "y"}).status_code in (404, 405)
 
 
 def test_shared_email_session_uses_student_id_header_to_pick_the_student(client, db_session):

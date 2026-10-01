@@ -36,10 +36,9 @@ from reportlab.platypus import (
 
 from admin_auth import (
     AdminContext,
+    admin_context,
     get_current_admin,
     get_optional_admin,
-    is_admin_bypass_enabled,
-    list_bypass_admins,
     require_central_admin,
 )
 from admin_scope import (
@@ -75,7 +74,10 @@ from skill_definitions import (
     STAFF_SKILL_DEFINITIONS,
 )
 from student_bypass import STUDENT_LOGIN_ACCOUNTS, STUDENT_MOCK_PASSWORD
+from auth_tokens import bearer_token, hash_password, issue_token, read_token, verify_password
+from branches import BRANCHES
 from models import (
+    Admin,
     Activity,
     ActivityMember,
     ActivitySkill,
@@ -166,22 +168,11 @@ def home():
 
 def serialize_admin(admin: AdminContext) -> dict:
     return {
+        "id": admin.id,
         "email": admin.email,
         "name": admin.name,
         "major": admin.major,
         "is_central": admin.is_central,
-    }
-
-
-@app.get("/api/admin/auth/bypass")
-def get_admin_bypass_status():
-    # หน้า login ฝั่ง admin ใช้แสดงรายชื่อให้เลือก และบอกว่า bypass ปิดอยู่หรือไม่
-    if not is_admin_bypass_enabled():
-        return {"enabled": False, "accounts": []}
-
-    return {
-        "enabled": True,
-        "accounts": [serialize_admin(admin) for admin in list_bypass_admins()],
     }
 
 
@@ -207,41 +198,63 @@ def serialize_student_account(student: Student) -> dict:
     }
 
 
-class StudentLoginRequest(BaseModel):
+class LoginRequest(BaseModel):
     email: str
     password: str
 
 
-@app.post("/api/student/auth/login")
-def login_student(payload: StudentLoginRequest, db: Session = Depends(get_db)):
-    # MOCK LOGIN (dev): ทุกบัญชีใช้รหัสผ่านร่วมค่าเดียว (STUDENT_MOCK_PASSWORD)
-    # -- เปลี่ยนเป็นตรวจกับระบบยืนยันตัวตนจริงเมื่อมี
+def find_student_by_login_email(db: Session, email: str) -> Student | None:
+    # อีเมล mock ที่ใช้ร่วมกันทั้งสาขา ระบุคนไว้ใน STUDENT_LOGIN_ACCOUNTS
+    student_id = STUDENT_LOGIN_ACCOUNTS.get(email)
+
+    if student_id is not None:
+        return db.get(Student, student_id)
+
+    return (
+        db.query(Student)
+        .filter(func.lower(func.trim(Student.email)) == email)
+        .order_by(Student.student_id)
+        .first()
+    )
+
+
+@app.post("/api/auth/login")
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    """หน้า /login เดียวสำหรับทุกคน: หาในตาราง admins ก่อน แล้วจึง students
+
+    แอดมินตรวจรหัสผ่านที่ hash ไว้, นักศึกษายังใช้รหัสผ่านร่วม (STUDENT_MOCK_PASSWORD)
+    เพราะตาราง students ยังไม่มีรหัสผ่าน -- คืน token ไว้ส่งเป็น Authorization: Bearer
+    """
     email = payload.email.strip().lower()
 
     if not email or not payload.password:
         raise HTTPException(status_code=400, detail="กรุณากรอกอีเมลและรหัสผ่าน")
 
-    # อีเมล mock ที่ใช้ร่วมกันทั้งสาขา ระบุคนไว้ใน STUDENT_LOGIN_ACCOUNTS
-    # อีเมลอื่น (เช่นนักศึกษาที่นำเข้าจากหน้า Settings) ค้นจากตาราง students
-    student_id = STUDENT_LOGIN_ACCOUNTS.get(email)
+    admin = db.query(Admin).filter(Admin.email == email).first()
 
-    if student_id is not None:
-        student = db.get(Student, student_id)
-    else:
-        student = (
-            db.query(Student)
-            .filter(func.lower(func.trim(Student.email)) == email)
-            .order_by(Student.student_id)
-            .first()
-        )
+    if admin is not None:
+        if not verify_password(payload.password, admin.password_hash):
+            raise HTTPException(status_code=401, detail="รหัสผ่านไม่ถูกต้อง")
 
-    if not student:
-        raise HTTPException(status_code=404, detail="ไม่พบอีเมลนี้ในระบบ")
+        return {
+            "role": "admin",
+            "token": issue_token("admin", admin.id),
+            "admin": serialize_admin(admin_context(admin)),
+        }
 
-    if payload.password != STUDENT_MOCK_PASSWORD:
-        raise HTTPException(status_code=401, detail="รหัสผ่านไม่ถูกต้อง")
+    student = find_student_by_login_email(db, email)
 
-    return serialize_student_account(student)
+    if student is not None:
+        if payload.password != STUDENT_MOCK_PASSWORD:
+            raise HTTPException(status_code=401, detail="รหัสผ่านไม่ถูกต้อง")
+
+        return {
+            "role": "student",
+            "token": issue_token("student", student.student_id),
+            "student": serialize_student_account(student),
+        }
+
+    raise HTTPException(status_code=404, detail="ไม่พบบัญชีผู้ใช้นี้ในระบบ")
 
 
 # ============================================================
@@ -2744,6 +2757,112 @@ def delete_all_students_from_settings(
 
 
 # ============================================================
+# ADMIN SETTINGS: MANAGE BRANCH ADMINS (central admin)
+# ============================================================
+
+
+# หน้า Settings กรอกแค่อีเมล + สาขา: ชื่อตั้งเป็น "แอดมินสาขา <สาขา>" (เหมือนบัญชี seed)
+# รหัสผ่านเริ่มต้นเหมือนบัญชีทดสอบอื่น (dev) -- เปลี่ยนเป็นส่งลิงก์ตั้งรหัสเมื่อมีระบบจริง
+DEFAULT_ADMIN_PASSWORD = "1234"
+
+
+class AdminCreate(BaseModel):
+    email: str
+    major: str
+    first_name: str = ""
+    last_name: str = ""
+    password: str | None = None
+
+
+def serialize_admin_account(admin: Admin) -> dict:
+    return {
+        "id": admin.id,
+        "first_name": admin.first_name,
+        "last_name": admin.last_name,
+        "name": admin.full_name,
+        "email": admin.email,
+        "major": admin.major,
+        "is_central": admin.is_central,
+        "created_at": admin.created_at,
+    }
+
+
+@app.get("/api/admin/admins")
+def list_branch_admins(
+    db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(require_central_admin),
+):
+    admins = (
+        db.query(Admin)
+        .filter(Admin.major.isnot(None))
+        .order_by(Admin.major, Admin.first_name, Admin.id)
+        .all()
+    )
+    return {"admins": [serialize_admin_account(admin) for admin in admins]}
+
+
+@app.post("/api/admin/admins", status_code=201)
+def create_branch_admin(
+    payload: AdminCreate,
+    db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(require_central_admin),
+):
+    email = payload.email.strip().lower()
+    major = payload.major.strip()
+    first_name = payload.first_name.strip() or "แอดมินสาขา"
+    last_name = payload.last_name.strip() or (major if not payload.first_name.strip() else "")
+    password = payload.password if payload.password is not None else DEFAULT_ADMIN_PASSWORD
+
+    if not email or "@" not in email or len(email) > 255:
+        raise HTTPException(status_code=400, detail="รูปแบบอีเมลไม่ถูกต้อง")
+    if major not in BRANCHES:
+        raise HTTPException(status_code=400, detail="กรุณาเลือกสาขาจากรายการ")
+    if len(password) < 4:
+        raise HTTPException(status_code=400, detail="รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร")
+    if len(first_name) > 150 or len(last_name) > 150:
+        raise HTTPException(status_code=400, detail="ชื่อหรือนามสกุลยาวเกินไป")
+    if db.query(Admin).filter(Admin.email == email).first():
+        raise HTTPException(status_code=409, detail="มีแอดมินที่ใช้อีเมลนี้แล้ว")
+    # หน้า login หาแอดมินก่อนนักศึกษา: ถ้าซ้ำ นักศึกษาคนนั้นจะ login ไม่ได้อีก
+    if db.query(Student).filter(func.lower(func.trim(Student.email)) == email).first():
+        raise HTTPException(status_code=409, detail="อีเมลนี้เป็นของนักศึกษาในระบบแล้ว")
+
+    admin = Admin(
+        first_name=first_name,
+        last_name=last_name,
+        email=email,
+        password_hash=hash_password(password),
+        major=major,
+    )
+    db.add(admin)
+    db.commit()
+    db.refresh(admin)
+
+    return serialize_admin_account(admin)
+
+
+@app.delete("/api/admin/admins/{admin_id}")
+def delete_branch_admin(
+    admin_id: int,
+    db: Session = Depends(get_db),
+    current: AdminContext = Depends(require_central_admin),
+):
+    admin = db.get(Admin, admin_id)
+
+    if not admin:
+        raise HTTPException(status_code=404, detail="ไม่พบแอดมินนี้")
+    if admin.id == current.id:
+        raise HTTPException(status_code=400, detail="ลบบัญชีของตัวเองไม่ได้")
+    if admin.is_central:
+        raise HTTPException(status_code=400, detail="ลบแอดมินกลางไม่ได้")
+
+    db.delete(admin)
+    db.commit()
+
+    return {"deleted": admin_id}
+
+
+# ============================================================
 # PARTICIPANTS
 # ============================================================
 
@@ -3249,11 +3368,27 @@ EXTERNAL_ACTIVITY_MAX_LENGTHS = {
 }
 
 
+def student_from_token(authorization: str | None, db: Session) -> Student | None:
+    student_id = read_token(bearer_token(authorization), "student")
+    return db.get(Student, student_id) if student_id else None
+
+
 def get_current_student(
+    authorization: str | None = Header(default=None),
     x_student_id: str | None = Header(default=None),
     x_student_email: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> Student:
+    # หลัง login (POST /api/auth/login) frontend ส่ง Authorization: Bearer <token>
+    if bearer_token(authorization):
+        student = student_from_token(authorization, db)
+
+        if student is None:
+            raise HTTPException(status_code=401, detail="กรุณาเข้าสู่ระบบใหม่")
+
+        return student
+
+    # ทางเดิม (header) ยังใช้ได้สำหรับเทสต์/เครื่องมือพัฒนา
     # ยังไม่มีระบบ login นักศึกษา: frontend ส่ง student ID จำลองมาใน header
     # เปลี่ยนเป็นอ่านจาก session/token เมื่อมีระบบ login จริง
     #
@@ -5079,13 +5214,14 @@ def ensure_can_view_evidence(
     external_activity: ExternalActivity,
     admin: AdminContext | None,
     x_student_id: str | None,
+    token_student: Student | None = None,
 ) -> None:
     # ไฟล์หลักฐานเปิดได้ทั้งแอดมิน (ตามสาขา) และนักศึกษาเจ้าของคำขอ
     if admin is not None:
         ensure_can_access_student(admin, external_activity.student)
         return
 
-    student_id = (x_student_id or "").strip()
+    student_id = token_student.student_id if token_student else (x_student_id or "").strip()
 
     if not student_id:
         raise HTTPException(
@@ -5123,13 +5259,14 @@ def get_external_activity_evidence(
     db: Session = Depends(get_db),
     admin: AdminContext | None = Depends(get_optional_admin),
     x_student_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
 ):
     # URL เดิมแบบไฟล์เดียว: ส่งไฟล์แรกของคำขอ
     external_activity = require_external_activity(
         db,
         external_activity_id,
     )
-    ensure_can_view_evidence(external_activity, admin, x_student_id)
+    ensure_can_view_evidence(external_activity, admin, x_student_id, student_from_token(authorization, db))
 
     if not external_activity.evidence_files:
         raise HTTPException(
@@ -5147,6 +5284,7 @@ def get_external_activity_evidence_file(
     db: Session = Depends(get_db),
     admin: AdminContext | None = Depends(get_optional_admin),
     x_student_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
 ):
     evidence = db.get(ExternalActivityEvidence, evidence_id)
 
@@ -5156,7 +5294,7 @@ def get_external_activity_evidence_file(
             detail="ไม่พบไฟล์หลักฐาน",
         )
 
-    ensure_can_view_evidence(evidence.external_activity, admin, x_student_id)
+    ensure_can_view_evidence(evidence.external_activity, admin, x_student_id, student_from_token(authorization, db))
 
     return evidence_file_response(evidence)
 

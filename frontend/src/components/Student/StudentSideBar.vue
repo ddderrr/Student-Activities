@@ -15,6 +15,7 @@ import {
 } from 'lucide-vue-next'
 
 import { useLanguage } from '../../composables/useLanguage'
+import { logout as logoutAll } from '../../constants/auth'
 import { HELP_CENTER_EMAIL } from '../../constants/currentStudent'
 
 const props = defineProps({
@@ -83,7 +84,8 @@ const isActive = (path) => {
 ========================= */
 
 const logout = () => {
-  router.push('/')
+  logoutAll()
+  router.push('/login')
 }
 </script>
 

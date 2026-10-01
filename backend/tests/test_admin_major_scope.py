@@ -164,18 +164,9 @@ def test_bypass_disabled_when_env_missing(client, monkeypatch):
     assert client.get("/api/admin/dashboard", headers=CENTRAL).status_code == 401
 
 
-def test_bypass_status_lists_accounts_only_when_enabled(client, monkeypatch):
-    enabled = client.get("/api/admin/auth/bypass").json()
-    assert enabled["enabled"] is True
-    assert {item["email"] for item in enabled["accounts"]} == {
-        CENTRAL_ADMIN_EMAIL,
-        CHEM_ADMIN_EMAIL,
-        CS_ADMIN_EMAIL,
-    }
-
-    monkeypatch.setenv("ADMIN_BYPASS_ENABLED", "false")
-    disabled = client.get("/api/admin/auth/bypass").json()
-    assert disabled == {"enabled": False, "accounts": []}
+def test_old_admin_bypass_account_list_is_removed(client):
+    # หน้า /admin/login (เลือกบัญชีจากรายการ) ถูกแทนด้วยหน้า /login เดียว
+    assert client.get("/api/admin/auth/bypass").status_code in (404, 405)
 
 
 def test_missing_or_unknown_admin_email_is_rejected(client):

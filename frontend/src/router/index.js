@@ -1,13 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+import { currentHome } from '../constants/auth'
 import { verifyAdminSession } from '../constants/currentAdmin'
+import { verifyStudentSession } from '../constants/currentStudent'
 
 // =========================
-// Login
+// Login (หน้าเดียวสำหรับแอดมินและนักศึกษา)
 // =========================
 
-import StudentLogin from '../views/Login/StudentLogin.vue'
-import AdminLogin from '../views/Login/AdminLogin.vue'
+import Login from '../views/Login/Login.vue'
 
 
 // =========================
@@ -41,16 +42,20 @@ const routes = [
   // =========================
 
   {
-    path: '/',
-    name: 'StudentLogin',
-    component: StudentLogin
+    path: '/login',
+    name: 'Login',
+    component: Login
   },
 
+  // หน้าแรก: login แล้วไปหน้าหลักของบทบาท ยังไม่ login ไปหน้า /login
   {
-    path: '/admin/login',
-    name: 'AdminLogin',
-    component: AdminLogin
+    path: '/',
+    redirect: () => currentHome() || '/login'
   },
+
+  // URL login เดิม (bookmark เก่า)
+  { path: '/admin/login', redirect: '/login' },
+  { path: '/student/login', redirect: '/login' },
 
 
   // =========================
@@ -160,8 +165,7 @@ const routes = [
 
 
   // =========================
-  // URL ไม่ถูกต้อง
-  // กลับหน้า Login
+  // URL ไม่ถูกต้อง: กลับหน้าแรก (หน้าหลักของบทบาท หรือ /login)
   // =========================
 
   {
@@ -179,21 +183,24 @@ const router = createRouter({
 
 
 // =========================
-// Admin guard
-// หน้า /admin/* ต้องเลือกอีเมลแอดมิน (โหมด bypass) ก่อน
-// ถ้า bypass ปิดหรืออีเมลใช้ไม่ได้แล้ว กลับไปหน้า login ซึ่งจะบอกสาเหตุ
+// Route guard
+// /admin/* ต้อง login เป็นแอดมิน, /student/* ต้อง login เป็นนักศึกษา
+// token หมดอายุ / บัญชีถูกลบ -> กลับหน้า /login พร้อมพากลับหน้าเดิมหลัง login
 // =========================
 
+const ROLE_AREAS = [
+  { prefix: '/admin', verify: verifyAdminSession },
+  { prefix: '/student', verify: verifyStudentSession }
+]
+
 router.beforeEach(async (to) => {
-  if (!to.path.startsWith('/admin') || to.name === 'AdminLogin') {
-    return true
-  }
+  const area = ROLE_AREAS.find(({ prefix }) => to.path === prefix || to.path.startsWith(`${prefix}/`))
+
+  if (!area) return true
 
   try {
-    const admin = await verifyAdminSession()
-
-    if (!admin) {
-      return { name: 'AdminLogin', query: { redirect: to.fullPath } }
+    if (!(await area.verify())) {
+      return { name: 'Login', query: { redirect: to.fullPath } }
     }
   } catch {
     // ต่อ backend ไม่ได้: ให้เข้าหน้าได้ แต่ละหน้าแสดง error การเชื่อมต่อเอง

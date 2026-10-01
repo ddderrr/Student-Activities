@@ -1,21 +1,24 @@
 """ระบุตัวแอดมินที่เรียก API ฝั่ง admin (ที่เดียวในระบบ)
 
-ตอนนี้ยังไม่มีระบบ login จริง: ใช้โหมด bypass สำหรับพัฒนา/ทดสอบ โดย frontend
-ส่งอีเมลแอดมินจำลองมาใน header X-Admin-Email และต้องตั้ง
-ADMIN_BYPASS_ENABLED=true ใน .env ไว้ ถ้าไม่ได้เปิด ทุก endpoint ฝั่ง admin
-จะตอบ 401
+1. Authorization: Bearer <token> จาก POST /api/auth/login (หน้า /login)
+   ตรวจกับตาราง admins ทุกครั้ง: แอดมินที่ถูกลบแล้วใช้ token เดิมต่อไม่ได้
+2. โหมด bypass สำหรับพัฒนา/เทสต์: header X-Admin-Email (ต้องตั้ง
+   ADMIN_BYPASS_ENABLED=true) หาจากตาราง admins ก่อน แล้วจึง admin_accounts.py
 
-เมื่อมีระบบ login จริง ให้แก้แค่ get_current_admin() ให้อ่านจาก session/token
-แล้วคืน AdminContext เหมือนเดิม endpoint อื่นไม่ต้องเปลี่ยน
+endpoint อื่นใช้แค่ AdminContext ไม่ต้องรู้ว่ามาจากทางไหน
 """
 
 import os
 from dataclasses import dataclass
 
 from fastapi import Depends, Header, HTTPException
+from sqlalchemy.orm import Session
 
 import admin_accounts
+from auth_tokens import bearer_token, read_token
+from database import get_db
 from major_utils import normalize_major
+from models import Admin
 
 
 BYPASS_DISABLED_DETAIL = (
@@ -30,6 +33,8 @@ class AdminContext:
     name: str
     # None = แอดมินกลางของคณะ เห็นทุกสาขา
     major: str | None
+    # id ในตาราง admins (None = บัญชี bypass จาก admin_accounts.py)
+    id: int | None = None
 
     @property
     def is_central(self) -> bool:
@@ -65,29 +70,71 @@ def find_bypass_admin(email: str | None) -> AdminContext | None:
     )
 
 
-def get_optional_admin(
-    x_admin_email: str | None = Header(default=None),
-) -> AdminContext | None:
-    # ใช้กับ endpoint ที่ทั้งแอดมินและนักศึกษาเรียกได้ (เช่น ไฟล์หลักฐาน)
-    if not x_admin_email or not is_admin_bypass_enabled():
+def admin_context(admin: Admin) -> AdminContext:
+    return AdminContext(
+        email=admin.email,
+        name=admin.full_name or admin.email,
+        major=admin.major,
+        id=admin.id,
+    )
+
+
+def admin_from_token(token: str | None, db: Session) -> AdminContext | None:
+    subject = read_token(token, "admin")
+
+    if not subject or not subject.isdigit():
         return None
 
-    return find_bypass_admin(x_admin_email)
+    admin = db.get(Admin, int(subject))
+    return admin_context(admin) if admin else None
+
+
+def admin_from_bypass_header(email: str | None, db: Session) -> AdminContext | None:
+    normalized = (email or "").strip().lower()
+
+    if not normalized or not is_admin_bypass_enabled():
+        return None
+
+    admin = db.query(Admin).filter(Admin.email == normalized).first()
+    return admin_context(admin) if admin else find_bypass_admin(normalized)
+
+
+def get_optional_admin(
+    authorization: str | None = Header(default=None),
+    x_admin_email: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> AdminContext | None:
+    # ใช้กับ endpoint ที่ทั้งแอดมินและนักศึกษาเรียกได้ (เช่น ไฟล์หลักฐาน)
+    return (
+        admin_from_token(bearer_token(authorization), db)
+        or admin_from_bypass_header(x_admin_email, db)
+    )
 
 
 def get_current_admin(
+    authorization: str | None = Header(default=None),
     x_admin_email: str | None = Header(default=None),
+    db: Session = Depends(get_db),
 ) -> AdminContext:
-    if not is_admin_bypass_enabled():
-        raise HTTPException(status_code=401, detail=BYPASS_DISABLED_DETAIL)
+    token = bearer_token(authorization)
 
-    admin = find_bypass_admin(x_admin_email)
+    if token:
+        admin = admin_from_token(token, db)
+
+        if admin is None:
+            raise HTTPException(status_code=401, detail="กรุณาเข้าสู่ระบบใหม่")
+
+        return admin
+
+    if not is_admin_bypass_enabled():
+        # ส่ง header bypass มาแต่ปิดไว้: บอกวิธีเปิดให้นักพัฒนา
+        detail = BYPASS_DISABLED_DETAIL if x_admin_email else "กรุณาเข้าสู่ระบบ"
+        raise HTTPException(status_code=401, detail=detail)
+
+    admin = admin_from_bypass_header(x_admin_email, db)
 
     if admin is None:
-        raise HTTPException(
-            status_code=401,
-            detail="ไม่พบแอดมิน (X-Admin-Email) กรุณาเลือกอีเมลที่หน้า login ใหม่",
-        )
+        raise HTTPException(status_code=401, detail="กรุณาเข้าสู่ระบบ")
 
     return admin
 

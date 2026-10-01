@@ -70,6 +70,45 @@ class Activity(Base):
         return normalize_major(value)
 
 
+class Admin(Base):
+    """บัญชีแอดมินที่ login ด้วยอีเมล + รหัสผ่าน (หน้า /login)
+
+    major = None คือแอดมินกลางของคณะ (เห็นทุกสาขา) นอกนั้นเป็นแอดมินสาขา
+    """
+
+    __tablename__ = "admins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # เก็บเป็นตัวพิมพ์เล็กเสมอ (ดู validates ด้านล่าง) จึง unique ได้ตรง ๆ
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    first_name = Column(String(150), nullable=False)
+    last_name = Column(String(150), nullable=False, default="")
+    password_hash = Column(String(255), nullable=False)
+    major = Column(String(255), nullable=True)
+
+    created_at = Column(
+        DateTime(timezone=False),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    @validates("email")
+    def _normalize_email(self, _key, value):
+        return (value or "").strip().lower()
+
+    @validates("major")
+    def _normalize_major(self, _key, value):
+        return normalize_major(value)
+
+    @property
+    def is_central(self) -> bool:
+        return self.major is None
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}".strip()
+
+
 class Student(Base):
     __tablename__ = "students"
 

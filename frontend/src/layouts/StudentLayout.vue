@@ -34,7 +34,8 @@ import StudentSideBar
 
   from '../components/Student/StudentSideBar.vue'
 
-import { API_BASE, clearStudentSession, studentHeaders } from '../constants/currentStudent'
+import { logout as logoutAll } from '../constants/auth'
+import { API_BASE, studentHeaders } from '../constants/currentStudent'
 import { useLanguage } from '../composables/useLanguage'
 
 const router = useRouter()
@@ -183,8 +184,8 @@ const fetchCurrentStudent = async () => {
 const logoutStudent = () => {
 
   profileOpen.value = false
-  clearStudentSession()
-  router.push('/student/login')
+  logoutAll()
+  router.push('/login')
 
 }
 
