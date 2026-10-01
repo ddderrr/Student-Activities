@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from auth_tokens import hash_password
+from auth_tokens import hash_password, issue_token
 from models import Admin, Student
 
 OLD_DEV_SECRET = b"dev-insecure-secret-change-me"
@@ -106,10 +106,13 @@ def test_token_signed_with_short_secret_is_rejected(accounts, monkeypatch):
 
 def test_login_and_token_work_with_configured_secret(accounts):
     # conftest ตั้ง AUTH_SECRET แบบสุ่มให้ทุกเทสต์
-    for email, path in [("central@gmail.com", "/api/admin/me"), ("student@cmu.ac.th", "/api/student/me")]:
-        response = login(accounts, email)
-        assert response.status_code == 200, response.text
-        assert accounts.get(path, headers=bearer(response.json()["token"])).status_code == 200
+    response = login(accounts, "central@gmail.com")
+    assert response.status_code == 200, response.text
+    assert accounts.get("/api/admin/me", headers=bearer(response.json()["token"])).status_code == 200
+
+    # นักศึกษาจริง login ด้วยรหัสร่วมไม่ได้ (ดู test_student_mock_login.py) ออก token ให้ตรง ๆ
+    token = issue_token("student", "670510001")
+    assert accounts.get("/api/student/me", headers=bearer(token)).status_code == 200
 
 
 def test_token_signed_with_another_secret_is_rejected(accounts):

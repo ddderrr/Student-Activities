@@ -39,7 +39,8 @@ function targetAfterLogin(role, home) {
 /*
   หน้า login เดียวสำหรับทุกคน: backend หาในตาราง admins ก่อน แล้วจึง students
   (บัญชีทดสอบ: central@gmail.com / cs@gmail.com / chem@gmail.com รหัสผ่าน 1234
-  นักศึกษาใช้อีเมลของตัวเอง รหัสผ่าน 1234)
+  นักศึกษาทดสอบ: chem@test.com / cs@test.com / demo@test.com รหัสผ่าน 1234 ใช้ได้เฉพาะตอนเปิด
+  ADMIN_BYPASS_ENABLED ดู backend/student_bypass.py)
 */
 const login = async () => {
   loginError.value = ''

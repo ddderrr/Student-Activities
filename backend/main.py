@@ -222,19 +222,16 @@ class LoginRequest(BaseModel):
     password: str
 
 
-def find_student_by_login_email(db: Session, email: str) -> Student | None:
-    # อีเมล mock ที่ใช้ร่วมกันทั้งสาขา ระบุคนไว้ใน STUDENT_LOGIN_ACCOUNTS
+def find_mock_login_student(db: Session, email: str) -> Student | None:
+    # MOCK LOGIN (dev): นักศึกษายังไม่มีรหัสผ่านของตัวเอง ใช้รหัสร่วม STUDENT_MOCK_PASSWORD
+    # จึงให้ใช้ได้เฉพาะบัญชีทดสอบใน STUDENT_LOGIN_ACCOUNTS และเฉพาะตอนเปิด
+    # ADMIN_BYPASS_ENABLED (ปิดสวิตช์เดียว = ทางลัด dev ปิดหมด) นักศึกษาจริงที่ import
+    # เข้ามา login ไม่ได้จนกว่าจะมีระบบ login จริง (CMU OAuth)
+    if not is_admin_bypass_enabled():
+        return None
+
     student_id = STUDENT_LOGIN_ACCOUNTS.get(email)
-
-    if student_id is not None:
-        return db.get(Student, student_id)
-
-    return (
-        db.query(Student)
-        .filter(func.lower(func.trim(Student.email)) == email)
-        .order_by(Student.student_id)
-        .first()
-    )
+    return db.get(Student, student_id) if student_id else None
 
 
 LOGIN_INVALID_DETAIL = "อีเมลหรือรหัสผ่านไม่ถูกต้อง"
@@ -280,7 +277,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         }
 
     verify_password(payload.password, dummy_password_hash())
-    student = find_student_by_login_email(db, email)
+    student = find_mock_login_student(db, email)
 
     if student is None or payload.password != STUDENT_MOCK_PASSWORD:
         raise HTTPException(status_code=401, detail=LOGIN_INVALID_DETAIL)

@@ -33,6 +33,12 @@ def login(client, email, password="1234"):
     return client.post("/api/auth/login", json={"email": email, "password": password})
 
 
+def student_token(student_id):
+    # นักศึกษาจริงยัง login ด้วยรหัสร่วมไม่ได้ (เฉพาะบัญชีทดสอบ ดู test_student_mock_login.py)
+    # เทสต์เรื่อง token จึงออก token ให้ตรง ๆ
+    return issue_token("student", student_id)
+
+
 @pytest.mark.parametrize(
     "email, major, is_central",
     [
@@ -54,14 +60,21 @@ def test_admin_login_returns_admin_role_and_working_token(no_bypass, seeded, ema
     assert me.json()["email"] == email
 
 
-def test_student_login_returns_student_role_and_working_token(no_bypass, seeded):
-    body = login(no_bypass, "test01@gmail.com").json()
+def test_student_login_returns_student_role_and_working_token(no_bypass, seeded, db_session):
+    # บัญชีทดสอบใน STUDENT_LOGIN_ACCOUNTS (conftest เปิด ADMIN_BYPASS_ENABLED ไว้)
+    db_session.add(
+        Student(student_id="670510001", first_name="นักศึกษา", last_name="เคมี",
+                email="chem@test.com", faculty="Faculty of Science", major="เคมี")
+    )
+    db_session.commit()
+
+    body = login(no_bypass, "chem@test.com").json()
 
     assert body["role"] == "student"
-    assert body["student"]["student_id"] == "670510676"
+    assert body["student"]["student_id"] == "670510001"
     me = no_bypass.get("/api/student/me", headers=bearer(body["token"]))
     assert me.status_code == 200
-    assert me.json()["student_id"] == "670510676"
+    assert me.json()["student_id"] == "670510001"
 
 
 def test_wrong_password_and_unknown_email(no_bypass, seeded):
@@ -75,10 +88,10 @@ def test_wrong_password_and_unknown_email(no_bypass, seeded):
 
 
 def test_tokens_are_role_specific_and_tamper_proof(no_bypass, seeded):
-    student_token = login(no_bypass, "test01@gmail.com").json()["token"]
+    token = student_token("670510676")
     admin_token = login(no_bypass, "central@gmail.com").json()["token"]
 
-    assert no_bypass.get("/api/admin/me", headers=bearer(student_token)).status_code == 401
+    assert no_bypass.get("/api/admin/me", headers=bearer(token)).status_code == 401
     assert no_bypass.get("/api/student/me", headers=bearer(admin_token)).status_code == 401
     assert no_bypass.get("/api/admin/me", headers=bearer(admin_token[:-3] + "abc")).status_code == 401
     assert no_bypass.get("/api/admin/me").status_code == 401
@@ -171,7 +184,7 @@ def test_seed_admins_is_idempotent(db_session):
 
 
 def test_student_token_opens_own_evidence_list(no_bypass, seeded):
-    token = login(no_bypass, "test01@gmail.com").json()["token"]
+    token = student_token("670510676")
 
     response = no_bypass.get("/api/student/me/external-activities", headers=bearer(token))
     assert response.status_code == 200
@@ -186,8 +199,8 @@ def test_evidence_opens_with_login_tokens(no_bypass, seeded, db_session):
     evidence_id = db_session.query(main_module.ExternalActivityEvidence).filter_by(external_activity_id=external_id).one().id
     url = f"/api/external-activities/{external_id}/evidence/{evidence_id}"
 
-    owner = bearer(login(no_bypass, "test01@gmail.com").json()["token"])
-    other = bearer(login(no_bypass, "other@gmail.com").json()["token"])
+    owner = bearer(student_token("670510676"))
+    other = bearer(student_token("670510999"))
     central = bearer(login(no_bypass, "central@gmail.com").json()["token"])
     chem = bearer(login(no_bypass, "chem@gmail.com").json()["token"])
 
