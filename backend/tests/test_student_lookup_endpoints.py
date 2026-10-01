@@ -130,15 +130,16 @@ def test_student_login_wrong_password_returns_401(client, db_session):
 
     response = client.post("/api/auth/login", json={"email": "chem@test.com", "password": "0000"})
     assert response.status_code == 401
-    assert response.json()["detail"] == "รหัสผ่านไม่ถูกต้อง"
+    assert response.json()["detail"] == "อีเมลหรือรหัสผ่านไม่ถูกต้อง"
 
 
-def test_student_login_unknown_email_returns_404(client, db_session):
+def test_student_login_unknown_email_returns_401(client, db_session):
+    # ตอบเหมือนรหัสผิด ไม่บอกว่าอีเมลนี้ไม่มีในระบบ
     make_branch_mock_students(db_session)
 
     response = client.post("/api/auth/login", json={"email": "nobody@test.com", "password": "1234"})
-    assert response.status_code == 404
-    assert response.json()["detail"] == "ไม่พบบัญชีผู้ใช้นี้ในระบบ"
+    assert response.status_code == 401
+    assert response.json()["detail"] == "อีเมลหรือรหัสผ่านไม่ถูกต้อง"
 
 
 def test_student_login_imported_student_by_own_email(client, db_session):
@@ -151,7 +152,7 @@ def test_student_login_imported_student_by_own_email(client, db_session):
 
     wrong = client.post("/api/auth/login", json={"email": "test01@gmail.com", "password": "0000"})
     assert wrong.status_code == 401
-    assert wrong.json()["detail"] == "รหัสผ่านไม่ถูกต้อง"
+    assert wrong.json()["detail"] == "อีเมลหรือรหัสผ่านไม่ถูกต้อง"
 
     # session หลัง login (อีเมลตามที่เก็บ + student_id) ใช้ endpoint นักศึกษาได้
     me = client.get("/api/student/me", headers={"Authorization": f"Bearer {response.json()['token']}"})

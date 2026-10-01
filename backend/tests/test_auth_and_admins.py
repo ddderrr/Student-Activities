@@ -69,9 +69,9 @@ def test_wrong_password_and_unknown_email(no_bypass, seeded):
     student = login(no_bypass, "test01@gmail.com", "0000")
     unknown = login(no_bypass, "nobody@gmail.com")
 
-    assert (admin.status_code, admin.json()["detail"]) == (401, "รหัสผ่านไม่ถูกต้อง")
-    assert (student.status_code, student.json()["detail"]) == (401, "รหัสผ่านไม่ถูกต้อง")
-    assert (unknown.status_code, unknown.json()["detail"]) == (404, "ไม่พบบัญชีผู้ใช้นี้ในระบบ")
+    # ตอบเหมือนกันทุกกรณี ไม่บอกว่าอีเมลไหนมีในระบบ
+    for response in (admin, student, unknown):
+        assert (response.status_code, response.json()["detail"]) == (401, "อีเมลหรือรหัสผ่านไม่ถูกต้อง")
 
 
 def test_tokens_are_role_specific_and_tamper_proof(no_bypass, seeded):
@@ -131,7 +131,7 @@ def test_deleted_admin_cannot_login_or_use_old_token(no_bypass, seeded, db_sessi
 
     assert no_bypass.delete(f"/api/admin/admins/{chem_id}", headers=central).status_code == 200
 
-    assert login(no_bypass, "chem@gmail.com").status_code == 404
+    assert login(no_bypass, "chem@gmail.com").status_code == 401
     assert no_bypass.get("/api/admin/me", headers=bearer(chem_token)).status_code == 401
 
 

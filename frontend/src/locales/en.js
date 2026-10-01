@@ -917,7 +917,6 @@ export default {
     loginTitle: 'Sign in',
     loginSubtitle: 'Use your email and password, for both students and admins',
     languageLabel: 'Language',
-    accountNotFoundError: 'No account was found with this email',
     sessionExpired: 'Your session has expired or your account changed. Please sign in again.',
     universityName: 'Chiang Mai University',
     facultyName: 'Faculty of Science',
@@ -934,7 +933,7 @@ export default {
     forAccess: 'for access.',
     emailRequiredError: 'Please enter your email',
     passwordRequiredError: 'Please enter your password',
-    wrongPasswordError: 'Incorrect password',
+    invalidCredentialsError: 'Incorrect email or password',
     backendUnavailableError: 'Could not reach the backend. Please try again.'
   },
 

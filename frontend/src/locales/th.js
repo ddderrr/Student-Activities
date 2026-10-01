@@ -918,7 +918,6 @@ export default {
     loginTitle: 'เข้าสู่ระบบ',
     loginSubtitle: 'ใช้อีเมลและรหัสผ่านของคุณ สำหรับทั้งนักศึกษาและแอดมิน',
     languageLabel: 'ภาษา',
-    accountNotFoundError: 'ไม่พบบัญชีผู้ใช้นี้ในระบบ',
     sessionExpired: 'เซสชันหมดอายุหรือบัญชีถูกเปลี่ยนแปลง กรุณาเข้าสู่ระบบใหม่',
     universityName: 'มหาวิทยาลัยเชียงใหม่',
     facultyName: 'คณะวิทยาศาสตร์',
@@ -935,7 +934,7 @@ export default {
     forAccess: 'เพื่อขอสิทธิ์เข้าใช้งาน',
     emailRequiredError: 'กรุณากรอกอีเมล',
     passwordRequiredError: 'กรุณากรอกรหัสผ่าน',
-    wrongPasswordError: 'รหัสผ่านไม่ถูกต้อง',
+    invalidCredentialsError: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง',
     backendUnavailableError: 'เชื่อมต่อ backend ไม่ได้ กรุณาลองใหม่'
   },
 

@@ -1,9 +1,11 @@
 from contextlib import asynccontextmanager
 from datetime import date, datetime
+from functools import lru_cache
 from io import BytesIO, StringIO
 import json
 import math
 from pathlib import Path
+import secrets
 import shutil
 from uuid import uuid4
 import unicodedata
@@ -235,6 +237,15 @@ def find_student_by_login_email(db: Session, email: str) -> Student | None:
     )
 
 
+LOGIN_INVALID_DETAIL = "อีเมลหรือรหัสผ่านไม่ถูกต้อง"
+
+
+@lru_cache(maxsize=1)
+def dummy_password_hash() -> str:
+    # hash ของรหัสสุ่มที่ไม่มีใครรู้ ใช้ให้ทุกการ login ตรวจ PBKDF2 หนึ่งครั้งเท่ากัน
+    return hash_password(secrets.token_urlsafe(32))
+
+
 @app.post("/api/auth/login")
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     """หน้า /login เดียวสำหรับทุกคน: หาในตาราง admins ก่อน แล้วจึง students
@@ -256,9 +267,11 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
     admin = db.query(Admin).filter(Admin.email == email).first()
 
+    # "ไม่พบบัญชี" กับ "รหัสผิด" ตอบเหมือนกัน และตรวจ PBKDF2 หนึ่งครั้งทุกกรณี
+    # ไม่งั้นดูจากข้อความหรือเวลาที่ตอบก็รู้ว่าอีเมลไหนมีในระบบ / เป็นแอดมิน
     if admin is not None:
         if not verify_password(payload.password, admin.password_hash):
-            raise HTTPException(status_code=401, detail="รหัสผ่านไม่ถูกต้อง")
+            raise HTTPException(status_code=401, detail=LOGIN_INVALID_DETAIL)
 
         return {
             "role": "admin",
@@ -266,19 +279,17 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
             "admin": serialize_admin(admin_context(admin)),
         }
 
+    verify_password(payload.password, dummy_password_hash())
     student = find_student_by_login_email(db, email)
 
-    if student is not None:
-        if payload.password != STUDENT_MOCK_PASSWORD:
-            raise HTTPException(status_code=401, detail="รหัสผ่านไม่ถูกต้อง")
+    if student is None or payload.password != STUDENT_MOCK_PASSWORD:
+        raise HTTPException(status_code=401, detail=LOGIN_INVALID_DETAIL)
 
-        return {
-            "role": "student",
-            "token": issue_token("student", student.student_id),
-            "student": serialize_student_account(student),
-        }
-
-    raise HTTPException(status_code=404, detail="ไม่พบบัญชีผู้ใช้นี้ในระบบ")
+    return {
+        "role": "student",
+        "token": issue_token("student", student.student_id),
+        "student": serialize_student_account(student),
+    }
 
 
 # ============================================================

@@ -62,10 +62,9 @@ const login = async () => {
     const { role, home } = await loginWithPassword(value, password.value)
     router.replace(targetAfterLogin(role, home))
   } catch (error) {
-    if (error.status === 404) {
-      loginError.value = t.value.studentLogin.accountNotFoundError
-    } else if (error.status === 401) {
-      loginError.value = t.value.studentLogin.wrongPasswordError
+    // backend ตอบ 401 เหมือนกันทั้งไม่พบบัญชีและรหัสผิด (ไม่บอกว่าอีเมลไหนมีในระบบ)
+    if (error.status === 401) {
+      loginError.value = t.value.studentLogin.invalidCredentialsError
       password.value = ''
     } else {
       loginError.value = t.value.studentLogin.backendUnavailableError
