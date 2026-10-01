@@ -52,6 +52,7 @@ from admin_scope import (
 )
 import academic_calendar
 from database import Base, SessionLocal, engine, get_db
+from faculty_utils import normalize_faculty
 import transcript_data
 from transcript_pdf import STYLES as TRANSCRIPT_STYLES, render_transcript_pdf
 from skill_scoring import (
@@ -2036,10 +2037,7 @@ def import_students_from_xlsx(
         first_name = str(row.get("first_name", "")).strip()
         last_name = str(row.get("last_name", "")).strip()
         email = str(row.get("email", "")).strip()
-        faculty = (
-            str(row.get("faculty", "")).strip()
-            or "Faculty of Science"
-        )
+        faculty = normalize_faculty(row.get("faculty"))
         major = str(row.get("major", "")).strip()
 
         errors = []
@@ -2307,7 +2305,7 @@ def import_students_from_legacy_xls(
             first_name=first_name,
             last_name=last_name,
             email="",
-            faculty=faculty or "Faculty of Science",
+            faculty=normalize_faculty(faculty),
             major="",
         )
 
@@ -2590,7 +2588,7 @@ def confirm_activity_participants(
                 first_name=first_name,
                 last_name=last_name,
                 email=email,
-                faculty=faculty or "Faculty of Science",
+                faculty=normalize_faculty(faculty),
                 major=new_student_major,
             )
 
@@ -2604,7 +2602,7 @@ def confirm_activity_participants(
             if email:
                 student.email = email
             if faculty:
-                student.faculty = faculty
+                student.faculty = normalize_faculty(faculty)
             if major:
                 student.major = major
 

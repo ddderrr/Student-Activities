@@ -105,7 +105,7 @@ def test_confirm_legacy_xls_creates_student_and_membership_with_blank_email(
     assert student.first_name == "จักริน"
     assert student.last_name == "ชวชาติ"
     assert student.email == ""
-    assert student.faculty == "คณะวิทยาศาสตร์"
+    assert student.faculty == "Faculty of Science"
 
     membership = (
         db_session.query(ActivityMember)

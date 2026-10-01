@@ -81,7 +81,7 @@ def test_import_valid_legacy_xls_creates_students(client, db_session):
     ]
     assert saved[0].first_name == "จักริน"
     assert saved[0].last_name == "ชวชาติ"
-    assert saved[0].faculty == "คณะวิทยาศาสตร์"
+    assert saved[0].faculty == "Faculty of Science"
     assert saved[0].email == ""
 
 
