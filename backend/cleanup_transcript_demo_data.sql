@@ -12,6 +12,6 @@ WHERE student_id = '670510999';
 
 DELETE FROM students
 WHERE student_id = '670510999'
-  AND email = 'demo-transcript@test.local';
+  AND email IN ('demo@test.com', 'demo-transcript@test.local');
 
 COMMIT;

@@ -54,6 +54,7 @@ from admin_scope import (
 )
 import academic_calendar
 from database import Base, SessionLocal, engine, get_db
+from faculty_utils import normalize_faculty
 import transcript_data
 from transcript_pdf import STYLES as TRANSCRIPT_STYLES, render_transcript_pdf
 from skill_scoring import (
@@ -63,6 +64,8 @@ from skill_scoring import (
     counted_activity_filter,
     counted_external_activity_filter,
     faculty_activity_filter,
+    round_half_up,
+    skill_levels_from_activities,
     major_activity_filter,
     student_first_average,
 )
@@ -262,6 +265,32 @@ def dashboard_semester_months(semester: str) -> list[int]:
     return list(range(1, 13))
 
 
+def parse_dashboard_months(semester: str, months: str | None) -> list[int]:
+    """เดือนของช่วงที่เลือกใน Dashboard: months (เช่น "7,8,9") ถ้ามี ไม่งั้นทั้งภาคเรียน"""
+    if not months:
+        return dashboard_semester_months(semester)
+
+    try:
+        selected_months = sorted(
+            {int(item) for item in months.split(",") if item.strip()}
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="months ต้องเป็นตัวเลข 1-12 คั่นด้วย comma",
+        )
+
+    if not selected_months or any(
+        month < 1 or month > 12 for month in selected_months
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="months ต้องอยู่ระหว่าง 1-12",
+        )
+
+    return selected_months
+
+
 def dashboard_effective_completed(activity: Activity, now_value: datetime) -> bool:
     """
     Dashboard completion rule:
@@ -318,26 +347,7 @@ def get_admin_dashboard(
     now_value = datetime.now()
     selected_year = year or now_value.year
 
-    if months:
-        try:
-            selected_months = sorted(
-                {int(item) for item in months.split(",") if item.strip()}
-            )
-        except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail="months ต้องเป็นตัวเลข 1-12 คั่นด้วย comma",
-            )
-
-        if not selected_months or any(
-            month < 1 or month > 12 for month in selected_months
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail="months ต้องอยู่ระหว่าง 1-12",
-            )
-    else:
-        selected_months = dashboard_semester_months(semester)
+    selected_months = parse_dashboard_months(semester, months)
 
     # Activities are filtered by the real activity date (start_at), not created_at.
     # Cancelled activities never happened, so no KPI or chart counts them.
@@ -496,6 +506,85 @@ def get_admin_dashboard(
         "year": selected_year,
         "semester": semester,
         "availableYears": available_years,
+    }
+
+
+@app.get("/api/admin/dashboard/skill-distribution")
+def get_dashboard_skill_distribution(
+    year: int | None = None,
+    semester: str = "ALL",
+    months: str | None = None,
+    major: str | None = None,
+    track: str = "participant",
+    db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
+):
+    """
+    กราฟ Skill Distribution ของหน้า Dashboard
+
+    - กิจกรรมของคณะตามขอบเขตเดียวกับ KPI (include_unowned=False) ไม่รวมกิจกรรมภายนอก
+    - ไม่นับกิจกรรม cancelled (counted_activity_filter)
+    - ช่วงเวลา: year + months ถ้ามี ไม่งั้นทั้ง semester (เหมือน /api/admin/dashboard)
+    - เฉลี่ยตามกิจกรรม: แต่ละกิจกรรมน้ำหนักเท่ากัน ไม่ขึ้นกับจำนวนผู้เข้าร่วม
+      percentage = ค่าเฉลี่ย / 5 x 100 ปัดครึ่งขึ้น (ตัวเลขเดียวกับที่หน้าเว็บเคยคำนวณเอง)
+    """
+    if track not in SKILL_TRACKS:
+        raise HTTPException(status_code=400, detail="track ต้องเป็น participant หรือ staff")
+
+    admin = resolve_branch_filter(admin, major)
+    selected_year = year or datetime.now().year
+    selected_months = parse_dashboard_months(semester, months)
+    target_role = SKILL_TRACKS[track]["target_role"]
+    definitions = SKILL_TRACKS[track]["definitions"]
+
+    rows = (
+        scope_activity_query(
+            db.query(
+                ActivitySkill.activity_id,
+                ActivitySkill.skill_key,
+                ActivitySkill.level,
+            ).join(Activity, Activity.id == ActivitySkill.activity_id),
+            admin,
+            include_unowned=False,
+        )
+        .filter(
+            counted_activity_filter(),
+            ActivitySkill.target_role == target_role,
+            func.extract("year", Activity.start_at) == selected_year,
+            func.extract("month", Activity.start_at).in_(selected_months),
+        )
+        .all()
+    )
+
+    activities: dict[int, dict] = {}
+    for activity_id, skill_key, level in rows:
+        activities.setdefault(activity_id, {"skills": {}})["skills"][skill_key] = level
+
+    levels_by_skill = skill_levels_from_activities(activities.values(), definitions)
+    averages = average_skill_levels(levels_by_skill, ndigits=None)
+
+    skills = []
+    for skill_key in definitions:
+        average = averages[skill_key]
+        skills.append(
+            {
+                "key": skill_key,
+                "averageLevel": None if average is None else round_half_up(average, 2),
+                "percentage": 0 if average is None else round_half_up(average / 5 * 100),
+                "evidenceCount": len(levels_by_skill[skill_key]),
+            }
+        )
+
+    percentages = [item["percentage"] for item in skills if item["evidenceCount"] > 0]
+
+    return {
+        "year": selected_year,
+        "months": selected_months,
+        "track": track,
+        "skills": skills,
+        "averagePercentage": (
+            round_half_up(sum(percentages) / len(percentages)) if percentages else 0
+        ),
     }
 
 
@@ -1901,6 +1990,13 @@ async def read_student_file(
         df = normalize_student_columns(df)
         invalid_rows = validate_students(df)
 
+    # แสดงชื่อคณะหลังแปลงแล้ว (เหมือนตอนบันทึก) แต่ค่าว่างคงไว้
+    # เพราะตอน confirm ค่าว่าง = คงคณะเดิมของนักศึกษาที่มีอยู่แล้ว
+    df["faculty"] = [
+        normalize_faculty(value) if str(value).strip() else ""
+        for value in df["faculty"]
+    ]
+
     return {
         "filename": filename,
         "total": len(df),
@@ -1957,10 +2053,7 @@ def import_students_from_xlsx(
         first_name = str(row.get("first_name", "")).strip()
         last_name = str(row.get("last_name", "")).strip()
         email = str(row.get("email", "")).strip()
-        faculty = (
-            str(row.get("faculty", "")).strip()
-            or "Faculty of Science"
-        )
+        faculty = normalize_faculty(row.get("faculty"))
         major = str(row.get("major", "")).strip()
 
         errors = []
@@ -2228,7 +2321,7 @@ def import_students_from_legacy_xls(
             first_name=first_name,
             last_name=last_name,
             email="",
-            faculty=faculty or "Faculty of Science",
+            faculty=normalize_faculty(faculty),
             major="",
         )
 
@@ -2867,7 +2960,7 @@ def confirm_activity_participants(
                 first_name=first_name,
                 last_name=last_name,
                 email=email,
-                faculty=faculty or "Faculty of Science",
+                faculty=normalize_faculty(faculty),
                 major=new_student_major,
             )
 
@@ -2881,7 +2974,7 @@ def confirm_activity_participants(
             if email:
                 student.email = email
             if faculty:
-                student.faculty = faculty
+                student.faculty = normalize_faculty(faculty)
             if major:
                 student.major = major
 
@@ -3034,7 +3127,7 @@ def update_activity_participant(
     first_name = payload.first_name.strip()
     last_name = payload.last_name.strip()
     email = payload.email.strip()
-    faculty = payload.faculty.strip()
+    faculty = normalize_faculty(payload.faculty)
     major = payload.major.strip()
     role = normalize_role(payload.role)
 

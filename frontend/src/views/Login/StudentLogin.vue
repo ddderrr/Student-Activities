@@ -30,7 +30,7 @@ const loginSubmitting = ref(false)
 
 /*
   MOCK LOGIN (dev): อีเมล + รหัสผ่านของบัญชีทดสอบใน backend/student_bypass.py
-  (chem@test.com / cs@test.com รหัสผ่าน 1234)
+  (chem@test.com / cs@test.com / demo@test.com รหัสผ่าน 1234)
 */
 const loginStudent = async () => {
   loginError.value = ''

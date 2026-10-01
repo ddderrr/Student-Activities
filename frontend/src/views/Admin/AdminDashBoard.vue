@@ -1,15 +1,19 @@
 <script setup>
-import { ref, computed, reactive, onMounted } from 'vue'
+import { ref, computed, reactive, onMounted, watch } from 'vue'
 import { CalendarDays, Users, CheckCircle, TrendingUp } from 'lucide-vue-next'
 import { useLanguage } from '../../composables/useLanguage'
 import { adminFetch } from '../../constants/currentAdmin'
 import BranchFilterSelect from '../../components/common/BranchFilterSelect.vue'
 import { ALL_BRANCHES_VALUE } from '../../constants/branches'
+import {
+  MONTH_LABELS,
+  dashboardPeriodParams,
+  selectedMonthNumbers as monthNumbersFor
+} from '../../utils/dashboardPeriod'
 
 const { t } = useLanguage()
 const API_BASE = 'http://127.0.0.1:8000'
 
-const MONTH_LABELS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
 const now = new Date()
 const currentMonthLabel = MONTH_LABELS[now.getMonth()]
 const currentQuarterLabel = `Q${Math.floor(now.getMonth() / 3) + 1}`
@@ -108,21 +112,20 @@ const resetSelectedItem = () => {
 }
 
 // เดือน/ไตรมาสที่ผู้ใช้คลิกใน Activity Growth chart แปลงเป็นเลขเดือน (1-12)
-// ส่งให้ backend กรองสรุป (Activities/Participants/Completion Rate) ให้แคบ
-// ลงเหลือแค่ช่วงที่คลิกจริง แทนที่จะค้างอยู่ที่ทั้ง Semester
-const selectedMonthNumbers = computed(() => {
-  if (!hasSelectedChartItem.value) return []
+// ส่งให้ backend กรองทั้ง KPI (Activities/Participants/Completion Rate) และกราฟ
+// Skill Distribution ให้แคบลงเหลือแค่ช่วงที่คลิกจริง ยังไม่คลิก = ทั้ง Semester
+const selectedMonthNumbers = computed(() => monthNumbersFor({
+  hasSelectedChartItem: hasSelectedChartItem.value,
+  period: selectedPeriod.value,
+  selectedItem: selectedItem.value
+}))
 
-  if (selectedPeriod.value === 'MONTHLY') {
-    const index = MONTH_LABELS.indexOf(selectedItem.value)
-    return index === -1 ? [] : [index + 1]
-  }
-
-  const quarterNumber = Number(String(selectedItem.value).replace('Q', ''))
-  if (!Number.isInteger(quarterNumber) || quarterNumber < 1 || quarterNumber > 4) return []
-
-  const firstMonth = (quarterNumber - 1) * 3 + 1
-  return [firstMonth, firstMonth + 1, firstMonth + 2]
+const periodParams = () => dashboardPeriodParams({
+  year: selectedYear.value,
+  semester: selectedSemester.value,
+  monthNumbers: selectedMonthNumbers.value,
+  branch: selectedBranch.value,
+  allBranchesValue: ALL_BRANCHES_VALUE
 })
 
 const selectPeriod = (period) => {
@@ -132,18 +135,7 @@ const selectPeriod = (period) => {
 }
 
 const fetchDashboardSummary = async () => {
-  const params = new URLSearchParams({
-    year: String(selectedYear.value),
-    semester: selectedSemester.value
-  })
-
-  if (selectedMonthNumbers.value.length) {
-    params.set('months', selectedMonthNumbers.value.join(','))
-  }
-
-  if (selectedBranch.value !== ALL_BRANCHES_VALUE) {
-    params.set('major', selectedBranch.value)
-  }
+  const params = periodParams()
 
   const response = await adminFetch(`${API_BASE}/api/admin/dashboard?${params.toString()}`)
   if (!response.ok) throw new Error('Cannot load dashboard summary')
@@ -298,74 +290,60 @@ const yAxisTicks = computed(() => {
 
 // ============================================================
 // Skill Distribution
-// Participant และ Staff คำนวณแยกกัน
-// ไม่มี skill ใน activity = ไม่นับเป็น 0 และไม่นำมาหาร
-// กิจกรรม cancelled ไม่นับ ให้ตรงกับคะแนนทักษะฝั่ง backend
+// คำนวณที่ backend (GET /api/admin/dashboard/skill-distribution) ด้วยกติกาเดียวกับ
+// คะแนนทักษะส่วนอื่น: ไม่นับกิจกรรม cancelled, ขอบเขตตามสิทธิ์แอดมินเหมือน KPI
+// Participant และ Staff คำนวณแยกกัน ไม่มี skill ใน activity = ไม่นับเป็น 0 และไม่นำมาหาร
+// ช่วงเวลา: เดียวกับ KPI (ทั้งภาคเรียนจนกว่าจะคลิกเดือน/ไตรมาสใน Activity Growth)
 // ============================================================
-const activitiesInSelectedPeriod = computed(() => {
-  const year = Number(selectedYear.value)
-
-  return activityDetails.value.filter(activity => {
-    if (!activity.start_at || activity.status === 'cancelled') return false
-    const date = new Date(activity.start_at)
-    if (Number.isNaN(date.getTime()) || date.getFullYear() !== year) return false
-
-    const monthIndex = date.getMonth()
-    if (!semesterMonthIndexes.value.includes(monthIndex)) return false
-
-    if (selectedPeriod.value === 'MONTHLY') {
-      return MONTH_LABELS[monthIndex] === selectedItem.value
-    }
-
-    const quarter = `Q${Math.floor(monthIndex / 3) + 1}`
-    return quarter === selectedItem.value
-  })
-})
-
 const skillDefinitions = computed(() =>
   selectedSkillRole.value === 'participant' ? PARTICIPANT_SKILLS : STAFF_SKILLS
 )
 
+const skillDistribution = ref({ skills: [], averagePercentage: 0 })
+
+// เปลี่ยนตัวเลือกเร็ว ๆ: ผลของคำขอเก่าต้องไม่ทับของใหม่
+let skillRequest = 0
+
+const fetchSkillDistribution = async () => {
+  const request = ++skillRequest
+  const params = periodParams()
+  params.set('track', selectedSkillRole.value)
+
+  try {
+    const response = await adminFetch(`${API_BASE}/api/admin/dashboard/skill-distribution?${params}`)
+    if (!response.ok) throw new Error('Cannot load skill distribution')
+    const data = await response.json()
+    if (request === skillRequest) skillDistribution.value = data
+  } catch (err) {
+    console.error('Skill distribution API Error:', err)
+    if (request === skillRequest) skillDistribution.value = { skills: [], averagePercentage: 0 }
+  }
+}
+
+watch(
+  [selectedYear, selectedSemester, selectedBranch, () => selectedMonthNumbers.value.join(','), selectedSkillRole],
+  fetchSkillDistribution,
+  { immediate: true }
+)
+
 const displayedSkills = computed(() => {
-  const skillField = selectedSkillRole.value === 'participant'
-    ? 'participant_skills'
-    : 'staff_skills'
+  const byKey = new Map(skillDistribution.value.skills.map(skill => [skill.key, skill]))
 
   return skillDefinitions.value.map(([key, name]) => {
-    const values = []
-
-    for (const activity of activitiesInSelectedPeriod.value) {
-      const raw = activity?.[skillField]?.[key]
-      if (raw === undefined || raw === null || raw === '') continue
-
-      const level = Number(raw)
-      if (Number.isFinite(level) && level > 0) values.push(level)
-    }
-
-    if (values.length === 0) {
-      return { key, name, percentage: 0, averageLevel: null, evidenceCount: 0 }
-    }
-
-    const averageLevel = values.reduce((sum, value) => sum + value, 0) / values.length
+    const skill = byKey.get(key)
 
     return {
       key,
       name,
-      averageLevel: Number(averageLevel.toFixed(2)),
-      percentage: Math.round((averageLevel / 5) * 100),
-      evidenceCount: values.length
+      averageLevel: skill?.averageLevel ?? null,
+      percentage: skill?.percentage ?? 0,
+      evidenceCount: skill?.evidenceCount ?? 0
     }
   })
 })
 
-// Average รวมเฉพาะ skill ที่มีข้อมูลจริง
-const averageSkill = computed(() => {
-  const available = displayedSkills.value.filter(skill => skill.evidenceCount > 0)
-  if (available.length === 0) return 0
-  return Math.round(
-    available.reduce((sum, skill) => sum + skill.percentage, 0) / available.length
-  )
-})
+// Average รวมเฉพาะ skill ที่มีข้อมูลจริง (คำนวณที่ backend)
+const averageSkill = computed(() => skillDistribution.value.averagePercentage ?? 0)
 
 const monthLabelMap = computed(() => ({
   JAN: t.value.adminDashboard.monthJan,
@@ -391,8 +369,11 @@ const monthLabelMap = computed(() => ({
 // also used internally for date-matching (selectedItem, chart selection, etc).
 const displayLabel = (label) => monthLabelMap.value[label] || label
 
+// ช่วงเวลาที่กราฟ Skill Distribution ใช้: ยังไม่คลิก Activity Growth = ทั้งภาคเรียน
 const selectedPeriodText = computed(() =>
-  `${displayLabel(selectedItem.value)} · ${semesterLabel.value} · ${selectedYear.value}`
+  hasSelectedChartItem.value
+    ? `${displayLabel(selectedItem.value)} · ${semesterLabel.value} · ${selectedYear.value}`
+    : `${semesterLabel.value} · ${selectedYear.value}`
 )
 
 const summaryCards = computed(() => [

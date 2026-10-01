@@ -15,4 +15,6 @@ STUDENT_MOCK_PASSWORD = "1234"
 STUDENT_LOGIN_ACCOUNTS = {
     "chem@test.com": "670510001",
     "cs@test.com": "670510002",
+    # นักศึกษาเดโม Transcript (seed_transcript_demo_data.sql)
+    "demo@test.com": "670510999",
 }

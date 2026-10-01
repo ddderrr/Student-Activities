@@ -1,8 +1,8 @@
 -- ข้อมูลเดโม Transcript PDF: นักศึกษาชั้นปีที่ 3 (รหัส 67xxxxxxx) พร้อมกิจกรรม 3 ปีการศึกษา
 -- ต้องรัน migration_add_activity_major.sql ก่อน
--- กิจกรรมของคณะใช้ uid ขึ้นต้นด้วย DEMO-TR- / นักศึกษาใช้อีเมล @test.local รันซ้ำได้ (ไม่เพิ่มซ้ำ)
+-- กิจกรรมของคณะใช้ uid ขึ้นต้นด้วย DEMO-TR- / นักศึกษาใช้อีเมล demo@test.com รันซ้ำได้ (ไม่เพิ่มซ้ำ)
 -- ลบออกทั้งหมดด้วย cleanup_transcript_demo_data.sql
--- เปิดดู: หน้า login นักศึกษา พิมพ์รหัส 670510999 (ไม่ต้องใส่รหัสผ่าน) แล้วไปเมนู Transcript
+-- เปิดดู: หน้า login นักศึกษา ใช้ demo@test.com รหัสผ่าน 1234 (ได้นักศึกษา 670510999) แล้วไปเมนู Transcript
 --
 -- ปีการศึกษาเริ่มเดือนกรกฎาคม (academic_calendar.ACADEMIC_YEAR_START_MONTH)
 --   2567 = ก.ค. 2024 - มิ.ย. 2025 (ชั้นปีที่ 1)
@@ -12,7 +12,7 @@
 BEGIN;
 
 INSERT INTO students (student_id, first_name, last_name, email, faculty, major)
-VALUES ('670510999', 'สมหญิง', 'ใจดีมีน้ำใจ', 'demo-transcript@test.local', 'Faculty of Science', 'เคมี')
+VALUES ('670510999', 'สมหญิง', 'ใจดีมีน้ำใจ', 'demo@test.com', 'Faculty of Science', 'เคมี')
 ON CONFLICT (student_id) DO NOTHING;
 
 CREATE TEMP TABLE seed_activities (
