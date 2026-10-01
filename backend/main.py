@@ -5256,8 +5256,7 @@ REQUEST_TYPE_DEFINITIONS = {
 
 
 class StudentRequestCreate(BaseModel):
-    requester_name: str
-    requester_student_id: str
+    # ผู้ขอมาจากตัวตนที่ยืนยันแล้ว (get_current_student) ไม่รับจาก body
     request_type: str
     detail: str = ""
 
@@ -5451,15 +5450,9 @@ def list_requests(
 @app.post("/api/requests", status_code=201)
 def create_request(
     payload: StudentRequestCreate,
+    student: Student = Depends(get_current_student),
     db: Session = Depends(get_db),
 ):
-    validate_required_text(
-        {
-            "requester_name": payload.requester_name,
-            "requester_student_id": payload.requester_student_id,
-        }
-    )
-
     if payload.request_type not in REQUEST_TYPE_DEFINITIONS:
         raise HTTPException(
             status_code=400,
@@ -5467,8 +5460,8 @@ def create_request(
         )
 
     request = StudentRequest(
-        requester_name=payload.requester_name.strip(),
-        requester_student_id=payload.requester_student_id.strip(),
+        requester_name=f"{student.first_name} {student.last_name}".strip(),
+        requester_student_id=student.student_id,
         request_type=payload.request_type,
         detail=payload.detail.strip(),
         status="pending",
