@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, or_
 
 from admin_auth import AdminContext
+from major_utils import normalize_major
 from models import Activity, ExternalActivity, Student, StudentRequest
 
 
@@ -83,6 +84,11 @@ def activity_major_condition(admin: AdminContext, include_unowned: bool = True):
 
     include_unowned=False: นับเฉพาะกิจกรรมที่เป็นของสาขาตัวเองจริง ๆ ใช้กับ
     สถิติ Dashboard ที่ไม่ควรเอากิจกรรมที่ยังไม่มีเจ้าของมานับเป็นของสาขาไหน
+
+    หมายเหตุ: เทียบ Activity.major ตรงตัวและใช้ IS NULL เป็นกิจกรรมส่วนกลาง
+    ถูกต้องได้เพราะพึ่งการ normalize ตอนบันทึก (Activity._normalize_major ใน
+    models.py: ตัดช่องว่าง ค่าว่าง = NULL) และ admin.major ก็ normalize แล้ว
+    (admin_auth.list_bypass_admins) ถ้าเขียน major โดยไม่ผ่าน ORM ต้อง normalize เอง
     """
     if admin.is_central:
         return None
@@ -131,9 +137,9 @@ def resolve_branch_filter(admin: AdminContext, major: str | None) -> AdminContex
     if not admin.is_central:
         return admin
 
-    selected = (major or "").strip()
+    selected = normalize_major(major)
 
-    if not selected:
+    if selected is None:
         return admin
 
     return AdminContext(email=admin.email, name=admin.name, major=selected)
