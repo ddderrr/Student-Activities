@@ -4,10 +4,10 @@
 -- X-Student-Email เหมือนแอดมิน) คนละสาขา ใช้ทดสอบ major-scoping ของกิจกรรม /
 -- การอนุมัติกิจกรรมภายนอกจากมุมมองนักศึกษาจริง
 --
--- อีเมลต้องตรงกับ backend/student_bypass.py::STUDENT_BYPASS_EMAILS
+-- อีเมล + student_id ต้องตรงกับ backend/student_bypass.py::STUDENT_LOGIN_ACCOUNTS
 
 INSERT INTO students (student_id, first_name, last_name, email, faculty, major)
 VALUES
-    ('670510001', 'นักศึกษา', 'เคมี', 'chem_student@test.local', 'คณะวิทยาศาสตร์', 'เคมี'),
-    ('670510002', 'นักศึกษา', 'คอมพิวเตอร์', 'cs_student@test.local', 'คณะวิทยาศาสตร์', 'วิทยาการคอมพิวเตอร์')
+    ('670510001', 'นักศึกษา', 'เคมี', 'chem@test.com', 'คณะวิทยาศาสตร์', 'เคมี'),
+    ('670510002', 'นักศึกษา', 'คอมพิวเตอร์', 'cs@test.com', 'คณะวิทยาศาสตร์', 'วิทยาการคอมพิวเตอร์')
 ON CONFLICT (student_id) DO NOTHING;

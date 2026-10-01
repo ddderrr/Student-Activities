@@ -47,8 +47,10 @@ export function studentHeaders(extra = {}) {
   const session = getStudentSession()
 
   if (session) {
+    // นักศึกษาจำลองสาขาเดียวกันใช้อีเมลร่วมกัน: ส่ง student_id ไปด้วยเพื่อระบุตัวคน
     return {
       'X-Student-Email': session.email,
+      ...(session.student_id ? { 'X-Student-Id': session.student_id } : {}),
       ...extra
     }
   }
@@ -58,16 +60,6 @@ export function studentHeaders(extra = {}) {
     'X-Student-Id': MOCK_STUDENT_ID,
     ...extra
   }
-}
-
-export async function fetchStudentBypassStatus() {
-  const response = await fetch(`${API_BASE}/api/student/auth/bypass`)
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
-  }
-
-  return response.json()
 }
 
 // ตรวจกับ backend ว่าอีเมลที่เลือกไว้ยังใช้ได้ คืน null ถ้าใช้ไม่ได้ / throw ถ้าต่อ backend ไม่ได้
@@ -92,13 +84,15 @@ export async function verifyStudentSession() {
   return student
 }
 
-// หน้า login ฝั่งนักศึกษา: ช่องรหัสนักศึกษา/อีเมลแบบพิมพ์เอง ค้นหานักศึกษาจริง
-// ในระบบ (ไม่ได้จำกัดแค่ 2 บัญชี shortcut) โยน error ที่มี .status ไว้แยก
-// 404 (ไม่พบ) จากปัญหาต่อ backend ไม่ได้
-export async function lookupStudentBypass(identifier) {
-  const response = await fetch(
-    `${API_BASE}/api/student/auth/lookup?identifier=${encodeURIComponent(identifier)}`
-  )
+// หน้า login ฝั่งนักศึกษา (mock: อีเมล + รหัสผ่าน ดู backend/student_bypass.py)
+// โยน error ที่มี .status ไว้แยก 404 (ไม่พบอีเมล) / 401 (รหัสผ่านผิด)
+// ออกจากปัญหาต่อ backend ไม่ได้
+export async function loginStudentWithPassword(email, password) {
+  const response = await fetch(`${API_BASE}/api/student/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  })
 
   if (!response.ok) {
     const error = new Error(`HTTP ${response.status}`)

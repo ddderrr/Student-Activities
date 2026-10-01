@@ -1,10 +1,11 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   GraduationCap,
   BriefcaseBusiness,
   LockKeyhole,
+  Mail,
   Eye,
   EyeOff,
   ArrowRight,
@@ -12,8 +13,7 @@ import {
 } from 'lucide-vue-next'
 import { useLanguage } from '../../composables/useLanguage'
 import {
-  fetchStudentBypassStatus,
-  lookupStudentBypass,
+  loginStudentWithPassword,
   setStudentSession
 } from '../../constants/currentStudent'
 
@@ -21,7 +21,7 @@ const { t } = useLanguage()
 
 const router = useRouter()
 
-const username = ref('')
+const email = ref('')
 const password = ref('')
 const rememberMe = ref(false)
 const showPassword = ref(false)
@@ -29,32 +29,39 @@ const loginError = ref('')
 const loginSubmitting = ref(false)
 
 /*
-  MOCK LOGIN (bypass สำหรับพัฒนา)
-  ช่อง "รหัสนักศึกษาหรืออีเมล" เป็นรหัสนักศึกษา/อีเมลจริงของนักศึกษาที่มีอยู่
-  ในระบบ (ไม่ตรวจรหัสผ่าน) เพื่อให้ทดสอบเป็นนักศึกษาคนไหนก็ได้ ไม่ใช่แค่ 2
-  บัญชี shortcut ด้านล่าง -- ถ้าพิมพ์ผิด/ไม่พบ ต้องขึ้น error ชัดเจน ไม่ใช่
-  เงียบ ๆ แล้วสวมรอยเป็น mock student คนอื่นแทน (บั๊กเดิม)
+  MOCK LOGIN (dev): อีเมล + รหัสผ่านของบัญชีทดสอบใน backend/student_bypass.py
+  (chem@test.com / cs@test.com รหัสผ่าน 1234)
 */
 const loginStudent = async () => {
   loginError.value = ''
 
-  const identifier = username.value.trim()
+  const value = email.value.trim()
 
-  if (!identifier) {
-    loginError.value = t.value.studentLogin.identifierRequiredError
+  if (!value) {
+    loginError.value = t.value.studentLogin.emailRequiredError
+    return
+  }
+
+  if (!password.value) {
+    loginError.value = t.value.studentLogin.passwordRequiredError
     return
   }
 
   loginSubmitting.value = true
 
   try {
-    const student = await lookupStudentBypass(identifier)
+    const student = await loginStudentWithPassword(value, password.value)
     setStudentSession(student)
     router.push('/student/activities')
   } catch (error) {
-    loginError.value = error.status === 404
-      ? t.value.studentLogin.identifierNotFoundError
-      : t.value.studentLogin.backendUnavailableError
+    if (error.status === 404) {
+      loginError.value = t.value.studentLogin.emailNotFoundError
+    } else if (error.status === 401) {
+      loginError.value = t.value.studentLogin.wrongPasswordError
+      password.value = ''
+    } else {
+      loginError.value = t.value.studentLogin.backendUnavailableError
+    }
   } finally {
     loginSubmitting.value = false
   }
@@ -63,35 +70,6 @@ const loginStudent = async () => {
 const goAdminLogin = () => {
   router.push('/admin/login')
 }
-
-/*
-  MOCK STUDENT PICKER (bypass สำหรับพัฒนา เหมือนหน้า admin login)
-  เลือกนักศึกษาทดสอบจากรายชื่อที่ backend ส่งมา (backend/student_bypass.py)
-*/
-const mockLoading = ref(true)
-const mockBackendError = ref(false)
-const mockAccounts = ref([])
-
-const loadMockStudents = async () => {
-  mockLoading.value = true
-  mockBackendError.value = false
-
-  try {
-    const status = await fetchStudentBypassStatus()
-    mockAccounts.value = status.accounts || []
-  } catch {
-    mockBackendError.value = true
-  } finally {
-    mockLoading.value = false
-  }
-}
-
-const loginAsMockStudent = (account) => {
-  setStudentSession(account)
-  router.push('/student/activities')
-}
-
-onMounted(loadMockStudents)
 </script>
 
 <template>
@@ -123,60 +101,33 @@ onMounted(loadMockStudents)
       </div>
 
 
-      <!-- Mock Student Picker (bypass สำหรับพัฒนา) -->
-      <div class="mock-student-section">
-        <p class="mock-student-title">{{ t.studentLogin.mockStudentSectionTitle }}</p>
-
-        <p v-if="mockLoading" class="status-text">
-          {{ t.studentLogin.mockStudentLoading }}
-        </p>
-
-        <div v-else-if="mockBackendError" class="notice notice-error" role="alert">
-          <TriangleAlert :size="16" />
-          <div>
-            <strong>{{ t.studentLogin.mockStudentBackendUnavailable }}</strong>
-            <button class="retry-btn" type="button" @click="loadMockStudents">
-              {{ t.studentLogin.mockStudentRetry }}
-            </button>
-          </div>
-        </div>
-
-        <div v-else class="mock-account-list">
-          <button
-            v-for="account in mockAccounts"
-            :key="account.email"
-            type="button"
-            class="mock-account-btn"
-            @click="loginAsMockStudent(account)"
-          >
-            {{ t.studentLogin.mockStudentBranchPrefix }}{{ account.major }}
-          </button>
-        </div>
-      </div>
-
-
       <!-- Login Form -->
-      <form @submit.prevent="loginStudent">
+      <form novalidate @submit.prevent="loginStudent">
 
         <div class="form-group">
-          <label>{{ t.studentLogin.usernameLabel }}</label>
+          <label for="student-login-email">{{ t.studentLogin.emailLabel }}</label>
 
           <div class="input-wrapper">
-            <BriefcaseBusiness
+            <Mail
               class="input-icon"
               :size="17"
             />
 
             <input
-              v-model="username"
-              type="text"
+              id="student-login-email"
+              v-model="email"
+              type="email"
+              name="email"
+              autocomplete="username"
+              :placeholder="t.studentLogin.emailPlaceholder"
+              @input="loginError = ''"
             />
           </div>
         </div>
 
 
         <div class="form-group">
-          <label>{{ t.studentLogin.passwordLabel }}</label>
+          <label for="student-login-password">{{ t.studentLogin.passwordLabel }}</label>
 
           <div class="input-wrapper">
             <LockKeyhole
@@ -185,13 +136,19 @@ onMounted(loadMockStudents)
             />
 
             <input
+              id="student-login-password"
               v-model="password"
               :type="showPassword ? 'text' : 'password'"
+              name="password"
+              autocomplete="current-password"
+              @input="loginError = ''"
             />
 
             <button
               class="eye-btn"
               type="button"
+              :aria-label="showPassword ? t.studentLogin.hidePassword : t.studentLogin.showPassword"
+              :title="showPassword ? t.studentLogin.hidePassword : t.studentLogin.showPassword"
               @click="showPassword = !showPassword"
             >
               <EyeOff
@@ -231,6 +188,7 @@ onMounted(loadMockStudents)
 
 
         <p v-if="loginError" class="error-text" role="alert">
+          <TriangleAlert :size="16" />
           {{ loginError }}
         </p>
 
@@ -361,101 +319,6 @@ onMounted(loadMockStudents)
 
 .admin-btn:hover {
   background: #f5f5f5;
-}
-
-
-/* =========================
-   Mock Student Picker
-========================= */
-
-.mock-student-section {
-  margin-bottom: 32px;
-
-  padding: 16px 18px;
-
-  background: #f8fafc;
-
-  border: 1px solid #d8dee9;
-  border-radius: 9px;
-}
-
-.mock-student-title {
-  margin: 0 0 12px;
-
-  font-size: var(--fs-body);
-  color: #374151;
-}
-
-.status-text {
-  margin: 0;
-
-  color: #777b85;
-  font-size: var(--fs-body);
-}
-
-.mock-account-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.mock-account-btn {
-  padding: 10px 16px;
-
-  border: 1px solid #a100d4;
-  border-radius: 7px;
-
-  background: white;
-  color: #a100d4;
-
-  font-family: inherit;
-  font-size: var(--fs-body);
-  font-weight: 500;
-
-  cursor: pointer;
-
-  transition: 0.2s;
-}
-
-.mock-account-btn:hover {
-  background: #a100d4;
-  color: white;
-}
-
-.notice {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-
-  color: #8a1c1c;
-
-  font-size: var(--fs-body);
-  line-height: 1.6;
-}
-
-.notice svg {
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-
-.notice strong {
-  display: block;
-}
-
-.retry-btn {
-  margin-top: 6px;
-  padding: 5px 12px;
-
-  border: 1px solid currentColor;
-  border-radius: 6px;
-
-  background: transparent;
-  color: inherit;
-
-  font-size: var(--fs-small);
-  font-family: inherit;
-
-  cursor: pointer;
 }
 
 
@@ -635,9 +498,20 @@ onMounted(loadMockStudents)
 
 .error-text {
   margin: -8px 0 18px;
+  padding: 10px 12px;
 
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  border-radius: 8px;
+  background: #fdeaea;
   color: #b42318;
   font-size: var(--fs-body);
+}
+
+.error-text svg {
+  flex-shrink: 0;
 }
 
 

@@ -59,7 +59,7 @@ from skill_definitions import (
     SKILL_DEFINITIONS,
     STAFF_SKILL_DEFINITIONS,
 )
-from student_bypass import STUDENT_BYPASS_EMAILS
+from student_bypass import STUDENT_LOGIN_ACCOUNTS, STUDENT_MOCK_PASSWORD
 from models import (
     Activity,
     ActivityMember,
@@ -192,51 +192,32 @@ def serialize_student_account(student: Student) -> dict:
     }
 
 
-@app.get("/api/student/auth/bypass")
-def get_student_bypass_status(db: Session = Depends(get_db)):
-    # หน้า login ฝั่งนักศึกษาใช้แสดงรายชื่อ mock student ให้เลือก (เหมือนแอดมิน)
-    students = (
-        db.query(Student)
-        .filter(func.lower(Student.email).in_(STUDENT_BYPASS_EMAILS))
-        .all()
-    )
-
-    order = {email: index for index, email in enumerate(STUDENT_BYPASS_EMAILS)}
-    students.sort(key=lambda item: order.get(item.email.strip().lower(), len(order)))
-
-    return {
-        "enabled": True,
-        "accounts": [serialize_student_account(student) for student in students],
-    }
+class StudentLoginRequest(BaseModel):
+    email: str
+    password: str
 
 
-@app.get("/api/student/auth/lookup")
-def lookup_student_bypass(
-    identifier: str,
-    db: Session = Depends(get_db),
-):
-    # หน้า login ฝั่งนักศึกษา (ฟอร์มรหัสนักศึกษา/อีเมลแบบพิมพ์เอง) ใช้เข้าสู่ระบบ
-    # เป็นนักศึกษาคนไหนก็ได้ที่มีอยู่จริงในตาราง students ไม่จำกัดแค่ 2 บัญชี
-    # bypass preset (ต่างจาก /api/student/auth/bypass ที่โชว์แค่ shortcut)
-    value = identifier.strip()
+@app.post("/api/student/auth/login")
+def login_student(payload: StudentLoginRequest, db: Session = Depends(get_db)):
+    # MOCK LOGIN (dev): รับเฉพาะบัญชีใน student_bypass.STUDENT_LOGIN_ACCOUNTS
+    # รหัสผ่านร่วมค่าเดียว -- เปลี่ยนเป็นตรวจกับระบบยืนยันตัวตนจริงเมื่อมี
+    email = payload.email.strip().lower()
 
-    if not value:
-        raise HTTPException(status_code=400, detail="กรุณาระบุรหัสนักศึกษาหรืออีเมล")
+    if not email or not payload.password:
+        raise HTTPException(status_code=400, detail="กรุณากรอกอีเมลและรหัสผ่าน")
 
-    student = db.get(Student, value)
+    student_id = STUDENT_LOGIN_ACCOUNTS.get(email)
+
+    if student_id is None:
+        raise HTTPException(status_code=404, detail="ไม่พบอีเมลนี้ในระบบ")
+
+    if payload.password != STUDENT_MOCK_PASSWORD:
+        raise HTTPException(status_code=401, detail="รหัสผ่านไม่ถูกต้อง")
+
+    student = db.get(Student, student_id)
 
     if not student:
-        student = (
-            db.query(Student)
-            .filter(func.lower(Student.email) == value.lower())
-            .first()
-        )
-
-    if not student:
-        raise HTTPException(
-            status_code=404,
-            detail="ไม่พบนักศึกษานี้ในระบบ กรุณาตรวจสอบรหัสนักศึกษาหรืออีเมลอีกครั้ง",
-        )
+        raise HTTPException(status_code=404, detail="ไม่พบอีเมลนี้ในระบบ")
 
     return serialize_student_account(student)
 
@@ -2825,11 +2806,15 @@ def get_current_student(
     email = (x_student_email or "").strip().lower()
 
     if email:
-        student = (
-            db.query(Student)
-            .filter(func.lower(Student.email) == email)
-            .first()
-        )
+        # mock student สาขาเดียวกันใช้อีเมลร่วมกัน: หลัง login frontend ส่ง
+        # X-Student-Id มาด้วย ใช้ระบุตัวคนให้ตรง (อีเมลต้องตรงกับคนนั้นด้วย)
+        query = db.query(Student).filter(func.lower(Student.email) == email)
+        student_id = (x_student_id or "").strip()
+
+        if student_id:
+            query = query.filter(Student.student_id == student_id)
+
+        student = query.order_by(Student.student_id).first()
 
         if not student:
             raise HTTPException(

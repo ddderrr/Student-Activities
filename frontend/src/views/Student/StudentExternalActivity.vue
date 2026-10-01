@@ -41,8 +41,8 @@ const SKILLS_BY_ROLE = {
   organizer: STAFF_SKILLS
 }
 
-// เก็บแยกตาม role เพื่อให้สลับบทบาทไปมาแล้วค่าที่ตั้งไว้ไม่หาย
-// เริ่มที่ level 3 (มีส่วนร่วม) ทุกทักษะ นักศึกษาติ๊ก "ไม่เกี่ยวข้อง" เองได้
+// เก็บแยกตาม role: เริ่มที่ level 3 (มีส่วนร่วม) ทุกทักษะ นักศึกษาติ๊ก "ไม่เกี่ยวข้อง" เองได้
+// เปลี่ยนบทบาทเมื่อไหร่ ชุดทักษะของบทบาทใหม่รีเซ็ตกลับเป็น level 3 (onRoleChange)
 const emptySkillLevels = () => ({
   participant: defaultSkillLevels(PARTICIPANT_SKILLS),
   organizer: defaultSkillLevels(STAFF_SKILLS)
@@ -55,7 +55,8 @@ const emptyForm = () => ({
   title: '',
   organization: '',
   activity_type: '',
-  role: 'participant',
+  // ยังไม่เลือก: ซ่อนแผงทักษะ ฟอร์มเต็มความกว้าง (เลือกแล้วจึงเป็นสองคอลัมน์)
+  role: '',
   start_date: '',
   end_date: '',
   location: '',
@@ -211,14 +212,30 @@ onMounted(async () => {
 /* =========================
    Skill Mapping
 ========================= */
-const skillDefinitions = computed(() => SKILLS_BY_ROLE[form.value.role])
+const hasRole = computed(() => Boolean(SKILLS_BY_ROLE[form.value.role]))
+
+const skillDefinitions = computed(() => SKILLS_BY_ROLE[form.value.role] || [])
 
 const activeSkillLevels = computed({
-  get: () => skillLevels.value[form.value.role],
+  get: () => skillLevels.value[form.value.role] || {},
   set: (value) => {
+    if (!hasRole.value) return
     skillLevels.value = { ...skillLevels.value, [form.value.role]: value }
   }
 })
+
+// เรียกจาก @change ของ dropdown เท่านั้น (ผู้ใช้เปลี่ยนเอง) -- ตอนโหลดรายการ
+// ที่ถูกปฏิเสธมาแก้ไข role ถูกตั้งจากโค้ด ต้องไม่ล้างระดับทักษะที่บันทึกไว้
+function onRoleChange() {
+  const definitions = SKILLS_BY_ROLE[form.value.role]
+  if (!definitions) return
+
+  skillLevels.value = {
+    ...skillLevels.value,
+    [form.value.role]: defaultSkillLevels(definitions)
+  }
+  skillsError.value = ''
+}
 
 const countRelated = (levels) =>
   Object.values(levels).filter((level) => level !== null).length
@@ -436,7 +453,8 @@ async function submitActivity() {
   if (submitting.value) return
 
   formError.value = validateForm()
-  skillsError.value = relatedSkillCount.value === 0
+  // ยังไม่เลือกบทบาท: error "กรอกช่องที่มี * ให้ครบ" ครอบคลุมแล้ว ไม่ต้องเตือนเรื่องทักษะซ้ำ
+  skillsError.value = hasRole.value && relatedSkillCount.value === 0
     ? t.value.studentExternalActivity.skillRequiredError
     : ''
 
@@ -531,7 +549,7 @@ async function confirmSubmit() {
       </p>
     </header>
 
-    <form class="page-grid" novalidate @submit.prevent="submitActivity">
+    <form class="page-grid" :class="{ 'no-role': !hasRole }" novalidate @submit.prevent="submitActivity">
       <!-- LEFT: activity details + evidence -->
       <div class="form-column form-main">
         <section class="card">
@@ -586,7 +604,8 @@ async function confirmSubmit() {
 
             <label class="field">
               <span>{{ t.studentExternalActivity.roleLabel }} <b>*</b></span>
-              <select v-model="form.role" name="role">
+              <select v-model="form.role" name="role" @change="onRoleChange">
+                <option disabled value="">{{ t.studentExternalActivity.selectRoleOption }}</option>
                 <option
                   v-for="role in EXTERNAL_ROLE_OPTIONS"
                   :key="role.value"
@@ -641,7 +660,8 @@ async function confirmSubmit() {
       </div>
 
       <!-- RIGHT: ทักษะที่ได้รับ (ติดขอบบนตอนเลื่อน) ปรับระดับใน popup -->
-      <aside class="form-column form-side">
+      <Transition name="side-panel">
+      <aside v-if="hasRole" class="form-column form-side">
         <section
           ref="skillsField"
           class="card skills-panel"
@@ -655,6 +675,9 @@ async function confirmSubmit() {
             </div>
           </div>
 
+          <!-- เนื้อหาเปลี่ยนตามบทบาท: key ตาม role ให้ fade ทุกครั้งที่สลับ -->
+          <Transition name="skills-swap" mode="out-in">
+          <div :key="form.role" class="skills-role-content">
           <div class="skills-panel-summary" :class="{ empty: relatedSkillCount === 0 }">
             <strong>{{ skillsSummaryText(relatedSkillCount) }}</strong>
             <span>{{ relatedSkillCount }} / {{ skillDefinitions.length }}</span>
@@ -693,6 +716,8 @@ async function confirmSubmit() {
             <SlidersHorizontal :size="16" />
             {{ t.studentExternalActivity.adjustSkillsButton }}
           </button>
+          </div>
+          </Transition>
 
           <p v-if="skillsError" class="field-error" role="alert">
             <TriangleAlert :size="14" />
@@ -700,6 +725,7 @@ async function confirmSubmit() {
           </p>
         </section>
       </aside>
+      </Transition>
 
       <!-- หลักฐาน: เต็มความกว้างใต้สองคอลัมน์ -->
       <section class="card evidence-card">
@@ -2002,6 +2028,48 @@ async function confirmSubmit() {
 
   .submit-result-actions .modal-confirm-button {
     order: -1;
+  }
+}
+
+/* ยังไม่เลือกบทบาท: คอลัมน์เดียวทุกขนาดจอ (specificity สูงกว่า .page-grid ใน @media) */
+.page-grid.no-role {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "main"
+    "evidence"
+    "footer";
+}
+
+/* แผงทักษะเลื่อนเข้ามาจากขวาเมื่อเลือกบทบาท / เนื้อหา fade ตอนสลับบทบาท */
+.side-panel-enter-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.side-panel-enter-from {
+  opacity: 0;
+  transform: translateX(16px);
+}
+
+.skills-swap-enter-active,
+.skills-swap-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.skills-swap-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.skills-swap-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .side-panel-enter-active,
+  .skills-swap-enter-active,
+  .skills-swap-leave-active {
+    transition: none;
   }
 }
 </style>

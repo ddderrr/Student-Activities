@@ -1,14 +1,17 @@
-"""รายชื่ออีเมลนักศึกษาทดสอบสำหรับโหมด bypass (เลือกได้ที่หน้า /student/login)
+"""บัญชี mock สำหรับหน้า login นักศึกษา (POST /api/student/auth/login) ใช้ตอนพัฒนาเท่านั้น
 
-ต่างจาก admin_accounts.py ตรงที่ข้อมูลจริง (ชื่อ, สาขา, คณะ) ไม่ได้เก็บซ้ำที่นี่
-แต่อ่านจากตาราง students เสมอ (นักศึกษามีตารางอยู่แล้ว ไม่เหมือนแอดมิน) -- ไฟล์นี้
-เก็บแค่อีเมลที่อนุญาตให้เลือกจากหน้า login
+ยังไม่มีระบบ login จริง: นักศึกษาจำลองแต่ละสาขาใช้อีเมลเดียวกัน (ดู
+migration_mock_student_login_emails.sql) และรหัสผ่านร่วมกันค่าเดียว
 
-เพิ่ม mock student ใหม่ = เพิ่มแถวใน students (ดู migration_seed_mock_students.sql)
-แล้วเพิ่มอีเมลที่นี่
+อีเมลหนึ่งมีนักศึกษาหลายคน จึงระบุไว้ที่นี่ว่า login แล้วจะได้นักศึกษาคนไหน
+(คนที่มีข้อมูลทดสอบ: กิจกรรม, external activity, notification) ข้อมูลจริง
+(ชื่อ, สาขา, คณะ) อ่านจากตาราง students เสมอ
 """
 
-STUDENT_BYPASS_EMAILS = [
-    "chem_student@test.local",
-    "cs_student@test.local",
-]
+STUDENT_MOCK_PASSWORD = "1234"
+
+# อีเมล login -> student_id ที่ได้เมื่อเข้าสู่ระบบ
+STUDENT_LOGIN_ACCOUNTS = {
+    "chem@test.com": "670510001",
+    "cs@test.com": "670510002",
+}

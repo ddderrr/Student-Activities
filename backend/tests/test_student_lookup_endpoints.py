@@ -83,38 +83,79 @@ def test_admin_search_empty_query_returns_empty_list(client):
 
 
 # ------------------------------------------------------------
-# Student login-by-ID-or-email lookup (GET /api/student/auth/lookup)
+# Student mock login (POST /api/student/auth/login)
+# นักศึกษาสาขาเดียวกันใช้อีเมลร่วมกัน login แล้วได้คนตาม STUDENT_LOGIN_ACCOUNTS
 # ------------------------------------------------------------
 
 
-def test_student_auth_lookup_by_student_id(client, db_session):
-    make_student(db_session, "670510101", "สมชาย", "ใจดี", "670510101@test.local", "วิทยาการคอมพิวเตอร์")
+def make_branch_mock_students(db_session):
+    make_student(db_session, "670510001", "นักศึกษา", "เคมี", "chem@test.com", "เคมี")
+    make_student(db_session, "670510201", "กมล", "วิทยา", "chem@test.com", "เคมี")
+    make_student(db_session, "670510002", "นักศึกษา", "คอมพิวเตอร์", "cs@test.com", "วิทยาการคอมพิวเตอร์")
+    make_student(db_session, "670510101", "สมชาย", "ใจดี", "cs@test.com", "วิทยาการคอมพิวเตอร์")
 
-    response = client.get(
-        "/api/student/auth/lookup",
-        params={"identifier": "670510101"},
-    )
+
+def test_student_login_chem_email_returns_chemistry_student(client, db_session):
+    make_branch_mock_students(db_session)
+
+    response = client.post("/api/student/auth/login", json={"email": "chem@test.com", "password": "1234"})
     assert response.status_code == 200
-    assert response.json()["student_id"] == "670510101"
+    body = response.json()
+    assert body["student_id"] == "670510001"
+    assert body["major"] == "เคมี"
+    assert body["email"] == "chem@test.com"
 
 
-def test_student_auth_lookup_by_email(client, db_session):
-    make_student(db_session, "670510101", "สมชาย", "ใจดี", "670510101@test.local", "วิทยาการคอมพิวเตอร์")
+def test_student_login_cs_email_is_case_insensitive(client, db_session):
+    make_branch_mock_students(db_session)
 
-    response = client.get(
-        "/api/student/auth/lookup",
-        params={"identifier": "670510101@test.local"},
-    )
+    response = client.post("/api/student/auth/login", json={"email": "  CS@Test.com ", "password": "1234"})
     assert response.status_code == 200
-    assert response.json()["student_id"] == "670510101"
+    assert response.json()["student_id"] == "670510002"
+    assert response.json()["major"] == "วิทยาการคอมพิวเตอร์"
 
 
-def test_student_auth_lookup_unknown_returns_404(client):
-    response = client.get(
-        "/api/student/auth/lookup",
-        params={"identifier": "nobody@test.local"},
-    )
+def test_student_login_wrong_password_returns_401(client, db_session):
+    make_branch_mock_students(db_session)
+
+    response = client.post("/api/student/auth/login", json={"email": "chem@test.com", "password": "0000"})
+    assert response.status_code == 401
+    assert response.json()["detail"] == "รหัสผ่านไม่ถูกต้อง"
+
+
+def test_student_login_unknown_email_returns_404(client, db_session):
+    make_branch_mock_students(db_session)
+
+    response = client.post("/api/student/auth/login", json={"email": "nobody@test.com", "password": "1234"})
     assert response.status_code == 404
+    assert response.json()["detail"] == "ไม่พบอีเมลนี้ในระบบ"
+
+
+def test_student_login_requires_email_and_password(client):
+    response = client.post("/api/student/auth/login", json={"email": "chem@test.com", "password": ""})
+    assert response.status_code == 400
+
+
+def test_old_student_lookup_endpoints_are_removed(client):
+    # หน้า login เดิมใช้ 2 endpoint นี้ (ไม่ตรวจรหัสผ่าน) ตอนนี้ใช้ /login แทน
+    assert client.get("/api/student/auth/lookup", params={"identifier": "670510001"}).status_code in (404, 405)
+    assert client.get("/api/student/auth/bypass").status_code in (404, 405)
+
+
+def test_shared_email_session_uses_student_id_header_to_pick_the_student(client, db_session):
+    make_branch_mock_students(db_session)
+
+    primary = client.get("/api/student/me", headers={"X-Student-Email": "chem@test.com", "X-Student-Id": "670510001"})
+    assert primary.status_code == 200
+    assert primary.json()["student_id"] == "670510001"
+
+    other = client.get("/api/student/me", headers={"X-Student-Email": "chem@test.com", "X-Student-Id": "670510201"})
+    assert other.status_code == 200
+    assert other.json()["student_id"] == "670510201"
+
+    # อีเมลต้องตรงกับคนนั้นด้วย ไม่ใช่ใส่ id ของสาขาอื่นได้
+    mismatch = client.get("/api/student/me", headers={"X-Student-Email": "chem@test.com", "X-Student-Id": "670510002"})
+    assert mismatch.status_code == 401
 
 
 # ------------------------------------------------------------
