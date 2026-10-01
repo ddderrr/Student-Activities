@@ -44,6 +44,7 @@ from admin_auth import (
     require_central_admin,
 )
 from admin_scope import (
+    can_access_student,
     ensure_can_access_activity,
     ensure_can_access_student,
     ensure_can_assign_major,
@@ -2967,7 +2968,7 @@ def confirm_activity_participants(
 
             db.add(student)
             db.flush()
-        else:
+        elif can_access_student(admin, student):
             # ถ้า import ข้อมูลล่าสุดเข้ามา ให้อัปเดต master data ด้วย
             # ช่องที่ไม่บังคับอัปเดตเฉพาะเมื่อไฟล์มีค่า ไม่งั้นคงค่าเดิมไว้
             student.first_name = first_name
@@ -2976,8 +2977,10 @@ def confirm_activity_participants(
                 student.email = email
             if faculty:
                 student.faculty = normalize_faculty(faculty)
-            if major:
+            # แอดมินสาขาย้ายนักศึกษาไปสาขาอื่นไม่ได้ (เหมือน ensure_can_assign_major)
+            if major and (admin.is_central or major == admin.major):
                 student.major = major
+        # นักศึกษาสาขาอื่น: เพิ่มเป็นผู้เข้าร่วมได้ แต่ไม่แก้ master data ของสาขานั้น
 
         existing_member = db.get(
             ActivityMember,
