@@ -5095,25 +5095,37 @@ def get_external_activity(
     return serialize_external_activity(external_activity)
 
 
+def get_optional_student(
+    x_student_id: str | None = Header(default=None),
+    x_student_email: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> Student | None:
+    # ใช้กับ endpoint ที่ทั้งแอดมินและนักศึกษาเรียกได้ (ไฟล์หลักฐาน) คู่กับ get_optional_admin
+    # ไม่มี header นักศึกษา = None มีแล้วตรวจด้วย get_current_student เหมือน endpoint
+    # นักศึกษาอื่น ตอนทำล็อกอินจริงแก้ที่ get_current_student จุดเดียว
+    if not (x_student_id or "").strip() and not (x_student_email or "").strip():
+        return None
+
+    return get_current_student(x_student_id, x_student_email, db)
+
+
 def ensure_can_view_evidence(
     external_activity: ExternalActivity,
     admin: AdminContext | None,
-    x_student_id: str | None,
+    student: Student | None,
 ) -> None:
     # ไฟล์หลักฐานเปิดได้ทั้งแอดมิน (ตามสาขา) และนักศึกษาเจ้าของคำขอ
     if admin is not None:
         ensure_can_access_student(admin, external_activity.student)
         return
 
-    student_id = (x_student_id or "").strip()
-
-    if not student_id:
+    if student is None:
         raise HTTPException(
             status_code=401,
             detail="ต้องระบุแอดมิน (X-Admin-Email) หรือนักศึกษา (X-Student-Id)",
         )
 
-    if student_id != external_activity.student_id:
+    if student.student_id != external_activity.student_id:
         raise HTTPException(
             status_code=403,
             detail="เปิดได้เฉพาะไฟล์หลักฐานของคำขอตัวเอง",
@@ -5142,14 +5154,14 @@ def get_external_activity_evidence(
     external_activity_id: int,
     db: Session = Depends(get_db),
     admin: AdminContext | None = Depends(get_optional_admin),
-    x_student_id: str | None = Header(default=None),
+    student: Student | None = Depends(get_optional_student),
 ):
     # URL เดิมแบบไฟล์เดียว: ส่งไฟล์แรกของคำขอ
     external_activity = require_external_activity(
         db,
         external_activity_id,
     )
-    ensure_can_view_evidence(external_activity, admin, x_student_id)
+    ensure_can_view_evidence(external_activity, admin, student)
 
     if not external_activity.evidence_files:
         raise HTTPException(
@@ -5166,7 +5178,7 @@ def get_external_activity_evidence_file(
     evidence_id: int,
     db: Session = Depends(get_db),
     admin: AdminContext | None = Depends(get_optional_admin),
-    x_student_id: str | None = Header(default=None),
+    student: Student | None = Depends(get_optional_student),
 ):
     evidence = db.get(ExternalActivityEvidence, evidence_id)
 
@@ -5176,7 +5188,7 @@ def get_external_activity_evidence_file(
             detail="ไม่พบไฟล์หลักฐาน",
         )
 
-    ensure_can_view_evidence(evidence.external_activity, admin, x_student_id)
+    ensure_can_view_evidence(evidence.external_activity, admin, student)
 
     return evidence_file_response(evidence)
 
