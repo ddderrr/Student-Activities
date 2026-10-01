@@ -115,6 +115,14 @@ def test_student_login_cs_email_is_case_insensitive(client, db_session):
     assert response.json()["major"] == "วิทยาการคอมพิวเตอร์"
 
 
+def test_student_login_demo_email_returns_transcript_demo_student(client, db_session):
+    make_student(db_session, "670510999", "สมหญิง", "ใจดีมีน้ำใจ", "demo@test.com", "เคมี")
+
+    response = client.post("/api/student/auth/login", json={"email": "demo@test.com", "password": "1234"})
+    assert response.status_code == 200
+    assert response.json()["student_id"] == "670510999"
+
+
 def test_student_login_wrong_password_returns_401(client, db_session):
     make_branch_mock_students(db_session)
 
