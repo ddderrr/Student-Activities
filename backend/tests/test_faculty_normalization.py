@@ -4,9 +4,9 @@ import pytest
 
 from faculty_utils import DEFAULT_FACULTY, normalize_faculty
 from models import Activity, Student
-from tests.test_students_import import VALID_HEADERS, build_xlsx
+from tests.test_students_import import VALID_HEADERS, XLSX_CONTENT_TYPE, build_xlsx
 from tests.test_students_import import upload as upload_xlsx
-from tests.test_students_import_legacy_xls import build_legacy_xls
+from tests.test_students_import_legacy_xls import XLS_CONTENT_TYPE, build_legacy_xls
 from tests.test_students_import_legacy_xls import upload as upload_legacy_xls
 
 
@@ -173,3 +173,95 @@ def test_participant_import_blank_faculty_keeps_existing_value(client, db_sessio
     assert response.status_code == 200, response.text
     db_session.expire_all()
     assert db_session.get(Student, "670510001").faculty == "คณะวิศวกรรมศาสตร์"
+
+
+# ------------------------------------------------------------
+# POST /api/activities/{id}/participants/import/preview
+# ------------------------------------------------------------
+
+
+def preview(client, activity_id, content, filename, content_type):
+    return client.post(
+        f"/api/activities/{activity_id}/participants/import/preview",
+        files={"file": (filename, content, content_type)},
+    )
+
+
+def test_participant_preview_shows_normalized_faculty(client, db_session):
+    activity = create_activity(db_session)
+    rows = [
+        ["670510001", "A", "One", "a@cmu.ac.th", "  คณะวิทยาศาสตร์ ", ""],
+        ["670510002", "B", "Two", "b@cmu.ac.th", "FACULTY OF SCIENCE", ""],
+        ["670510003", "C", "Three", "c@cmu.ac.th", "คณะวิศวกรรมศาสตร์ ", ""],
+        ["670510004", "D", "Four", "d@cmu.ac.th", "", ""],
+    ]
+
+    response = preview(
+        client,
+        activity.id,
+        build_xlsx(VALID_HEADERS, rows),
+        "participants.xlsx",
+        XLSX_CONTENT_TYPE,
+    )
+
+    assert response.status_code == 200, response.text
+    faculties = [s["faculty"] for s in response.json()["students"]]
+    # ค่าว่างคงไว้ เพราะตอน confirm ค่าว่าง = คงคณะเดิมของนักศึกษาที่มีอยู่แล้ว
+    assert faculties == [
+        "Faculty of Science",
+        "Faculty of Science",
+        "คณะวิศวกรรมศาสตร์",
+        "",
+    ]
+
+
+def test_participant_preview_legacy_xls_shows_normalized_faculty(client, db_session):
+    activity = create_activity(db_session)
+    content = build_legacy_xls(
+        [
+            [1, "670510670", "จักริน ชวชาติ", " คณะวิทยาศาสตร์ ", "10:05:00"],
+            [2, "670510671", "สมหญิง ใจดี", "", "10:06:00"],
+        ]
+    )
+
+    response = preview(client, activity.id, content, "checkin.xls", XLS_CONTENT_TYPE)
+
+    assert response.status_code == 200, response.text
+    faculties = [s["faculty"] for s in response.json()["students"]]
+    assert faculties == ["Faculty of Science", ""]
+
+
+# ------------------------------------------------------------
+# PATCH /api/activities/{id}/participants/{student_id} (แอดมินแก้เอง)
+# ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("faculty", "expected"),
+    [
+        (" คณะวิทยาศาสตร์ ", "Faculty of Science"),
+        ("faculty of SCIENCE", "Faculty of Science"),
+        ("", "Faculty of Science"),
+        (" คณะวิศวกรรมศาสตร์", "คณะวิศวกรรมศาสตร์"),
+    ],
+)
+def test_admin_edit_participant_normalizes_faculty(client, db_session, faculty, expected):
+    activity = create_activity(db_session)
+    confirm(client, activity.id, [participant("670510001", "คณะวิศวกรรมศาสตร์")])
+
+    response = client.patch(
+        f"/api/activities/{activity.id}/participants/670510001",
+        json={
+            "first_name": "ชื่อ",
+            "last_name": "นามสกุล",
+            "email": "",
+            "faculty": faculty,
+            "major": "",
+            "role": "participant",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["faculty"] == expected
+    db_session.expire_all()
+    assert db_session.get(Student, "670510001").faculty == expected

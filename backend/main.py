@@ -1981,6 +1981,13 @@ async def read_student_file(
         df = normalize_student_columns(df)
         invalid_rows = validate_students(df)
 
+    # แสดงชื่อคณะหลังแปลงแล้ว (เหมือนตอนบันทึก) แต่ค่าว่างคงไว้
+    # เพราะตอน confirm ค่าว่าง = คงคณะเดิมของนักศึกษาที่มีอยู่แล้ว
+    df["faculty"] = [
+        normalize_faculty(value) if str(value).strip() else ""
+        for value in df["faculty"]
+    ]
+
     return {
         "filename": filename,
         "total": len(df),
@@ -2755,7 +2762,7 @@ def update_activity_participant(
     first_name = payload.first_name.strip()
     last_name = payload.last_name.strip()
     email = payload.email.strip()
-    faculty = payload.faculty.strip()
+    faculty = normalize_faculty(payload.faculty)
     major = payload.major.strip()
     role = normalize_role(payload.role)
 
