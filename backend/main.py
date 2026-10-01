@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 from uuid import uuid4
 import unicodedata
+from xml.sax.saxutils import escape as xml_escape
 
 import openpyxl
 import openpyxl.styles
@@ -4779,6 +4780,15 @@ def build_skill_radar_pdf(
     return drawing
 
 
+def escape_pdf_text(value: str) -> str:
+    """ข้อความจากผู้ใช้ก่อนใส่ Paragraph ของ ReportLab (ซึ่งอ่านเป็น markup)
+
+    ไม่ escape แล้วชื่อกิจกรรมอย่าง <img src="..."> จะอ่านไฟล์ / เรียก URL จากเซิร์ฟเวอร์
+    และแท็กที่ไม่ครบ (<b>x) ทำให้สร้าง PDF ไม่ได้
+    """
+    return xml_escape(str(value))
+
+
 @app.get("/api/student/me/skills/export")
 def export_my_skills_pdf(
     period: str | None = None,
@@ -4851,7 +4861,7 @@ def export_my_skills_pdf(
         Paragraph("Student Skill Transcript", title_style),
         Spacer(1, 3 * mm),
         Paragraph(
-            (
+            escape_pdf_text(
                 f"{student.first_name} {student.last_name} "
                 f"| ID: {student.student_id} "
                 f"| Period: {selected['label']} "
@@ -4881,7 +4891,7 @@ def export_my_skills_pdf(
 
         skill_rows.append(
             [
-                Paragraph(label, body_style),
+                Paragraph(escape_pdf_text(label), body_style),
                 "-" if value is None else f"{value:.2f}",
             ]
         )
@@ -4924,8 +4934,8 @@ def export_my_skills_pdf(
 
         activity_rows.append(
             [
-                Paragraph(activity["title"] or "-", small_style),
-                Paragraph(skills_text or "-", small_style),
+                Paragraph(escape_pdf_text(activity["title"] or "-"), small_style),
+                Paragraph(escape_pdf_text(skills_text or "-"), small_style),
                 activity["start_at"].strftime("%d/%m/%Y"),
                 activity["status"] or "-",
             ]
