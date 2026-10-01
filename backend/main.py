@@ -57,6 +57,11 @@ from admin_scope import (
 import academic_calendar
 from database import Base, SessionLocal, engine, get_db
 from faculty_utils import normalize_faculty
+from import_limits import (
+    MAX_IMPORT_ROWS,
+    ensure_import_file_within_limits,
+    read_import_upload,
+)
 import transcript_data
 from transcript_pdf import STYLES as TRANSCRIPT_STYLES, render_transcript_pdf
 from skill_scoring import (
@@ -1901,7 +1906,7 @@ def validate_students(
     return invalid_rows
 
 
-async def read_student_file(
+def read_student_file(
     file: UploadFile,
 ) -> dict:
     filename = file.filename or ""
@@ -1917,13 +1922,15 @@ async def read_student_file(
             detail="รองรับเฉพาะไฟล์ .csv, .xlsx และ .xls",
         )
 
-    contents = await file.read()
+    contents = read_import_upload(file)
 
     if not contents:
         raise HTTPException(
             status_code=400,
             detail="ไฟล์ว่าง",
         )
+
+    ensure_import_file_within_limits(contents, extension)
 
     is_legacy_xls = extension == ".xls"
 
@@ -2343,7 +2350,7 @@ def import_students_from_legacy_xls(
 
 
 @app.post("/api/students/import", status_code=201)
-async def import_students(
+def import_students(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     _admin: AdminContext = Depends(require_central_admin),
@@ -2367,13 +2374,15 @@ async def import_students(
             detail="รองรับเฉพาะไฟล์ .xlsx และ .xls เท่านั้น",
         )
 
-    contents = await file.read()
+    contents = read_import_upload(file)
 
     if not contents:
         raise HTTPException(
             status_code=400,
             detail="ไฟล์ว่าง",
         )
+
+    ensure_import_file_within_limits(contents, extension)
 
     if extension == ".xls":
         return import_students_from_legacy_xls(
@@ -2401,7 +2410,6 @@ STUDENT_IMPORT_TEMPLATE_HEADERS = [
     ("อีเมล", "email"),
     ("สาขาวิชา", "major"),
 ]
-STUDENT_IMPORT_MAX_BYTES = 5 * 1024 * 1024
 STUDENT_IMPORT_MAX_ROWS = 5000
 STUDENT_IMPORT_FIELD_LIMITS = {
     "student_id": 30,
@@ -2533,7 +2541,7 @@ def download_student_import_template(_admin: AdminContext = Depends(require_cent
 
 
 @app.post("/api/admin/students/import")
-async def import_students_from_settings(
+def import_students_from_settings(
     file: UploadFile = File(...),
     dry_run: bool = False,
     db: Session = Depends(get_db),
@@ -2548,11 +2556,10 @@ async def import_students_from_settings(
     if extension not in STUDENT_IMPORT_EXTENSIONS:
         raise HTTPException(status_code=400, detail="รองรับเฉพาะไฟล์ .xlsx, .xls และ .csv เท่านั้น")
 
-    contents = await file.read(STUDENT_IMPORT_MAX_BYTES + 1)
+    contents = read_import_upload(file)
     if not contents:
         raise HTTPException(status_code=400, detail="ไฟล์ว่าง")
-    if len(contents) > STUDENT_IMPORT_MAX_BYTES:
-        raise HTTPException(status_code=400, detail="ไฟล์ใหญ่เกิน 5MB")
+    ensure_import_file_within_limits(contents, extension)
 
     rows = build_student_import_rows(contents, extension, db)
 
@@ -2823,7 +2830,7 @@ def search_students(
 @app.post(
     "/api/activities/{activity_id}/participants/import/preview"
 )
-async def preview_activity_participants(
+def preview_activity_participants(
     activity_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -2835,7 +2842,7 @@ async def preview_activity_participants(
         admin,
     )
 
-    result = await read_student_file(file)
+    result = read_student_file(file)
 
     return {
         "activity_id": activity_id,
@@ -2844,7 +2851,7 @@ async def preview_activity_participants(
 
 
 class ConfirmImportRequest(BaseModel):
-    students: list[dict]
+    students: list[dict] = Field(max_length=MAX_IMPORT_ROWS)
 
 
 def normalize_role(value) -> str:
