@@ -1,9 +1,11 @@
 from contextlib import asynccontextmanager
 from datetime import date, datetime
+from functools import lru_cache
 from io import BytesIO, StringIO
 import json
 import math
 from pathlib import Path
+import secrets
 import shutil
 from uuid import uuid4
 import unicodedata
@@ -40,6 +42,7 @@ from admin_auth import (
     admin_context,
     get_current_admin,
     get_optional_admin,
+    is_admin_bypass_enabled,
     require_central_admin,
 )
 from admin_scope import (
@@ -81,7 +84,15 @@ from skill_definitions import (
     STAFF_SKILL_DEFINITIONS,
 )
 from student_bypass import STUDENT_LOGIN_ACCOUNTS, STUDENT_MOCK_PASSWORD
-from auth_tokens import bearer_token, hash_password, issue_token, read_token, verify_password
+from auth_tokens import (
+    bearer_token,
+    hash_password,
+    is_auth_configured,
+    issue_token,
+    read_token,
+    verify_password,
+    warn_if_auth_secret_missing,
+)
 from branches import BRANCHES
 from models import (
     Admin,
@@ -136,6 +147,7 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     seed_skills()
     EXTERNAL_ACTIVITY_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    warn_if_auth_secret_missing()
 
     yield
 
@@ -210,19 +222,25 @@ class LoginRequest(BaseModel):
     password: str
 
 
-def find_student_by_login_email(db: Session, email: str) -> Student | None:
-    # อีเมล mock ที่ใช้ร่วมกันทั้งสาขา ระบุคนไว้ใน STUDENT_LOGIN_ACCOUNTS
+def find_mock_login_student(db: Session, email: str) -> Student | None:
+    # MOCK LOGIN (dev): นักศึกษายังไม่มีรหัสผ่านของตัวเอง ใช้รหัสร่วม STUDENT_MOCK_PASSWORD
+    # จึงให้ใช้ได้เฉพาะบัญชีทดสอบใน STUDENT_LOGIN_ACCOUNTS และเฉพาะตอนเปิด
+    # ADMIN_BYPASS_ENABLED (ปิดสวิตช์เดียว = ทางลัด dev ปิดหมด) นักศึกษาจริงที่ import
+    # เข้ามา login ไม่ได้จนกว่าจะมีระบบ login จริง (CMU OAuth)
+    if not is_admin_bypass_enabled():
+        return None
+
     student_id = STUDENT_LOGIN_ACCOUNTS.get(email)
+    return db.get(Student, student_id) if student_id else None
 
-    if student_id is not None:
-        return db.get(Student, student_id)
 
-    return (
-        db.query(Student)
-        .filter(func.lower(func.trim(Student.email)) == email)
-        .order_by(Student.student_id)
-        .first()
-    )
+LOGIN_INVALID_DETAIL = "อีเมลหรือรหัสผ่านไม่ถูกต้อง"
+
+
+@lru_cache(maxsize=1)
+def dummy_password_hash() -> str:
+    # hash ของรหัสสุ่มที่ไม่มีใครรู้ ใช้ให้ทุกการ login ตรวจ PBKDF2 หนึ่งครั้งเท่ากัน
+    return hash_password(secrets.token_urlsafe(32))
 
 
 @app.post("/api/auth/login")
@@ -237,11 +255,20 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     if not email or not payload.password:
         raise HTTPException(status_code=400, detail="กรุณากรอกอีเมลและรหัสผ่าน")
 
+    # ไม่มี AUTH_SECRET ออก token ไม่ได้: ตอบก่อนตรวจบัญชี (ดู auth_tokens.py)
+    if not is_auth_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="ระบบเข้าสู่ระบบยังไม่พร้อม: ผู้ดูแลต้องตั้ง AUTH_SECRET ใน .env",
+        )
+
     admin = db.query(Admin).filter(Admin.email == email).first()
 
+    # "ไม่พบบัญชี" กับ "รหัสผิด" ตอบเหมือนกัน และตรวจ PBKDF2 หนึ่งครั้งทุกกรณี
+    # ไม่งั้นดูจากข้อความหรือเวลาที่ตอบก็รู้ว่าอีเมลไหนมีในระบบ / เป็นแอดมิน
     if admin is not None:
         if not verify_password(payload.password, admin.password_hash):
-            raise HTTPException(status_code=401, detail="รหัสผ่านไม่ถูกต้อง")
+            raise HTTPException(status_code=401, detail=LOGIN_INVALID_DETAIL)
 
         return {
             "role": "admin",
@@ -249,19 +276,17 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
             "admin": serialize_admin(admin_context(admin)),
         }
 
-    student = find_student_by_login_email(db, email)
+    verify_password(payload.password, dummy_password_hash())
+    student = find_mock_login_student(db, email)
 
-    if student is not None:
-        if payload.password != STUDENT_MOCK_PASSWORD:
-            raise HTTPException(status_code=401, detail="รหัสผ่านไม่ถูกต้อง")
+    if student is None or payload.password != STUDENT_MOCK_PASSWORD:
+        raise HTTPException(status_code=401, detail=LOGIN_INVALID_DETAIL)
 
-        return {
-            "role": "student",
-            "token": issue_token("student", student.student_id),
-            "student": serialize_student_account(student),
-        }
-
-    raise HTTPException(status_code=404, detail="ไม่พบบัญชีผู้ใช้นี้ในระบบ")
+    return {
+        "role": "student",
+        "token": issue_token("student", student.student_id),
+        "student": serialize_student_account(student),
+    }
 
 
 # ============================================================
@@ -3411,10 +3436,12 @@ def get_current_student(
 
         return student
 
-    # ทางเดิม (header) ยังใช้ได้สำหรับเทสต์/เครื่องมือพัฒนา
-    # ยังไม่มีระบบ login นักศึกษา: frontend ส่ง student ID จำลองมาใน header
-    # เปลี่ยนเป็นอ่านจาก session/token เมื่อมีระบบ login จริง
-    #
+    # ทางเดิม (header) ใช้ได้เฉพาะเทสต์/เครื่องมือพัฒนา ตอนเปิด ADMIN_BYPASS_ENABLED
+    # (สวิตช์เดียวกับ header X-Admin-Email) ปิดอยู่ = ต้องใช้ Bearer token เท่านั้น
+    # ไม่งั้นใครส่ง X-Student-Id ของคนอื่นก็เป็นคนนั้นได้
+    if not is_admin_bypass_enabled():
+        raise HTTPException(status_code=401, detail="กรุณาเข้าสู่ระบบ")
+
     # หน้า /student/login ให้เลือก mock student จากอีเมล (เหมือนแอดมิน) ส่งมาเป็น
     # X-Student-Email แทน X-Student-Id -- ต้องเป็นนักศึกษาที่มีอยู่จริงในตาราง
     # students เท่านั้น (ไม่ auto-create เหมือน path X-Student-Id ด้านล่าง)

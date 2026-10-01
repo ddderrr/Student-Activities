@@ -3,25 +3,53 @@
 token = base64url(payload JSON) + "." + base64url(HMAC(payload))
 payload: {"role": "admin" | "student", "sub": admin id / student_id, "exp": unix time}
 
-ตั้ง AUTH_SECRET ใน .env (ต้องเปลี่ยนก่อนใช้งานจริง) ถ้าไม่ตั้งจะใช้ค่า dev
-ที่ใครก็รู้ ทำให้ปลอม token ได้
+ต้องตั้ง AUTH_SECRET ใน .env (อย่างน้อย MIN_SECRET_LENGTH ตัวอักษร) ถ้าไม่ได้ตั้งหรือสั้นเกิน
+ระบบจะไม่ออกและไม่รับ token เลย (fail closed) ไม่มีค่าสำรองในโค้ด เพราะค่าที่อยู่ใน git
+ใครก็ใช้ปลอม token ได้ สร้างค่าสุ่มด้วย:
+
+    python -c "import secrets; print(secrets.token_urlsafe(48))"
 """
 
 import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import time
 
 TOKEN_TTL_SECONDS = 24 * 60 * 60
 PASSWORD_ITERATIONS = 200_000
-DEV_SECRET = "dev-insecure-secret-change-me"
+MIN_SECRET_LENGTH = 32
+
+logger = logging.getLogger("uvicorn.error")
 
 
-def _secret() -> bytes:
-    return (os.getenv("AUTH_SECRET") or DEV_SECRET).encode()
+class AuthNotConfigured(RuntimeError):
+    """ยังไม่ได้ตั้ง AUTH_SECRET (หรือสั้นเกิน): ออก token ไม่ได้"""
+
+
+def _secret() -> bytes | None:
+    # อ่านทุกครั้ง ไม่ cache (เปลี่ยนใน .env / เทสต์แล้วมีผลทันที) ค่าสั้นเกิน = ไม่ได้ตั้ง
+    value = (os.getenv("AUTH_SECRET") or "").strip()
+    return value.encode() if len(value) >= MIN_SECRET_LENGTH else None
+
+
+def is_auth_configured() -> bool:
+    return _secret() is not None
+
+
+def warn_if_auth_secret_missing() -> None:
+    """เรียกตอน backend เริ่ม: บอกชัด ๆ ว่าทำไม login ไม่ได้"""
+    if not is_auth_configured():
+        logger.warning(
+            "AUTH_SECRET is not set or shorter than %d characters: login is disabled "
+            "and every token is rejected. Generate one with "
+            "python -c \"import secrets; print(secrets.token_urlsafe(48))\" "
+            "and put it in .env, then restart the backend.",
+            MIN_SECRET_LENGTH,
+        )
 
 
 def _b64encode(raw: bytes) -> str:
@@ -50,20 +78,30 @@ def verify_password(password: str, stored: str) -> bool:
 
 
 def issue_token(role: str, subject: str) -> str:
+    secret = _secret()
+
+    if secret is None:
+        raise AuthNotConfigured
+
     payload = json.dumps(
         {"role": role, "sub": str(subject), "exp": int(time.time()) + TOKEN_TTL_SECONDS},
         separators=(",", ":"),
     ).encode()
-    signature = hmac.new(_secret(), payload, hashlib.sha256).digest()
+    signature = hmac.new(secret, payload, hashlib.sha256).digest()
     return f"{_b64encode(payload)}.{_b64encode(signature)}"
 
 
 def read_token(token: str | None, role: str) -> str | None:
     """คืน subject ถ้า token ถูกต้อง ยังไม่หมดอายุ และเป็น role ที่ต้องการ ไม่งั้น None"""
+    secret = _secret()
+
+    if secret is None:
+        return None
+
     try:
         payload_part, signature_part = (token or "").split(".")
         payload = _b64decode(payload_part)
-        expected = hmac.new(_secret(), payload, hashlib.sha256).digest()
+        expected = hmac.new(secret, payload, hashlib.sha256).digest()
         if not hmac.compare_digest(expected, _b64decode(signature_part)):
             return None
         data = json.loads(payload)

@@ -5,7 +5,7 @@ import { API_BASE, clearStudentSession, getStudentSession, setStudentSession } f
 export const ADMIN_HOME = '/admin/dashboard'
 export const STUDENT_HOME = '/student/activities'
 
-// โยน error ที่มี .status: 404 = ไม่พบบัญชี, 401 = รหัสผ่านผิด, ไม่มี status = ต่อ backend ไม่ได้
+// โยน error ที่มี .status: 401 = อีเมลหรือรหัสผ่านไม่ถูกต้อง, ไม่มี status = ต่อ backend ไม่ได้
 export async function loginWithPassword(email, password) {
   const response = await fetch(`${API_BASE}/api/auth/login`, {
     method: 'POST',

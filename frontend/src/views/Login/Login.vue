@@ -39,7 +39,8 @@ function targetAfterLogin(role, home) {
 /*
   หน้า login เดียวสำหรับทุกคน: backend หาในตาราง admins ก่อน แล้วจึง students
   (บัญชีทดสอบ: central@gmail.com / cs@gmail.com / chem@gmail.com รหัสผ่าน 1234
-  นักศึกษาใช้อีเมลของตัวเอง รหัสผ่าน 1234)
+  นักศึกษาทดสอบ: chem@test.com / cs@test.com / demo@test.com รหัสผ่าน 1234 ใช้ได้เฉพาะตอนเปิด
+  ADMIN_BYPASS_ENABLED ดู backend/student_bypass.py)
 */
 const login = async () => {
   loginError.value = ''
@@ -62,10 +63,9 @@ const login = async () => {
     const { role, home } = await loginWithPassword(value, password.value)
     router.replace(targetAfterLogin(role, home))
   } catch (error) {
-    if (error.status === 404) {
-      loginError.value = t.value.studentLogin.accountNotFoundError
-    } else if (error.status === 401) {
-      loginError.value = t.value.studentLogin.wrongPasswordError
+    // backend ตอบ 401 เหมือนกันทั้งไม่พบบัญชีและรหัสผิด (ไม่บอกว่าอีเมลไหนมีในระบบ)
+    if (error.status === 401) {
+      loginError.value = t.value.studentLogin.invalidCredentialsError
       password.value = ''
     } else {
       loginError.value = t.value.studentLogin.backendUnavailableError
