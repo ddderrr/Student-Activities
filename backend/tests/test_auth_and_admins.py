@@ -2,6 +2,7 @@
 
 import pytest
 
+import main as main_module
 from auth_tokens import hash_password, issue_token
 from models import Admin, Student
 from seed_admins import seed_admins
@@ -174,3 +175,25 @@ def test_student_token_opens_own_evidence_list(no_bypass, seeded):
 
     response = no_bypass.get("/api/student/me/external-activities", headers=bearer(token))
     assert response.status_code == 200
+
+
+def test_evidence_opens_with_login_tokens(no_bypass, seeded, db_session):
+    # หลัง merge: endpoint ไฟล์หลักฐานใช้ get_optional_student (ของเพื่อน) ซึ่งรับ token ด้วย
+    from tests.test_settings_student_manage import add_related_data, make_student
+
+    make_student(db_session, "670510999", major="เคมี", email="other@gmail.com")
+    _, external_id, _ = add_related_data(db_session, "670510676")
+    evidence_id = db_session.query(main_module.ExternalActivityEvidence).filter_by(external_activity_id=external_id).one().id
+    url = f"/api/external-activities/{external_id}/evidence/{evidence_id}"
+
+    owner = bearer(login(no_bypass, "test01@gmail.com").json()["token"])
+    other = bearer(login(no_bypass, "other@gmail.com").json()["token"])
+    central = bearer(login(no_bypass, "central@gmail.com").json()["token"])
+    chem = bearer(login(no_bypass, "chem@gmail.com").json()["token"])
+
+    assert no_bypass.get(url, headers=owner).status_code == 200
+    assert no_bypass.get(url, headers=other).status_code == 403
+    assert no_bypass.get(url, headers=central).status_code == 200
+    # test01 อยู่สาขาวิทยาการคอมพิวเตอร์: แอดมินเคมีเปิดไม่ได้
+    assert no_bypass.get(url, headers=chem).status_code == 403
+    assert no_bypass.get(url).status_code == 401

@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 from uuid import uuid4
 import unicodedata
+from xml.sax.saxutils import escape as xml_escape
 
 import openpyxl
 import openpyxl.styles
@@ -42,6 +43,7 @@ from admin_auth import (
     require_central_admin,
 )
 from admin_scope import (
+    can_access_student,
     ensure_can_access_activity,
     ensure_can_access_student,
     ensure_can_assign_major,
@@ -54,6 +56,11 @@ from admin_scope import (
 import academic_calendar
 from database import Base, SessionLocal, engine, get_db
 from faculty_utils import normalize_faculty
+from import_limits import (
+    MAX_IMPORT_ROWS,
+    ensure_import_file_within_limits,
+    read_import_upload,
+)
 import transcript_data
 from transcript_pdf import STYLES as TRANSCRIPT_STYLES, render_transcript_pdf
 from skill_scoring import (
@@ -1912,7 +1919,7 @@ def validate_students(
     return invalid_rows
 
 
-async def read_student_file(
+def read_student_file(
     file: UploadFile,
 ) -> dict:
     filename = file.filename or ""
@@ -1928,13 +1935,15 @@ async def read_student_file(
             detail="รองรับเฉพาะไฟล์ .csv, .xlsx และ .xls",
         )
 
-    contents = await file.read()
+    contents = read_import_upload(file)
 
     if not contents:
         raise HTTPException(
             status_code=400,
             detail="ไฟล์ว่าง",
         )
+
+    ensure_import_file_within_limits(contents, extension)
 
     is_legacy_xls = extension == ".xls"
 
@@ -2354,7 +2363,7 @@ def import_students_from_legacy_xls(
 
 
 @app.post("/api/students/import", status_code=201)
-async def import_students(
+def import_students(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     _admin: AdminContext = Depends(require_central_admin),
@@ -2378,13 +2387,15 @@ async def import_students(
             detail="รองรับเฉพาะไฟล์ .xlsx และ .xls เท่านั้น",
         )
 
-    contents = await file.read()
+    contents = read_import_upload(file)
 
     if not contents:
         raise HTTPException(
             status_code=400,
             detail="ไฟล์ว่าง",
         )
+
+    ensure_import_file_within_limits(contents, extension)
 
     if extension == ".xls":
         return import_students_from_legacy_xls(
@@ -2412,7 +2423,6 @@ STUDENT_IMPORT_TEMPLATE_HEADERS = [
     ("อีเมล", "email"),
     ("สาขาวิชา", "major"),
 ]
-STUDENT_IMPORT_MAX_BYTES = 5 * 1024 * 1024
 STUDENT_IMPORT_MAX_ROWS = 5000
 STUDENT_IMPORT_FIELD_LIMITS = {
     "student_id": 30,
@@ -2544,7 +2554,7 @@ def download_student_import_template(_admin: AdminContext = Depends(require_cent
 
 
 @app.post("/api/admin/students/import")
-async def import_students_from_settings(
+def import_students_from_settings(
     file: UploadFile = File(...),
     dry_run: bool = False,
     db: Session = Depends(get_db),
@@ -2559,11 +2569,10 @@ async def import_students_from_settings(
     if extension not in STUDENT_IMPORT_EXTENSIONS:
         raise HTTPException(status_code=400, detail="รองรับเฉพาะไฟล์ .xlsx, .xls และ .csv เท่านั้น")
 
-    contents = await file.read(STUDENT_IMPORT_MAX_BYTES + 1)
+    contents = read_import_upload(file)
     if not contents:
         raise HTTPException(status_code=400, detail="ไฟล์ว่าง")
-    if len(contents) > STUDENT_IMPORT_MAX_BYTES:
-        raise HTTPException(status_code=400, detail="ไฟล์ใหญ่เกิน 5MB")
+    ensure_import_file_within_limits(contents, extension)
 
     rows = build_student_import_rows(contents, extension, db)
 
@@ -2940,7 +2949,7 @@ def search_students(
 @app.post(
     "/api/activities/{activity_id}/participants/import/preview"
 )
-async def preview_activity_participants(
+def preview_activity_participants(
     activity_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -2952,7 +2961,7 @@ async def preview_activity_participants(
         admin,
     )
 
-    result = await read_student_file(file)
+    result = read_student_file(file)
 
     return {
         "activity_id": activity_id,
@@ -2961,7 +2970,7 @@ async def preview_activity_participants(
 
 
 class ConfirmImportRequest(BaseModel):
-    students: list[dict]
+    students: list[dict] = Field(max_length=MAX_IMPORT_ROWS)
 
 
 def normalize_role(value) -> str:
@@ -3085,7 +3094,7 @@ def confirm_activity_participants(
 
             db.add(student)
             db.flush()
-        else:
+        elif can_access_student(admin, student):
             # ถ้า import ข้อมูลล่าสุดเข้ามา ให้อัปเดต master data ด้วย
             # ช่องที่ไม่บังคับอัปเดตเฉพาะเมื่อไฟล์มีค่า ไม่งั้นคงค่าเดิมไว้
             student.first_name = first_name
@@ -3094,8 +3103,10 @@ def confirm_activity_participants(
                 student.email = email
             if faculty:
                 student.faculty = normalize_faculty(faculty)
-            if major:
+            # แอดมินสาขาย้ายนักศึกษาไปสาขาอื่นไม่ได้ (เหมือน ensure_can_assign_major)
+            if major and (admin.is_central or major == admin.major):
                 student.major = major
+        # นักศึกษาสาขาอื่น: เพิ่มเป็นผู้เข้าร่วมได้ แต่ไม่แก้ master data ของสาขานั้น
 
         existing_member = db.get(
             ActivityMember,
@@ -4914,6 +4925,15 @@ def build_skill_radar_pdf(
     return drawing
 
 
+def escape_pdf_text(value: str) -> str:
+    """ข้อความจากผู้ใช้ก่อนใส่ Paragraph ของ ReportLab (ซึ่งอ่านเป็น markup)
+
+    ไม่ escape แล้วชื่อกิจกรรมอย่าง <img src="..."> จะอ่านไฟล์ / เรียก URL จากเซิร์ฟเวอร์
+    และแท็กที่ไม่ครบ (<b>x) ทำให้สร้าง PDF ไม่ได้
+    """
+    return xml_escape(str(value))
+
+
 @app.get("/api/student/me/skills/export")
 def export_my_skills_pdf(
     period: str | None = None,
@@ -4986,7 +5006,7 @@ def export_my_skills_pdf(
         Paragraph("Student Skill Transcript", title_style),
         Spacer(1, 3 * mm),
         Paragraph(
-            (
+            escape_pdf_text(
                 f"{student.first_name} {student.last_name} "
                 f"| ID: {student.student_id} "
                 f"| Period: {selected['label']} "
@@ -5016,7 +5036,7 @@ def export_my_skills_pdf(
 
         skill_rows.append(
             [
-                Paragraph(label, body_style),
+                Paragraph(escape_pdf_text(label), body_style),
                 "-" if value is None else f"{value:.2f}",
             ]
         )
@@ -5059,8 +5079,8 @@ def export_my_skills_pdf(
 
         activity_rows.append(
             [
-                Paragraph(activity["title"] or "-", small_style),
-                Paragraph(skills_text or "-", small_style),
+                Paragraph(escape_pdf_text(activity["title"] or "-"), small_style),
+                Paragraph(escape_pdf_text(skills_text or "-"), small_style),
                 activity["start_at"].strftime("%d/%m/%Y"),
                 activity["status"] or "-",
             ]
@@ -5210,26 +5230,46 @@ def get_external_activity(
     return serialize_external_activity(external_activity)
 
 
+def get_optional_student(
+    authorization: str | None = Header(default=None),
+    x_student_id: str | None = Header(default=None),
+    x_student_email: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> Student | None:
+    # ใช้กับ endpoint ที่ทั้งแอดมินและนักศึกษาเรียกได้ (ไฟล์หลักฐาน) คู่กับ get_optional_admin
+    # ไม่มีตัวตนนักศึกษา (token หรือ header) = None มีแล้วตรวจด้วย get_current_student
+    # จุดเดียวกับ endpoint นักศึกษาอื่น
+    # token ของแอดมินไม่ใช่ของนักศึกษา: get_optional_admin รับไปแล้ว ไม่ต้องตรวจซ้ำที่นี่
+    student_token = bearer_token(authorization) and read_token(bearer_token(authorization), "student")
+
+    if not student_token and not (x_student_id or "").strip() and not (x_student_email or "").strip():
+        return None
+
+    return get_current_student(
+        authorization=authorization if student_token else None,
+        x_student_id=x_student_id,
+        x_student_email=x_student_email,
+        db=db,
+    )
+
+
 def ensure_can_view_evidence(
     external_activity: ExternalActivity,
     admin: AdminContext | None,
-    x_student_id: str | None,
-    token_student: Student | None = None,
+    student: Student | None,
 ) -> None:
     # ไฟล์หลักฐานเปิดได้ทั้งแอดมิน (ตามสาขา) และนักศึกษาเจ้าของคำขอ
     if admin is not None:
         ensure_can_access_student(admin, external_activity.student)
         return
 
-    student_id = token_student.student_id if token_student else (x_student_id or "").strip()
-
-    if not student_id:
+    if student is None:
         raise HTTPException(
             status_code=401,
-            detail="ต้องระบุแอดมิน (X-Admin-Email) หรือนักศึกษา (X-Student-Id)",
+            detail="กรุณาเข้าสู่ระบบ",
         )
 
-    if student_id != external_activity.student_id:
+    if student.student_id != external_activity.student_id:
         raise HTTPException(
             status_code=403,
             detail="เปิดได้เฉพาะไฟล์หลักฐานของคำขอตัวเอง",
@@ -5258,15 +5298,14 @@ def get_external_activity_evidence(
     external_activity_id: int,
     db: Session = Depends(get_db),
     admin: AdminContext | None = Depends(get_optional_admin),
-    x_student_id: str | None = Header(default=None),
-    authorization: str | None = Header(default=None),
+    student: Student | None = Depends(get_optional_student),
 ):
     # URL เดิมแบบไฟล์เดียว: ส่งไฟล์แรกของคำขอ
     external_activity = require_external_activity(
         db,
         external_activity_id,
     )
-    ensure_can_view_evidence(external_activity, admin, x_student_id, student_from_token(authorization, db))
+    ensure_can_view_evidence(external_activity, admin, student)
 
     if not external_activity.evidence_files:
         raise HTTPException(
@@ -5283,8 +5322,7 @@ def get_external_activity_evidence_file(
     evidence_id: int,
     db: Session = Depends(get_db),
     admin: AdminContext | None = Depends(get_optional_admin),
-    x_student_id: str | None = Header(default=None),
-    authorization: str | None = Header(default=None),
+    student: Student | None = Depends(get_optional_student),
 ):
     evidence = db.get(ExternalActivityEvidence, evidence_id)
 
@@ -5294,7 +5332,7 @@ def get_external_activity_evidence_file(
             detail="ไม่พบไฟล์หลักฐาน",
         )
 
-    ensure_can_view_evidence(evidence.external_activity, admin, x_student_id, student_from_token(authorization, db))
+    ensure_can_view_evidence(evidence.external_activity, admin, student)
 
     return evidence_file_response(evidence)
 
@@ -5374,8 +5412,7 @@ REQUEST_TYPE_DEFINITIONS = {
 
 
 class StudentRequestCreate(BaseModel):
-    requester_name: str
-    requester_student_id: str
+    # ผู้ขอมาจากตัวตนที่ยืนยันแล้ว (get_current_student) ไม่รับจาก body
     request_type: str
     detail: str = ""
 
@@ -5569,15 +5606,9 @@ def list_requests(
 @app.post("/api/requests", status_code=201)
 def create_request(
     payload: StudentRequestCreate,
+    student: Student = Depends(get_current_student),
     db: Session = Depends(get_db),
 ):
-    validate_required_text(
-        {
-            "requester_name": payload.requester_name,
-            "requester_student_id": payload.requester_student_id,
-        }
-    )
-
     if payload.request_type not in REQUEST_TYPE_DEFINITIONS:
         raise HTTPException(
             status_code=400,
@@ -5585,8 +5616,8 @@ def create_request(
         )
 
     request = StudentRequest(
-        requester_name=payload.requester_name.strip(),
-        requester_student_id=payload.requester_student_id.strip(),
+        requester_name=f"{student.first_name} {student.last_name}".strip(),
+        requester_student_id=student.student_id,
         request_type=payload.request_type,
         detail=payload.detail.strip(),
         status="pending",
