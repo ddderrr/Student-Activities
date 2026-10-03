@@ -142,15 +142,22 @@ def test_student_login_unknown_email_returns_401(client, db_session):
     assert response.json()["detail"] == "อีเมลหรือรหัสผ่านไม่ถูกต้อง"
 
 
-def test_student_login_imported_student_is_rejected(client, db_session):
-    # นักศึกษาที่นำเข้าจากหน้า Settings ไม่อยู่ใน STUDENT_LOGIN_ACCOUNTS: login ด้วยรหัสร่วมไม่ได้
-    # (ทางเลือก A ใน docs/security-review.md ข้อ ข5 รอระบบ login จริง)
+def test_student_login_imported_student_by_own_email(client, db_session):
+    # ยังไม่มี CMU IT Account SSO: นักศึกษาที่นำเข้าจากหน้า Settings login ด้วยอีเมลตัวเอง
+    # + รหัสร่วมได้ (เฉพาะตอนเปิด bypass ดู tests/test_student_mock_login.py)
     make_student(db_session, "670510676", "สมชาย", "สะอาดดี", "Test01@Gmail.com ", "")
 
     response = client.post("/api/auth/login", json={"email": "test01@gmail.com", "password": "1234"})
-    assert response.status_code == 401
-    assert response.json()["detail"] == "อีเมลหรือรหัสผ่านไม่ถูกต้อง"
-    assert "token" not in response.json()
+    assert response.status_code == 200
+    assert response.json()["student"]["student_id"] == "670510676"
+
+    wrong = client.post("/api/auth/login", json={"email": "test01@gmail.com", "password": "0000"})
+    assert wrong.status_code == 401
+    assert wrong.json()["detail"] == "อีเมลหรือรหัสผ่านไม่ถูกต้อง"
+
+    me = client.get("/api/student/me", headers={"Authorization": f"Bearer {response.json()['token']}"})
+    assert me.status_code == 200
+    assert me.json()["student_id"] == "670510676"
 
 
 def test_student_login_requires_email_and_password(client):

@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="th">
+<html lang="{{ lang }}">
 <head>
 <meta charset="utf-8">
-<title>{{ config.DOCUMENT_TITLE }} - {{ student.student_id }}</title>
+<title>{{ tx.title }} - {{ student.student_id }}</title>
 <style>
   @font-face { font-family: "Taviraj"; src: url("{{ font_dir }}/Taviraj-Regular.ttf"); font-weight: 400; }
   @font-face { font-family: "Taviraj"; src: url("{{ font_dir }}/Taviraj-Bold.ttf"); font-weight: 700; }
@@ -12,13 +12,13 @@
     margin: 16mm 16mm 20mm;
 
     @bottom-left {
-      content: "{{ config.VERIFY_TEXT }}";
+      content: "{{ tx.verify }}";
       font: 8pt "Taviraj", serif;
       color: #555;
     }
 
     @bottom-right {
-      content: "เลขที่ {{ document_number }}  ·  หน้า " counter(page) "/" counter(pages);
+      content: "{{ tx.document_number_short }} {{ document_number }}  ·  {{ tx.page }} " counter(page) "/" counter(pages);
       font: 8pt "Taviraj", serif;
       color: #555;
     }
@@ -132,69 +132,68 @@
 </style>
 </head>
 <body>
-  <div class="watermark">{{ config.WATERMARK_TEXT }}</div>
+  <div class="watermark">{{ tx.watermark }}</div>
 
   <div class="header">
     <div class="logo">
-      {% if logo_uri %}<img src="{{ logo_uri }}" alt="">{% else %}{{ config.LOGO_PLACEHOLDER_TEXT }}{% endif %}
+      {% if logo_uri %}<img src="{{ logo_uri }}" alt="">{% else %}{{ tx.logo_placeholder }}{% endif %}
     </div>
-    <p class="university">{{ config.UNIVERSITY_NAME }}</p>
-    <p class="faculty">{{ config.FACULTY_NAME }}</p>
-    <p class="title">{{ config.DOCUMENT_TITLE }}</p>
-    <p class="title-en">{{ config.DOCUMENT_TITLE_EN }}</p>
+    <p class="university">{{ tx.university }}</p>
+    <p class="faculty">{{ tx.faculty }}</p>
+    <p class="title">{{ tx.title }}</p>
   </div>
 
   <hr class="rule">
 
   <table class="info">
     <tr>
-      <td class="label">ชื่อ-สกุล</td>
+      <td class="label">{{ tx.name }}</td>
       <td>{{ student.name }}</td>
-      <td class="label">เลขที่เอกสาร</td>
+      <td class="label">{{ tx.document_number }}</td>
       <td>{{ document_number }}</td>
     </tr>
     <tr>
-      <td class="label">รหัสนักศึกษา</td>
+      <td class="label">{{ tx.student_id }}</td>
       <td>{{ student.student_id }}</td>
-      <td class="label">วันที่ออกเอกสาร</td>
-      <td>{{ issued_on | thai_date }}</td>
+      <td class="label">{{ tx.issued_on }}</td>
+      <td>{{ fmt_date(issued_on) }}</td>
     </tr>
     <tr>
-      <td class="label">สาขาวิชา</td>
+      <td class="label">{{ tx.major }}</td>
       <td>{{ student.major or "-" }}</td>
-      <td class="label">ประเภทกิจกรรม</td>
+      <td class="label">{{ tx.scope }}</td>
       <td>{{ scope_label }}</td>
     </tr>
     <tr>
-      <td class="label">ชั้นปี</td>
+      <td class="label">{{ tx.year_level }}</td>
       <td>{{ student.year_level or "-" }}</td>
-      <td class="label">ช่วงชั้นปี</td>
+      <td class="label">{{ tx.year_range }}</td>
       <td>{{ year_levels_label }}</td>
     </tr>
   </table>
 
-  <h2>รายการกิจกรรม</h2>
+  <h2>{{ tx.activities_heading }}</h2>
 
   {% for group in groups %}
     <table class="activities">
       <!-- thead ซ้ำทุกหน้าเมื่อตารางยาวข้ามหน้า จึงรู้ว่าเป็นปีการศึกษาไหน -->
       <thead>
         <tr>
-          <th class="year-head" colspan="5">ปีการศึกษา {{ group.academic_year }}{% if group.year_level %} (ชั้นปีที่ {{ group.year_level }}){% endif %}</th>
+          <th class="year-head" colspan="5">{{ group.label }}{% if group.year_level_label %} ({{ group.year_level_label }}){% endif %}</th>
         </tr>
         <tr>
-          <th class="no">ที่</th>
-          <th class="date">วันที่</th>
-          <th>ชื่อกิจกรรม / ผู้จัด</th>
-          <th class="source">ประเภท</th>
-          <th class="role">บทบาท</th>
+          <th class="no">{{ tx.no }}</th>
+          <th class="date">{{ tx.date }}</th>
+          <th>{{ tx.activity_and_organizer }}</th>
+          <th class="source">{{ tx.source }}</th>
+          <th class="role">{{ tx.role }}</th>
         </tr>
       </thead>
       <tbody>
         {% for item in group.activities %}
         <tr>
           <td class="no">{{ loop.index }}</td>
-          <td class="date">{{ item.date | thai_date_short }}</td>
+          <td class="date">{{ fmt_date_short(item.date) }}</td>
           <td>{{ item.title }}<br><small>{{ item.organizer }}</small></td>
           <td class="source">{{ item.source_label }}</td>
           <td class="role">{{ item.role_label }}</td>
@@ -203,18 +202,18 @@
       </tbody>
     </table>
   {% else %}
-    <div class="empty">ไม่มีกิจกรรมตามเงื่อนไขที่เลือก</div>
+    <div class="empty">{{ tx.empty }}</div>
   {% endfor %}
 
-  <h2>สรุปจำนวนกิจกรรม</h2>
+  <h2>{{ tx.summary_heading }}</h2>
   <table class="summary">
     <tr class="head">
-      <td>รวมทั้งหมด</td>
-      <td>กิจกรรมคณะ</td>
-      <td>กิจกรรมสาขา</td>
-      <td>กิจกรรมภายนอก</td>
-      <td>ผู้เข้าร่วม</td>
-      <td>ผู้จัด / ทีมงาน</td>
+      <td>{{ tx.total }}</td>
+      <td>{{ tx.sources.faculty }}</td>
+      <td>{{ tx.sources.major }}</td>
+      <td>{{ tx.sources.external }}</td>
+      <td>{{ tx.roles.participant }}</td>
+      <td>{{ tx.roles.organizer }}</td>
     </tr>
     <tr>
       <td><b>{{ summary.total }}</b></td>
@@ -226,22 +225,22 @@
     </tr>
   </table>
 
-  <h2>คะแนนทักษะ (เต็ม 5)</h2>
+  <h2>{{ tx.skills_heading_out_of_5 }}</h2>
   <div class="skills">
     {% for skill in skill_rows %}
     <div class="skill">
       <div class="score">{{ skill.score | score }}</div>
-      <div class="label">{{ skill.label_th }}</div>
+      <div class="label">{{ skill.label_local }}</div>
     </div>
     {% endfor %}
   </div>
-  <p class="note">คะแนนคิดจากค่าเฉลี่ยของกิจกรรมในเอกสารนี้ที่เข้าร่วมในบทบาทผู้เข้าร่วม ("-" = ยังไม่มีกิจกรรมที่ให้ทักษะนี้)</p>
+  <p class="note">{{ tx.skills_note }}</p>
 
   <div class="signature">
-    <p class="line">ลงชื่อ ..............................................</p>
-    <p class="line">( {{ config.SIGNER_NAME }} )</p>
-    <p class="line">{{ config.SIGNER_POSITION }}</p>
-    <p class="line">วันที่ {{ issued_on | thai_date }}</p>
+    <p class="line">{{ tx.sign_here }}</p>
+    <p class="line">( {{ tx.signer_name }} )</p>
+    <p class="line">{{ tx.signer_position }}</p>
+    <p class="line">{{ tx.date_prefix }} {{ fmt_date(issued_on) }}</p>
   </div>
 </body>
 </html>

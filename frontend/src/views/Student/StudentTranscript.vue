@@ -17,10 +17,7 @@ import {
 import { useLanguage } from '../../composables/useLanguage'
 import { API_BASE, studentHeaders } from '../../constants/currentStudent'
 
-const { t } = useLanguage()
-
-// หลักสูตรปกติ 4 ปี: แสดงช่องปี 1-4 เสมอ ปีที่เกินชั้นปีปัจจุบันกดไม่ได้
-const DISPLAY_YEAR_LEVELS = 4
+const { t, currentLanguage } = useLanguage()
 
 const loading = ref(true)
 const loadError = ref('')
@@ -28,19 +25,25 @@ const options = ref(null)
 
 const style = ref('A')
 const scope = ref('all')
-const allYears = ref(true)
-const selectedYears = ref([])
+// ภาษาของเอกสาร PDF (ทั้งฉบับ) เริ่มตามภาษาของหน้าเว็บ เปลี่ยนเองได้
+// เอกสารรวมทุกชั้นปีเสมอ (ไม่มีตัวเลือกชั้นปีแล้ว)
+const documentLanguage = ref(currentLanguage.value === 'EN' ? 'en' : 'th')
 
 const downloading = ref(false)
 const downloadError = ref('')
 
-const currentYearLevel = computed(() => options.value?.current_year_level ?? null)
-const allowedYears = computed(() => options.value?.allowed_year_levels || [])
+const languageCards = computed(() => [
+  { key: 'th', badge: 'ไทย', title: t.value.studentTranscript.languageThai, note: t.value.studentTranscript.languageThaiNote },
+  { key: 'en', badge: 'EN', title: t.value.studentTranscript.languageEnglish, note: t.value.studentTranscript.languageEnglishNote }
+])
 
-const yearChoices = computed(() => {
-  const count = Math.max(DISPLAY_YEAR_LEVELS, currentYearLevel.value || 0)
-  return Array.from({ length: count }, (_, index) => index + 1)
-})
+const previewLabel = computed(() =>
+  documentLanguage.value === 'en' ? t.value.studentTranscript.previewEnglish : t.value.studentTranscript.previewThai
+)
+
+const downloadLabel = computed(() =>
+  documentLanguage.value === 'en' ? t.value.studentTranscript.downloadEnglish : t.value.studentTranscript.downloadThai
+)
 
 const scopeLabels = computed(() => ({
   all: t.value.studentTranscript.scopeAll,
@@ -61,24 +64,7 @@ const styleCards = computed(() => [
   { key: 'B', title: t.value.studentTranscript.styleB, description: t.value.studentTranscript.styleBDescription }
 ])
 
-const canDownload = computed(() =>
-  !downloading.value && (allYears.value || selectedYears.value.length > 0)
-)
-
-function toggleYear(level) {
-  if (!allowedYears.value.includes(level)) return
-
-  selectedYears.value = selectedYears.value.includes(level)
-    ? selectedYears.value.filter((item) => item !== level)
-    : [...selectedYears.value, level].sort((a, b) => a - b)
-
-  allYears.value = selectedYears.value.length === 0
-}
-
-function chooseAllYears() {
-  allYears.value = true
-  selectedYears.value = []
-}
+const canDownload = computed(() => !downloading.value)
 
 async function loadOptions() {
   loading.value = true
@@ -104,13 +90,7 @@ function filenameFromDisposition(disposition, fallback) {
 }
 
 function exportParams() {
-  const params = new URLSearchParams({ style: style.value, scope: scope.value })
-
-  if (!allYears.value) {
-    params.set('years', selectedYears.value.join(','))
-  }
-
-  return params
+  return new URLSearchParams({ style: style.value, scope: scope.value, lang: documentLanguage.value })
 }
 
 // ใช้ร่วมกันทั้งดาวน์โหลดและดูตัวอย่าง: สร้าง PDF ตามตัวเลือกปัจจุบัน
@@ -128,7 +108,7 @@ async function fetchTranscript() {
     blob: await response.blob(),
     filename: filenameFromDisposition(
       response.headers.get('content-disposition') || '',
-      `transcript-${style.value}.pdf`
+      `transcript-${style.value}-${documentLanguage.value}.pdf`
     )
   }
 }
@@ -283,11 +263,9 @@ function downloadFromPreview() {
 
 const previewSummary = computed(() => {
   const styleLabel = styleCards.value.find((card) => card.key === style.value)?.title || style.value
-  const years = allYears.value
-    ? t.value.studentTranscript.allYears
-    : selectedYears.value.map((level) => `${t.value.studentTranscript.yearPrefix} ${level}`).join(', ')
+  const languageLabel = languageCards.value.find((card) => card.key === documentLanguage.value)?.title
 
-  return `${styleLabel} · ${scopeLabels.value[scope.value]} · ${years}`
+  return `${styleLabel} · ${scopeLabels.value[scope.value]} · ${t.value.studentTranscript.allYears} · ${languageLabel}`
 })
 
 onBeforeUnmount(closePreview)
@@ -398,45 +376,33 @@ onMounted(loadOptions)
         </div>
       </section>
 
-      <!-- ชั้นปี -->
+      <!-- ภาษาของเอกสาร (ทุกชั้นปีเสมอ ไม่มีตัวเลือกชั้นปี) -->
       <section class="option-section">
         <div class="section-heading">
           <span class="step" aria-hidden="true">3</span>
           <div>
-            <h2>{{ t.studentTranscript.yearTitle }}</h2>
-            <p v-if="currentYearLevel" class="muted">
-              {{ t.studentTranscript.currentYear }} {{ currentYearLevel }}
-              · {{ t.studentTranscript.yearRule }}
-            </p>
-            <p v-else class="muted" data-testid="year-unknown">
-              {{ t.studentTranscript.yearUnknown }}
-            </p>
+            <h2>{{ t.studentTranscript.languageTitle }}</h2>
+            <p class="muted">{{ t.studentTranscript.languageHint }}</p>
           </div>
         </div>
 
-        <div class="year-list" :style="{ '--year-count': yearChoices.length }">
-          <button
-            type="button"
-            class="year-chip all"
-            :class="{ selected: allYears }"
-            @click="chooseAllYears"
+        <div class="choice-list language-list">
+          <label
+            v-for="card in languageCards"
+            :key="card.key"
+            class="choice"
+            :class="{ selected: documentLanguage === card.key }"
+            :data-testid="`language-${card.key}`"
           >
-            {{ t.studentTranscript.allYears }}
-          </button>
+            <input v-model="documentLanguage" type="radio" name="document-language" :value="card.key">
 
-          <button
-            v-for="level in yearChoices"
-            :key="level"
-            type="button"
-            class="year-chip"
-            :class="{ selected: !allYears && selectedYears.includes(level) }"
-            :disabled="!allowedYears.includes(level)"
-            :title="allowedYears.includes(level) ? '' : t.studentTranscript.yearDisabled"
-            :data-testid="`year-${level}`"
-            @click="toggleYear(level)"
-          >
-            {{ t.studentTranscript.yearPrefix }} {{ level }}
-          </button>
+            <span class="choice-icon language-badge" aria-hidden="true">{{ card.badge }}</span>
+
+            <span class="choice-text">
+              <strong>{{ card.title }}</strong>
+              <small>{{ card.note }}</small>
+            </span>
+          </label>
         </div>
       </section>
 
@@ -454,12 +420,12 @@ onMounted(loadOptions)
           >
             <Loader2 v-if="previewLoading && !previewOpen" :size="19" class="spin" />
             <Eye v-else :size="19" />
-            {{ t.studentTranscript.preview }}
+            {{ previewLabel }}
           </button>
 
           <button type="submit" class="primary-btn" :disabled="!canDownload" data-testid="download">
             <Download :size="19" />
-            {{ downloading ? t.studentTranscript.downloading : t.studentTranscript.download }}
+            {{ downloading ? t.studentTranscript.downloading : downloadLabel }}
           </button>
         </div>
 
@@ -990,48 +956,13 @@ input[type="radio"] {
   color: #6d28d9;
 }
 
+.language-badge {
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
 .choice.empty .count b {
   color: #b3bccd;
-}
-
-/* ชั้นปี */
-.year-list {
-  display: grid;
-  grid-template-columns: 1.4fr repeat(var(--year-count, 4), 1fr);
-  gap: 12px;
-}
-
-.year-chip {
-  min-height: 52px;
-  padding: 10px 16px;
-  border: 1.5px solid #dfe4ee;
-  border-radius: 12px;
-  background: #fff;
-  color: #33415f;
-  font: inherit;
-  font-size: var(--fs-lead);
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.18s, background-color 0.18s, color 0.18s, box-shadow 0.18s;
-}
-
-.year-chip:not(:disabled):not(.selected):hover {
-  border-color: #c4b1ef;
-  color: #6d28d9;
-}
-
-.year-chip.selected {
-  border-color: #6d28d9;
-  background: #6d28d9;
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(109, 40, 217, 0.25);
-}
-
-.year-chip:disabled {
-  border-style: dashed;
-  background: #f7f8fb;
-  color: #b3bccd;
-  cursor: not-allowed;
 }
 
 /* ปุ่ม */
@@ -1257,13 +1188,7 @@ input[type="radio"] {
     padding: 28px 24px 30px;
   }
 
-  .year-list {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 
-  .year-chip.all {
-    grid-column: 1 / -1;
-  }
 }
 
 @media (max-width: 720px) {
@@ -1314,10 +1239,6 @@ input[type="radio"] {
     padding: 14px 16px;
   }
 
-  .year-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
 
   .action-buttons {
     flex-direction: column-reverse;

@@ -13,6 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship, validates
 
 from database import Base
+from timeutil import now_bangkok, now_bangkok_aware
 from major_utils import normalize_major
 
 
@@ -48,6 +49,7 @@ class Activity(Base):
     created_at = Column(
         DateTime(timezone=False),
         nullable=False,
+        default=now_bangkok,
         server_default=func.now(),
     )
 
@@ -89,6 +91,7 @@ class Admin(Base):
     created_at = Column(
         DateTime(timezone=False),
         nullable=False,
+        default=now_bangkok,
         server_default=func.now(),
     )
 
@@ -130,6 +133,7 @@ class Student(Base):
     created_at = Column(
         DateTime(timezone=False),
         nullable=False,
+        default=now_bangkok,
         server_default=func.now(),
     )
 
@@ -182,6 +186,7 @@ class ActivityMember(Base):
     created_at = Column(
         DateTime(timezone=False),
         nullable=False,
+        default=now_bangkok,
         server_default=func.now(),
     )
 
@@ -225,8 +230,9 @@ class StudentSkillBenchmark(Base):
     updated_at = Column(
         DateTime(timezone=False),
         nullable=False,
+        default=now_bangkok,
         server_default=func.now(),
-        onupdate=func.now(),
+        onupdate=now_bangkok,
     )
 
     __table_args__ = (
@@ -260,6 +266,7 @@ class StudentRequest(Base):
     submitted_at = Column(
         DateTime(timezone=False),
         nullable=False,
+        default=now_bangkok,
         server_default=func.now(),
     )
 
@@ -313,6 +320,7 @@ class Notification(Base):
     created_at = Column(
         DateTime(timezone=False),
         nullable=False,
+        default=now_bangkok,
         server_default=func.now(),
     )
 
@@ -416,11 +424,11 @@ class ExternalActivity(Base):
     )
     reject_reason = Column(Text, nullable=True)
 
-    # ใช้ convention เดียวกับ student_requests: submitted_at จาก DB now(),
-    # decided_at จาก datetime.now() ฝั่ง Python
+    # เวลาทั้งหมดเป็นเวลาไทย (timeutil.now_bangkok) ทั้ง submitted_at และ decided_at
     submitted_at = Column(
         DateTime(timezone=False),
         nullable=False,
+        default=now_bangkok,
         server_default=func.now(),
     )
     decided_at = Column(DateTime(timezone=False), nullable=True)
@@ -485,6 +493,7 @@ class ExternalActivityEvidence(Base):
     created_at = Column(
         DateTime(timezone=False),
         nullable=False,
+        default=now_bangkok,
         server_default=func.now(),
     )
 
@@ -537,3 +546,72 @@ class ExternalActivitySkill(Base):
     )
 
     skill = relationship("Skill")
+
+
+class AdminNotification(Base):
+    """แจ้งเตือนฝั่งแอดมิน (กระดิ่งมุมขวาบน) หนึ่งแถวต่อเหตุการณ์
+
+    major = สาขาของนักศึกษาตอนเกิดเหตุการณ์: แอดมินสาขาเห็นเฉพาะ major ของตัวเอง
+    แอดมินกลางเห็นทุกแถว (รวม major ว่าง) สถานะอ่านแล้วเก็บแยกต่อแอดมินใน
+    admin_notification_reads (แอดมินคนหนึ่งอ่านไม่ทำให้คนอื่นเห็นว่าอ่านแล้ว)
+    """
+
+    __tablename__ = "admin_notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # 'external_submitted' | 'external_resubmitted'
+    type = Column(String(40), nullable=False)
+    major = Column(String(255), nullable=True, index=True)
+
+    student_id = Column(String(30), nullable=False)
+    student_name = Column(String(300), nullable=False, default="")
+    activity_title = Column(String(255), nullable=False, default="")
+
+    external_activity_id = Column(
+        Integer,
+        ForeignKey("external_activities.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
+    # ข้อความภาษาไทยไว้สำรอง หน้าเว็บสร้างข้อความตามภาษาเองจาก type + ชื่อ
+    message = Column(Text, nullable=False)
+    link = Column(String(255), nullable=False)
+
+    # เวลาแบบมี timezone (เวลาไทย): หน้าเว็บคำนวณ "x นาทีที่แล้ว" ได้ถูกไม่ว่าเครื่องอยู่ timezone ไหน
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=now_bangkok_aware,
+        index=True,
+    )
+
+    @validates("major")
+    def _normalize_major(self, _key, value):
+        return normalize_major(value)
+
+    __table_args__ = (
+        CheckConstraint(
+            "type IN ('external_submitted', 'external_resubmitted')",
+            name="ck_admin_notification_type",
+        ),
+    )
+
+
+class AdminNotificationRead(Base):
+    __tablename__ = "admin_notification_reads"
+
+    notification_id = Column(
+        Integer,
+        ForeignKey("admin_notifications.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    # อีเมลแอดมิน (ใช้ได้ทั้งบัญชีในตาราง admins และบัญชีทดสอบใน admin_accounts.py)
+    admin_email = Column(String(255), primary_key=True)
+
+    read_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=now_bangkok_aware,
+    )

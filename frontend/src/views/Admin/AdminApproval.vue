@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -406,7 +407,25 @@ function refreshAll() {
   fetchRequests()
 }
 
-onMounted(refreshAll)
+// มาจากกระดิ่งแจ้งเตือน (/admin/approvals?review=<id>): เปิด popup ตรวจคำขอนั้นทันที
+// แล้วล้าง query ออก (กดแจ้งเตือนซ้ำตอนอยู่หน้านี้แล้วก็เปิดได้ เพราะ watch query)
+const route = useRoute()
+const router = useRouter()
+
+function openReviewFromQuery() {
+  const id = Number(route.query.review)
+  if (!Number.isInteger(id) || id <= 0) return
+
+  openReview({ id })
+  router.replace({ query: { ...route.query, review: undefined } })
+}
+
+watch(() => route.query.review, openReviewFromQuery)
+
+onMounted(() => {
+  refreshAll()
+  openReviewFromQuery()
+})
 
 watch([filterType, sortOrder, statusFilter], () => {
   page.value = 1

@@ -533,6 +533,8 @@ export default {
   },
 
   adminStudentActivities: {
+    downloadTemplateButton: 'Download Template',
+    downloadTemplateError: 'Could not download the template. Please try again.',
     activityNameLabel: 'Activity Name *',
     activityNamePlaceholder: 'Activity name',
     activityTypeLabel: 'Activity Type *',
@@ -832,9 +834,8 @@ export default {
     scopeExternal: 'External',
     scopeOtherMajor: 'Other major',
     comparisonExternalOption: 'External activities',
-    comparisonExternalHint: 'Compares your skills from approved external activities with the external-activity average of all students in the faculty.',
+    comparisonExternalHint: 'Shows your skills from approved external activities.',
     mySkillsExternalLegend: 'My skills (external activities)',
-    externalAverageLegend: 'External activity average',
     statusActive: 'Active',
     statusCompleted: 'Completed',
     statusApproved: 'Approved',
@@ -941,6 +942,17 @@ export default {
     notRelated: 'Not related',
     level: 'LEVEL',
     notApplicable: 'N/A'
+  },
+
+  adminNotifications: {
+    title: 'Notifications',
+    markAllRead: 'Mark all as read',
+    empty: 'No notifications yet',
+    loadError: 'Could not load notifications',
+    justNow: 'Just now',
+    unread: 'Unread',
+    externalSubmitted: '{name} submitted an external activity request: {title}',
+    externalResubmitted: '{name} edited and resubmitted the external activity request: {title}'
   },
 
   adminSettings: {
@@ -1070,13 +1082,7 @@ export default {
     scopeFaculty: 'Faculty-wide only',
     scopeExternal: 'External only',
     activitiesUnit: 'activities',
-    yearTitle: 'Year level',
-    currentYear: 'Current year: Year',
-    yearRule: 'You can select up to your current year',
-    yearUnknown: 'Year level cannot be determined from your student ID, so only "All years" is available.',
     allYears: 'All years',
-    yearPrefix: 'Year',
-    yearDisabled: 'Above your current year',
     demoNote: 'Demo document with a "SAMPLE" watermark',
     download: 'Download PDF',
     downloading: 'Generating PDF...',
@@ -1085,6 +1091,16 @@ export default {
     previewTitle: 'Transcript preview',
     previewLoading: 'Generating PDF...',
     close: 'Close',
-    previewPopupBlocked: 'Your browser blocked the new tab. Allow pop-ups and try again, or download the PDF.'
+    previewPopupBlocked: 'Your browser blocked the new tab. Allow pop-ups and try again, or download the PDF.',
+    languageTitle: 'Document language',
+    languageHint: 'All text in the document uses the selected language. Names and activity titles appear as recorded.',
+    languageThai: 'ภาษาไทย (Thai)',
+    languageThaiNote: 'Dates and academic years in the Buddhist Era',
+    languageEnglish: 'English',
+    languageEnglishNote: 'Dates and academic years in the Gregorian calendar',
+    previewThai: 'Preview (Thai)',
+    previewEnglish: 'Preview (English)',
+    downloadThai: 'Download PDF (Thai)',
+    downloadEnglish: 'Download PDF (English)'
   },
 }

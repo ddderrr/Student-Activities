@@ -534,6 +534,8 @@ export default {
   },
 
   adminStudentActivities: {
+    downloadTemplateButton: 'ดาวน์โหลด Template',
+    downloadTemplateError: 'ดาวน์โหลด Template ไม่สำเร็จ กรุณาลองใหม่',
     activityNameLabel: 'ชื่อกิจกรรม *',
     activityNamePlaceholder: 'ชื่อกิจกรรม',
     activityTypeLabel: 'ประเภทกิจกรรม *',
@@ -833,9 +835,8 @@ export default {
     scopeExternal: 'ภายนอก',
     scopeOtherMajor: 'สาขาอื่น',
     comparisonExternalOption: 'กิจกรรมภายนอก',
-    comparisonExternalHint: 'เปรียบเทียบทักษะจากกิจกรรมภายนอกที่อนุมัติแล้ว กับค่าเฉลี่ยกิจกรรมภายนอกของนักศึกษาทั้งคณะ',
+    comparisonExternalHint: 'แสดงทักษะจากกิจกรรมภายนอกที่ได้รับอนุมัติแล้วของคุณ',
     mySkillsExternalLegend: 'ทักษะของฉัน (กิจกรรมภายนอก)',
-    externalAverageLegend: 'ค่าเฉลี่ยกิจกรรมภายนอก',
     statusActive: 'กำลังดำเนินการ',
     statusCompleted: 'เสร็จสิ้น',
     statusApproved: 'อนุมัติแล้ว',
@@ -942,6 +943,17 @@ export default {
     notRelated: 'ไม่เกี่ยวข้อง',
     level: 'ระดับ',
     notApplicable: 'ไม่เกี่ยวข้อง'
+  },
+
+  adminNotifications: {
+    title: 'การแจ้งเตือน',
+    markAllRead: 'ทำเครื่องหมายว่าอ่านทั้งหมด',
+    empty: 'ยังไม่มีการแจ้งเตือน',
+    loadError: 'โหลดการแจ้งเตือนไม่สำเร็จ',
+    justNow: 'เมื่อสักครู่',
+    unread: 'ยังไม่ได้อ่าน',
+    externalSubmitted: 'นักศึกษา {name} ส่งคำขอเพิ่มกิจกรรมภายนอก {title}',
+    externalResubmitted: 'นักศึกษา {name} แก้ไขและส่งคำขอกิจกรรมภายนอก {title} อีกครั้ง'
   },
 
   adminSettings: {
@@ -1071,13 +1083,7 @@ export default {
     scopeFaculty: 'เฉพาะกิจกรรมส่วนกลางของคณะ',
     scopeExternal: 'เฉพาะกิจกรรมภายนอก',
     activitiesUnit: 'กิจกรรม',
-    yearTitle: 'ชั้นปี',
-    currentYear: 'ชั้นปีปัจจุบัน: ปี',
-    yearRule: 'เลือกได้ไม่เกินชั้นปีปัจจุบัน',
-    yearUnknown: 'ไม่ทราบชั้นปีจากรหัสนักศึกษา จึงเลือกได้เฉพาะทุกชั้นปี',
     allYears: 'ทุกชั้นปี',
-    yearPrefix: 'ปี',
-    yearDisabled: 'เกินชั้นปีปัจจุบัน',
     demoNote: 'เอกสารเดโม มีลายน้ำ "ตัวอย่าง"',
     download: 'ดาวน์โหลด PDF',
     downloading: 'กำลังสร้าง PDF...',
@@ -1086,6 +1092,16 @@ export default {
     previewTitle: 'ตัวอย่างทรานสคริปต์',
     previewLoading: 'กำลังสร้าง PDF...',
     close: 'ปิด',
-    previewPopupBlocked: 'เบราว์เซอร์บล็อกการเปิดแท็บใหม่ กรุณาอนุญาต popup แล้วลองอีกครั้ง หรือกดดาวน์โหลด PDF'
+    previewPopupBlocked: 'เบราว์เซอร์บล็อกการเปิดแท็บใหม่ กรุณาอนุญาต popup แล้วลองอีกครั้ง หรือกดดาวน์โหลด PDF',
+    languageTitle: 'ภาษาของเอกสาร',
+    languageHint: 'ข้อความทั้งฉบับเป็นภาษาที่เลือก ชื่อและชื่อกิจกรรมแสดงตามที่บันทึกไว้ในระบบ',
+    languageThai: 'ภาษาไทย',
+    languageThaiNote: 'วันที่และปีการศึกษาเป็น พ.ศ.',
+    languageEnglish: 'English',
+    languageEnglishNote: 'วันที่และปีการศึกษาเป็น ค.ศ.',
+    previewThai: 'ดูตัวอย่าง (ภาษาไทย)',
+    previewEnglish: 'ดูตัวอย่าง (English)',
+    downloadThai: 'ดาวน์โหลด PDF (ภาษาไทย)',
+    downloadEnglish: 'ดาวน์โหลด PDF (English)'
   },
 }

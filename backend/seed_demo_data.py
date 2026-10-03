@@ -18,6 +18,7 @@
   ชื่อขึ้นต้นด้วย "[Demo] " เหมือนกัน ส่วนใหญ่อนุมัติแล้ว บางรายการยังรออนุมัติ (ไม่นับในกราฟ)
 """
 
+from timeutil import today_bangkok
 import random
 import sys
 from datetime import date, datetime
@@ -242,7 +243,7 @@ def remove_demo_data(db: Session) -> tuple[int, int]:
 
 
 def seed_demo_data(db: Session, today: date | None = None) -> dict:
-    today = today or date.today()
+    today = today or today_bangkok()
     rng = random.Random(42)  # ผลเหมือนเดิมทุกครั้งที่รัน
 
     remove_demo_data(db)

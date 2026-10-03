@@ -8,6 +8,7 @@
 - คะแนนทักษะคิดจากกิจกรรมที่เลือกเท่านั้น (บทบาทผู้เข้าร่วม เหมือนหน้า My Skills)
 """
 
+from timeutil import today_bangkok
 import re
 from datetime import date
 
@@ -68,7 +69,7 @@ SKILL_LABELS_TH = {
 
 def today() -> date:
     # แยกเป็นฟังก์ชันเพื่อให้เทสต์กำหนดวันที่ได้
-    return date.today()
+    return today_bangkok()
 
 
 # ------------------------------------------------------------
@@ -173,6 +174,9 @@ def load_internal_items(db: Session, student: Student) -> list[dict]:
                     if activity.major
                     else activity.department or transcript_config.FACULTY_NAME
                 ),
+                # ข้อมูลดิบไว้แปลชื่อผู้จัดตามภาษาของเอกสาร (transcript_pdf)
+                "organizer_major": (activity.major or "").strip() or None,
+                "organizer_department": activity.department,
                 "date": activity.start_at.date(),
                 "role": role,
                 "source": source,

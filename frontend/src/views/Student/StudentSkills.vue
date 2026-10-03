@@ -46,7 +46,7 @@ const showFacultyAverage = ref(true)
 // กราฟเปรียบเทียบ (คำนวณที่ backend ทั้งหมด):
 // major    = กิจกรรมสาขา vs ค่าเฉลี่ยสาขา
 // faculty  = กิจกรรมคณะ vs ค่าเฉลี่ยคณะ
-// external = กิจกรรมภายนอก vs ค่าเฉลี่ยกิจกรรมภายนอกของทั้งคณะ
+// external = ทักษะจากกิจกรรมภายนอกของฉันอย่างเดียว (ไม่แสดงค่าเฉลี่ยเปรียบเทียบ)
 const comparison = ref('major')
 
 const comparisonOptions = computed(() => [
@@ -73,7 +73,7 @@ const comparisonText = computed(() => {
     return {
       hint: text.comparisonExternalHint,
       mySkillsLegend: text.mySkillsExternalLegend,
-      averageLegend: text.externalAverageLegend
+      averageLegend: null
     }
   }
 
@@ -329,7 +329,9 @@ const facultyRadarPoints = computed(() =>
   )
 )
 
+// โหมดกิจกรรมภายนอกไม่มีค่าเฉลี่ยให้เทียบ (averageLegend = null)
 const hasFacultyData = computed(() =>
+  comparisonText.value.averageLegend !== null &&
   skillDefinitions.value.some(
     (item) =>
       facultySkills.value[item.key] !== null &&
@@ -958,6 +960,7 @@ onMounted(() => loadSkills())
                 </button>
 
                 <button
+                  v-if="comparisonText.averageLegend"
                   type="button"
                   class="legend-toggle"
                   :class="{ inactive: !showFacultyAverage }"

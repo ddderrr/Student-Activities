@@ -1,9 +1,9 @@
-"""นักศึกษา login ด้วยรหัสร่วม 1234 ได้เฉพาะบัญชีทดสอบ และเฉพาะตอนเปิด bypass
+"""นักศึกษา login ด้วยรหัสร่วม 1234 ได้เฉพาะตอนเปิด bypass
 
-ทีมเลือกทางเลือก A (ดู docs/security-review.md ข้อ ข5): ปิด ADMIN_BYPASS_ENABLED
-แล้วทางลัด dev ปิดหมด นักศึกษา login ไม่ได้เลย (แอดมิน login ด้วยรหัสผ่านจริงได้
-ตามปกติ) เปิดแล้วใช้ได้เฉพาะอีเมลใน STUDENT_LOGIN_ACCOUNTS นักศึกษาจริงที่
-import เข้ามา login ด้วย 1234 ไม่ได้ ระยะยาวจะทำ CMU OAuth
+ปิด ADMIN_BYPASS_ENABLED แล้วทางลัด dev ปิดหมด นักศึกษา login ไม่ได้เลย (แอดมิน
+login ด้วยรหัสผ่านจริงได้ตามปกติ) เปิดแล้วนักศึกษาทุกคนในตาราง students login
+ด้วยอีเมลของตัวเองได้ ระหว่างที่ยังไม่มี CMU IT Account SSO (ดู
+docs/security-review.md ข้อ ข5) ระยะยาวจะทำ CMU OAuth
 """
 
 import pytest
@@ -87,8 +87,17 @@ def test_bypass_on_test_accounts_can_login(accounts, email, student_id):
     assert response.json()["student"]["student_id"] == student_id
 
 
-def test_bypass_on_real_student_cannot_login_with_shared_password(accounts):
-    response = login(accounts, REAL_STUDENT_EMAIL)
+def test_bypass_on_imported_student_logs_in_with_own_email(accounts):
+    # ยังไม่มี SSO: นักศึกษาที่ import จากหน้า Settings login ด้วยอีเมลตัวเอง + รหัสร่วมได้
+    response = login(accounts, f"  {REAL_STUDENT_EMAIL.upper()} ")
+
+    assert response.status_code == 200
+    assert response.json()["role"] == "student"
+    assert response.json()["student"]["student_id"] == "670510500"
+
+
+def test_bypass_on_imported_student_with_wrong_password_is_rejected(accounts):
+    response = login(accounts, REAL_STUDENT_EMAIL, "0000")
 
     assert response.status_code == 401
     assert response.json() == {"detail": INVALID_DETAIL}

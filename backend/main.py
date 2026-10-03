@@ -1,5 +1,7 @@
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+
+from timeutil import BANGKOK, now_bangkok, today_bangkok
 from functools import lru_cache
 from io import BytesIO, StringIO
 import json
@@ -66,6 +68,7 @@ from import_limits import (
 )
 import transcript_data
 from transcript_pdf import STYLES as TRANSCRIPT_STYLES, render_transcript_pdf
+from transcript_i18n import LANGUAGES as TRANSCRIPT_LANGUAGES
 from skill_scoring import (
     activity_source,
     average_activity_skills,
@@ -95,6 +98,8 @@ from auth_tokens import (
 )
 from branches import BRANCHES
 from models import (
+    AdminNotification,
+    AdminNotificationRead,
     Admin,
     Activity,
     ActivityMember,
@@ -224,14 +229,23 @@ class LoginRequest(BaseModel):
 
 def find_mock_login_student(db: Session, email: str) -> Student | None:
     # MOCK LOGIN (dev): นักศึกษายังไม่มีรหัสผ่านของตัวเอง ใช้รหัสร่วม STUDENT_MOCK_PASSWORD
-    # จึงให้ใช้ได้เฉพาะบัญชีทดสอบใน STUDENT_LOGIN_ACCOUNTS และเฉพาะตอนเปิด
-    # ADMIN_BYPASS_ENABLED (ปิดสวิตช์เดียว = ทางลัด dev ปิดหมด) นักศึกษาจริงที่ import
-    # เข้ามา login ไม่ได้จนกว่าจะมีระบบ login จริง (CMU OAuth)
+    # ได้เฉพาะตอนเปิด ADMIN_BYPASS_ENABLED (ปิดสวิตช์เดียว = ทางลัด dev ปิดหมด)
+    # ยังไม่มี CMU IT Account SSO: ระหว่างนี้นักศึกษาทุกคนในตาราง students (รวมคนที่
+    # import จากหน้า Settings) login ด้วยอีเมลของตัวเองได้ ถอดออกเมื่อทำ CMU OAuth
     if not is_admin_bypass_enabled():
         return None
 
+    # อีเมลทดสอบที่ใช้ร่วมกันทั้งสาขา ระบุคนไว้ใน STUDENT_LOGIN_ACCOUNTS
     student_id = STUDENT_LOGIN_ACCOUNTS.get(email)
-    return db.get(Student, student_id) if student_id else None
+    if student_id:
+        return db.get(Student, student_id)
+
+    return (
+        db.query(Student)
+        .filter(func.lower(func.trim(Student.email)) == email)
+        .order_by(Student.student_id)
+        .first()
+    )
 
 
 LOGIN_INVALID_DETAIL = "อีเมลหรือรหัสผ่านไม่ถูกต้อง"
@@ -389,7 +403,7 @@ def get_admin_dashboard(
     ผลจาก param นี้ เพราะถูก scope ตามสาขาตัวเองอยู่แล้ว)
     """
     admin = resolve_branch_filter(admin, major)
-    now_value = datetime.now()
+    now_value = now_bangkok()
     selected_year = year or now_value.year
 
     selected_months = parse_dashboard_months(semester, months)
@@ -577,7 +591,7 @@ def get_dashboard_skill_distribution(
         raise HTTPException(status_code=400, detail="track ต้องเป็น participant หรือ staff")
 
     admin = resolve_branch_filter(admin, major)
-    selected_year = year or datetime.now().year
+    selected_year = year or today_bangkok().year
     selected_months = parse_dashboard_months(semester, months)
     target_role = SKILL_TRACKS[track]["target_role"]
     definitions = SKILL_TRACKS[track]["definitions"]
@@ -894,7 +908,7 @@ def get_admin_student_skills(
     member_role = SKILL_TRACKS[track]["member_role"]
     target_role = SKILL_TRACKS[track]["target_role"]
     definitions = SKILL_TRACKS[track]["definitions"]
-    now_value = datetime.now()
+    now_value = now_bangkok()
 
     total_students = (
         scope_student_query(db.query(func.count(Student.student_id)), admin)
@@ -2762,6 +2776,10 @@ def delete_students_and_related(db: Session, students: list[Student]) -> dict:
     }
 
     db.query(Notification).filter(Notification.student_id.in_(ids)).delete(synchronize_session=False)
+    if external:
+        db.query(AdminNotification).filter(
+            AdminNotification.external_activity_id.in_([activity.id for activity in external])
+        ).delete(synchronize_session=False)
     db.query(StudentRequest).filter(StudentRequest.requester_student_id.in_(ids)).delete(synchronize_session=False)
     for student in students:
         db.delete(student)
@@ -3876,6 +3894,7 @@ async def submit_external_activity(
 
         written_paths = write_evidence_files(external_activity.id, evidence_files)
         external_activity.evidence_files = evidence_rows(evidence_files)
+        notify_admins_external_activity(db, external_activity, student, "external_submitted")
 
         db.commit()
     except Exception:
@@ -3993,7 +4012,7 @@ async def update_external_activity(
         external_activity.status = "pending"
         external_activity.reject_reason = None
         external_activity.decided_at = None
-        external_activity.submitted_at = datetime.now()
+        external_activity.submitted_at = now_bangkok()
 
         written_paths = write_evidence_files(external_activity.id, new_evidence_files)
 
@@ -4013,6 +4032,7 @@ async def update_external_activity(
             )
             for skill_key, level in related_skills.items()
         ]
+        notify_admins_external_activity(db, external_activity, student, "external_resubmitted")
 
         db.commit()
     except Exception:
@@ -4070,6 +4090,9 @@ def delete_external_activity(
     # ลบเองด้วยเพื่อให้ผลเหมือนกันทุก DB
     db.query(Notification).filter(
         Notification.external_activity_id == external_activity.id
+    ).delete(synchronize_session=False)
+    db.query(AdminNotification).filter(
+        AdminNotification.external_activity_id == external_activity.id
     ).delete(synchronize_session=False)
     db.delete(external_activity)
     db.commit()
@@ -4200,6 +4223,12 @@ def list_my_activities(
     """
     My Activities: กิจกรรมของคณะที่นักศึกษาเป็นสมาชิก
     + กิจกรรมภายนอกที่ได้รับอนุมัติแล้ว
+
+    category (แท็บในหน้า My Activities):
+      faculty  = กิจกรรมส่วนกลางของคณะ (ไม่มีสาขาเจ้าของ) หรือกิจกรรมของสาขาตัวเอง
+      external = กิจกรรมของสาขาอื่นที่แอดมินสาขานั้นเพิ่มนักศึกษาเข้าไป
+                 + กิจกรรมภายนอกที่นักศึกษาส่งเอง
+    ใช้กฎเดียวกับ My Skills / Transcript (skill_scoring.activity_source)
     """
 
     items = []
@@ -4212,6 +4241,7 @@ def list_my_activities(
     )
 
     for member, activity in memberships:
+        scope = activity_source(activity.major, student.major)
         target_role = (
             "staff"
             if member.role == "organizer"
@@ -4221,6 +4251,9 @@ def list_my_activities(
         items.append(
             {
                 "source": "activity",
+                "category": "external" if scope == "other_major" else "faculty",
+                "scope": scope,
+                "activity_major": activity.major,
                 "id": activity.id,
                 "title": activity.name,
                 "activity_type": activity.activity_type,
@@ -4258,6 +4291,9 @@ def list_my_activities(
         items.append(
             {
                 "source": "external_activity",
+                "category": "external",
+                "scope": "external",
+                "activity_major": None,
                 "id": external_activity.id,
                 "title": external_activity.title,
                 "activity_type": external_activity.activity_type,
@@ -4679,7 +4715,7 @@ def student_skill_periods(
     )
 
     if not years:
-        years = [datetime.now().year]
+        years = [today_bangkok().year]
 
     period_definitions = []
     periods = {}
@@ -4797,7 +4833,7 @@ def student_skill_periods(
             "activities": period_activities,
         }
 
-    current_year = datetime.now().year
+    current_year = today_bangkok().year
     default_period = (
         f"year-{current_year}"
         if f"year-{current_year}" in periods
@@ -5292,11 +5328,16 @@ def export_my_transcript(
     style: str = "A",
     scope: str = "all",
     years: str | None = None,
+    # ภาษาของเอกสารทั้งฉบับ: th = ไทย (พ.ศ.), en = อังกฤษ (ค.ศ.) ดู transcript_i18n.py
+    lang: str = "th",
     student: Student = Depends(get_current_student),
     db: Session = Depends(get_db),
 ):
     if style not in TRANSCRIPT_STYLES:
         raise HTTPException(status_code=400, detail="style ต้องเป็น A หรือ B")
+
+    if lang not in TRANSCRIPT_LANGUAGES:
+        raise HTTPException(status_code=400, detail="lang ต้องเป็น th หรือ en")
 
     try:
         data = transcript_data.collect_transcript(
@@ -5308,8 +5349,8 @@ def export_my_transcript(
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
-    pdf_bytes = render_transcript_pdf(data, style)
-    filename = f"transcript-{student.student_id}-{style}.pdf"
+    pdf_bytes = render_transcript_pdf(data, style, lang=lang)
+    filename = f"transcript-{student.student_id}-{style}-{lang}.pdf"
 
     return Response(
         content=pdf_bytes,
@@ -5441,6 +5482,131 @@ def get_external_activity_evidence_file(
     return evidence_file_response(evidence)
 
 
+# ============================================================
+# ADMIN NOTIFICATIONS (กระดิ่งมุมขวาบนฝั่งแอดมิน)
+# ============================================================
+
+ADMIN_NOTIFICATION_MESSAGES = {
+    "external_submitted": "นักศึกษา {student} ส่งคำขอเพิ่มกิจกรรมภายนอก {title}",
+    "external_resubmitted": "นักศึกษา {student} แก้ไขและส่งคำขอกิจกรรมภายนอก {title} อีกครั้ง",
+}
+ADMIN_NOTIFICATION_LIMIT = 30
+
+
+def notify_admins_external_activity(db: Session, external_activity: ExternalActivity, student: Student, kind: str) -> None:
+    """แจ้งแอดมินสาขาของนักศึกษา + แอดมินกลาง (เรียกก่อน commit: บันทึกพร้อมคำขอ)"""
+    name = f"{student.first_name} {student.last_name}".strip() or student.student_id
+    db.add(
+        AdminNotification(
+            type=kind,
+            major=student.major,
+            student_id=student.student_id,
+            student_name=name[:300],
+            activity_title=external_activity.title,
+            external_activity_id=external_activity.id,
+            message=ADMIN_NOTIFICATION_MESSAGES[kind].format(student=name, title=external_activity.title),
+            link=f"/admin/approvals?review={external_activity.id}",
+        )
+    )
+
+
+def scoped_admin_notifications(db: Session, admin: AdminContext):
+    query = db.query(AdminNotification)
+    if admin.is_central:
+        return query
+    return query.filter(func.trim(AdminNotification.major) == admin.major)
+
+
+def as_bangkok_iso(value: datetime) -> str:
+    # SQLite (เทสต์) คืนค่า naive: บันทึกเป็นเวลาไทยไว้ จึงถือเป็นเวลาไทย
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=BANGKOK)
+    return value.astimezone(BANGKOK).isoformat()
+
+
+@app.get("/api/admin/notifications")
+def list_admin_notifications(
+    db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
+):
+    read_ids = (
+        db.query(AdminNotificationRead.notification_id)
+        .filter(AdminNotificationRead.admin_email == admin.email)
+        .subquery()
+    )
+    scoped = scoped_admin_notifications(db, admin)
+    unread_count = scoped.filter(AdminNotification.id.notin_(read_ids.select())).count()
+    rows = (
+        scoped.order_by(AdminNotification.created_at.desc(), AdminNotification.id.desc())
+        .limit(ADMIN_NOTIFICATION_LIMIT)
+        .all()
+    )
+    read = {
+        notification_id
+        for (notification_id,) in db.query(AdminNotificationRead.notification_id).filter(
+            AdminNotificationRead.admin_email == admin.email,
+            AdminNotificationRead.notification_id.in_([row.id for row in rows]),
+        )
+    } if rows else set()
+
+    return {
+        "unread_count": unread_count,
+        "notifications": [
+            {
+                "id": row.id,
+                "type": row.type,
+                "student_id": row.student_id,
+                "student_name": row.student_name,
+                "activity_title": row.activity_title,
+                "major": row.major,
+                "message": row.message,
+                "link": row.link,
+                "created_at": as_bangkok_iso(row.created_at),
+                "is_read": row.id in read,
+            }
+            for row in rows
+        ],
+    }
+
+
+def mark_admin_notifications_read(db: Session, admin: AdminContext, ids: list[int]) -> int:
+    already = {
+        notification_id
+        for (notification_id,) in db.query(AdminNotificationRead.notification_id).filter(
+            AdminNotificationRead.admin_email == admin.email,
+            AdminNotificationRead.notification_id.in_(ids),
+        )
+    } if ids else set()
+    new_ids = [notification_id for notification_id in ids if notification_id not in already]
+    for notification_id in new_ids:
+        db.add(AdminNotificationRead(notification_id=notification_id, admin_email=admin.email))
+    db.commit()
+    return len(new_ids)
+
+
+@app.patch("/api/admin/notifications/read-all")
+def mark_all_admin_notifications_read(
+    db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
+):
+    ids = [row.id for row in scoped_admin_notifications(db, admin).with_entities(AdminNotification.id)]
+    return {"marked": mark_admin_notifications_read(db, admin, ids)}
+
+
+@app.patch("/api/admin/notifications/{notification_id}/read")
+def mark_admin_notification_read(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
+):
+    # แจ้งเตือนของสาขาอื่น = ไม่มีอยู่สำหรับแอดมินคนนี้
+    exists = scoped_admin_notifications(db, admin).filter(AdminNotification.id == notification_id).first()
+    if not exists:
+        raise HTTPException(status_code=404, detail="ไม่พบการแจ้งเตือนนี้")
+    mark_admin_notifications_read(db, admin, [notification_id])
+    return {"id": notification_id, "is_read": True}
+
+
 class ExternalActivityDecision(BaseModel):
     # skill levels นักศึกษาตั้งมาตั้งแต่ตอนส่งแล้ว admin แค่อนุมัติ/ไม่อนุมัติ
     status: str
@@ -5496,7 +5662,7 @@ def decide_external_activity(
         )
 
     external_activity.status = payload.status
-    external_activity.decided_at = datetime.now()
+    external_activity.decided_at = now_bangkok()
 
     db.commit()
     db.refresh(external_activity)
@@ -5554,7 +5720,7 @@ def get_request_stats(
     # major: แอดมินกลางเลือก filter สาขาได้จากหน้า Approvals (ดู resolve_branch_filter)
     admin = resolve_branch_filter(admin, major)
 
-    today_start = datetime.now().replace(
+    today_start = now_bangkok().replace(
         hour=0,
         minute=0,
         second=0,
@@ -5794,7 +5960,7 @@ def decide_request(
         request.reject_reason = None
 
     request.status = payload.status
-    request.decided_at = datetime.now()
+    request.decided_at = now_bangkok()
 
     db.commit()
     db.refresh(request)

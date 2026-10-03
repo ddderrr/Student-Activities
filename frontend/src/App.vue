@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { Menu } from 'lucide-vue-next'
 
 import AdminSidebar from './components/Admin/AdminSideBar.vue'
+import AdminNotificationBell from './components/Admin/AdminNotificationBell.vue'
 import { useLanguage } from './composables/useLanguage'
 
 const route = useRoute()
@@ -106,8 +107,8 @@ const isAdminPage = computed(() => {
 
     <main class="main-content">
 
-      <!-- มือถือเท่านั้น: หน้า admin ไม่มี topbar จึงต้องมีปุ่มเปิด drawer -->
-      <header class="admin-mobile-topbar">
+      <!-- แถบบน: กระดิ่งแจ้งเตือนทุกขนาดจอ, มือถือมีปุ่มเปิด drawer + ชื่อคณะด้วย -->
+      <header class="admin-topbar">
         <button
           class="admin-mobile-menu-button"
           type="button"
@@ -119,7 +120,9 @@ const isAdminPage = computed(() => {
           <Menu :size="21" />
         </button>
 
-        <strong>{{ t.adminSidebar.faculty }}</strong>
+        <strong class="admin-topbar-title">{{ t.adminSidebar.faculty }}</strong>
+
+        <AdminNotificationBell class="admin-topbar-bell" />
       </header>
 
       <RouterView />
@@ -208,7 +211,29 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 
-.admin-mobile-topbar,
+/* แถบบนของหน้า admin: จอใหญ่มีแค่กระดิ่งชิดขวา */
+.admin-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  height: 60px;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(247, 248, 252, 0.92);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid #e8ecf3;
+  color: #1d3268;
+  font-size: var(--fs-lead);
+}
+
+.admin-topbar-bell {
+  margin-left: auto;
+}
+
+.admin-mobile-menu-button,
+.admin-topbar-title,
 .admin-mobile-overlay {
   display: none;
 }
@@ -243,23 +268,15 @@ h1, h2, h3, h4, h5, h6 {
     background: rgba(15, 23, 42, 0.25);
   }
 
-  .admin-mobile-topbar {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-
+  .admin-topbar {
     height: 56px;
     padding: 0 14px;
-
-    display: flex;
-    align-items: center;
-    gap: 10px;
-
     background: #fff;
-    border-bottom: 1px solid #e5eaf2;
+    border-bottom-color: #e5eaf2;
+  }
 
-    color: #1d3268;
-    font-size: var(--fs-lead);
+  .admin-topbar-title {
+    display: block;
   }
 
   .admin-mobile-menu-button {

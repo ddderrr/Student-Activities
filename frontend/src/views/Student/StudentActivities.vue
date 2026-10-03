@@ -141,13 +141,19 @@ const STATUS_LABELS = computed(() => ({
 
 const toActivityView = (item, student) => {
 
+  // แท็บ: กิจกรรมของสาขาอื่นที่แอดมินสาขานั้นเพิ่มเราเข้าไป นับเป็น "กิจกรรมภายนอก"
+  // เหมือนกิจกรรมภายนอกที่ส่งเอง (backend ส่ง category มาให้ ดู list_my_activities)
+  // ส่วน source ยังบอกว่าเป็นกิจกรรมของคณะหรือคำขอที่ส่งเอง ใช้กับหน้ารายละเอียด
   const isExternal =
-    item.source === 'external_activity'
+    item.source === 'external_activity' ||
+    item.category === 'external'
 
   return {
     key: `${item.source}-${item.id}`,
     id: item.id,
     source: item.source,
+    tab: isExternal ? 'external_activity' : 'activity',
+    activityMajor: item.activity_major || '',
     sourceLabel: isExternal
       ? t.value.studentActivities.externalActivityLabel
       : t.value.studentActivities.facultyActivityLabel,
@@ -207,6 +213,7 @@ const toSubmissionView = (item) => ({
   key: `submission-${item.id}`,
   id: item.id,
   source: 'submission',
+  tab: 'submission',
   sourceLabel: t.value.studentActivities.externalActivityLabel,
   title: item.title,
   description: item.description || '',
@@ -299,7 +306,7 @@ const sourceCounts = computed(() => {
   }
 
   for (const activity of activities.value) {
-    counts[activity.source] += 1
+    counts[activity.tab] += 1
   }
 
   return counts
@@ -361,7 +368,7 @@ const filteredActivities = computed(() => {
       const matchSource =
         sourceFilter.value === 'all' ||
         sourceFilter.value === 'submissions' ||
-        activity.source === sourceFilter.value
+        activity.tab === sourceFilter.value
 
 
       return (
@@ -933,11 +940,11 @@ onBeforeUnmount(() => {
 
           <div
             class="avatar"
-            :class="{ external: activity.source !== 'activity' }"
+            :class="{ external: activity.tab !== 'activity' }"
           >
 
             <Globe2
-              v-if="activity.source !== 'activity'"
+              v-if="activity.tab !== 'activity'"
               :size="19"
             />
 
@@ -961,7 +968,7 @@ onBeforeUnmount(() => {
 
               <span
                 class="source-badge"
-                :class="activity.source"
+                :class="activity.tab"
               >
                 {{ activity.sourceLabel }}
               </span>

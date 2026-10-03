@@ -26,6 +26,7 @@ import {
   RotateCcw,
   Ban,
   Trash2,
+  Download,
   ArrowDown,
   ArrowUp
 } from 'lucide-vue-next'
@@ -182,6 +183,46 @@ const API_BASE = 'http://localhost:8000'
 
 // Import participants modal state
 const showImportModal = ref(false)
+
+/* =========================
+   Template สำหรับ import ผู้เข้าร่วม
+   สร้างไฟล์ .xlsx ฝั่ง frontend (SheetJS) หัวคอลัมน์ต้องตรงกับ COLUMN_ALIASES ใน backend
+========================= */
+const IMPORT_TEMPLATE_HEADERS = ['รหัสนักศึกษา', 'ชื่อ', 'นามสกุล', 'อีเมล', 'สาขาวิชา']
+const IMPORT_TEMPLATE_EXAMPLES = [
+  ['670510101', 'สมชาย', 'ใจดี', '670510101@cmu.ac.th', 'วิทยาการคอมพิวเตอร์'],
+  ['670510201', 'สมหญิง', 'รักเรียน', '670510201@cmu.ac.th', 'เคมี']
+]
+const templateDownloading = ref(false)
+
+async function downloadImportTemplate() {
+  if (templateDownloading.value) return
+  templateDownloading.value = true
+
+  try {
+    // โหลด SheetJS ตอนกดเท่านั้น ไม่ให้หน้า Activities หนักขึ้น
+    const XLSX = await import('xlsx')
+    const sheet = XLSX.utils.aoa_to_sheet([IMPORT_TEMPLATE_HEADERS, ...IMPORT_TEMPLATE_EXAMPLES])
+
+    // รหัสนักศึกษาเป็นข้อความ: Excel ไม่ตัดเลขศูนย์นำหน้า / ไม่แปลงเป็น 6.7E+08
+    for (let row = 1; row <= IMPORT_TEMPLATE_EXAMPLES.length; row += 1) {
+      const cell = sheet[XLSX.utils.encode_cell({ r: row, c: 0 })]
+      if (cell) {
+        cell.t = 's'
+        cell.z = '@'
+      }
+    }
+    sheet['!cols'] = [{ wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 28 }, { wch: 26 }]
+
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, sheet, 'students')
+    XLSX.writeFile(workbook, 'participant-import-template.xlsx')
+  } catch {
+    importError.value = t.value.adminStudentActivities.downloadTemplateError
+  } finally {
+    templateDownloading.value = false
+  }
+}
 const selectedActivity = ref(null)
 const selectedFiles = ref([])
 const importFileInput = ref(null)
@@ -2097,12 +2138,27 @@ const confirmImportButtonText = computed(() =>
             </p>
           </div>
 
-          <button
-            class="modal-close"
-            @click="closeImportModal"
-          >
-            <X :size="20" />
-          </button>
+          <div class="modal-header-actions">
+            <button
+              v-if="!importPreview"
+              type="button"
+              class="template-download-button"
+              :disabled="templateDownloading"
+              data-testid="download-import-template"
+              @click="downloadImportTemplate"
+            >
+              <LoaderCircle v-if="templateDownloading" class="spin" :size="16" />
+              <Download v-else :size="16" />
+              {{ t.adminStudentActivities.downloadTemplateButton }}
+            </button>
+
+            <button
+              class="modal-close"
+              @click="closeImportModal"
+            >
+              <X :size="20" />
+            </button>
+          </div>
         </div>
 
         <!-- STEP 1: FILES -->
@@ -3703,6 +3759,41 @@ td {
 .selected-activity span {
   color: #96a5b9;
   font-weight: 500;
+}
+
+.modal-header-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* outline: แยกจากปุ่มหลัก (นำเข้า / ยืนยัน) ที่เป็นปุ่มทึบ */
+.template-download-button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1.5px solid #c9d6ee;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #fff;
+  color: #2f5fdb;
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.template-download-button:not(:disabled):hover {
+  border-color: #2f5fdb;
+  background: #f3f7ff;
+}
+
+.template-download-button:disabled {
+  opacity: 0.6;
+  cursor: progress;
 }
 
 .modal-close {

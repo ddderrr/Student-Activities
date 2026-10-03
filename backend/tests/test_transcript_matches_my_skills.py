@@ -134,8 +134,8 @@ def captured(monkeypatch):
     """ดักข้อมูลที่ endpoint ส่งเข้า render_transcript_pdf (ไม่ต้อง render จริง)"""
     calls = []
 
-    def fake_render(data, style, issued_on=None):
-        calls.append({"data": data, "style": style})
+    def fake_render(data, style, issued_on=None, lang="th"):
+        calls.append({"data": data, "style": style, "lang": lang})
         return b"%PDF-1.4 fake"
 
     monkeypatch.setattr(main_module, "render_transcript_pdf", fake_render)
