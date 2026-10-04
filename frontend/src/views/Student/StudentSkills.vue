@@ -15,6 +15,7 @@ import {
   studentHeaders
 } from '../../constants/currentStudent'
 import { SKILLS_BY_ROLE } from '../../constants/activitySkills'
+import ActivityHoursSummary from '../../components/common/ActivityHoursSummary.vue'
 import { useLanguage } from '../../composables/useLanguage'
 
 const { t, currentLanguage } = useLanguage()
@@ -35,6 +36,7 @@ const track = ref(DEFAULT_TRACK)
 const pendingTrack = ref('')
 let loadRequestId = 0
 
+const hours = ref({})
 const student = ref(null)
 const apiSkillDefinitions = ref([])
 const periodDefinitions = ref([])
@@ -52,31 +54,22 @@ const comparison = ref('major')
 const comparisonOptions = computed(() => [
   {
     key: 'major',
-    label: t.value.studentSkills.comparisonMajorOption
+    label: t.value.skillSources.major
   },
   {
     key: 'faculty',
-    label: t.value.studentSkills.comparisonFacultyOption
+    label: t.value.skillSources.faculty
   },
-  {
-    key: 'external',
-    label: t.value.studentSkills.comparisonExternalOption
-  }
+  { key: 'external', label: t.value.skillSources.external }
 ])
 
+const isExternalComparison = computed(() => comparison.value === 'external')
 const isMajorComparison = computed(() => comparison.value === 'major')
 
 const comparisonText = computed(() => {
   const text = t.value.studentSkills
 
-  if (comparison.value === 'external') {
-    return {
-      hint: text.comparisonExternalHint,
-      mySkillsLegend: text.mySkillsExternalLegend,
-      averageLegend: null
-    }
-  }
-
+  if (isExternalComparison.value) return { hint: t.value.skillSources.externalHint, mySkillsLegend: t.value.skillSources.externalTitle, averageLegend: null }
   return isMajorComparison.value
     ? {
         hint: text.comparisonMajorHint,
@@ -186,17 +179,18 @@ const currentComparison = computed(() =>
 )
 
 // ทักษะของฉันเฉพาะกิจกรรมในขอบเขตที่เลือก (สาขา / คณะ)
+
 const currentSkills = computed(() =>
   currentComparison.value.skills || {}
 )
 
 // ค่าเฉลี่ยของขอบเขตที่เลือก (ค่าเฉลี่ยสาขา / ค่าเฉลี่ยคณะ)
 const facultySkills = computed(() =>
-  currentComparison.value.average || {}
+  isExternalComparison.value ? {} : currentComparison.value.average || {}
 )
 
 const currentActivities = computed(() =>
-  currentPeriod.value.activities || []
+  (currentPeriod.value.activities || []).filter(activity => activity.scope === comparison.value)
 )
 
 const selectedYear = ref('')
@@ -499,6 +493,7 @@ async function loadSkills(requestedTrack = track.value) {
     const previousPeriod = selectedPeriod.value
     const nextPeriods = data.periods || {}
 
+    hours.value = data.hours || {}
     student.value = data.student || null
     track.value = data.track || requestedTrack
     apiSkillDefinitions.value =
@@ -555,7 +550,7 @@ async function fetchTranscriptPdf() {
     : 'false'
 
   const response = await fetch(
-    `${API_BASE}/api/student/me/skills/export?period=${encodeURIComponent(selectedPeriod.value)}&include_chart=${includeChart}&track=${encodeURIComponent(track.value)}`,
+    `${API_BASE}/api/student/me/skills/export?period=${encodeURIComponent(selectedPeriod.value)}&include_chart=${includeChart}&track=${encodeURIComponent(track.value)}&source=${encodeURIComponent(comparison.value)}`,
     {
       headers: studentHeaders()
     }
@@ -723,6 +718,8 @@ onMounted(() => loadSkills())
           </p>
         </div>
 
+        <ActivityHoursSummary v-if="!loading" :hours="hours" panel />
+
         <div class="heading-controls">
           <!-- สลับโหมด: skill ผู้เข้าร่วม / skill ผู้จัด (staff) -->
           <div
@@ -806,7 +803,7 @@ onMounted(() => loadSkills())
           <BarChart3 :size="18" />
 
           <span>
-            {{ trackText.radarChartTitle }}
+            {{ isExternalComparison ? t.skillSources.externalTitle : trackText.radarChartTitle }}
           </span>
 
           <span
@@ -913,7 +910,7 @@ onMounted(() => loadSkills())
                 />
 
                 <polygon
-                  v-if="hasFacultyData && showFacultyAverage"
+                  v-if="!isExternalComparison && hasFacultyData && showFacultyAverage"
                   :points="facultyRadarPoints"
                   class="faculty-radar"
                 />
@@ -960,7 +957,7 @@ onMounted(() => loadSkills())
                 </button>
 
                 <button
-                  v-if="comparisonText.averageLegend"
+                  v-if="comparisonText.averageLegend && !isExternalComparison"
                   type="button"
                   class="legend-toggle"
                   :class="{ inactive: !showFacultyAverage }"
@@ -978,7 +975,7 @@ onMounted(() => loadSkills())
                 <strong>{{ t.studentSkills.skillRadar }}</strong>
 
                 <span>
-                  {{ trackText.noDataInPeriod }}
+                  {{ isExternalComparison ? t.skillSources.externalEmpty : trackText.noDataInPeriod }}
                 </span>
               </div>
             </div>
@@ -1143,7 +1140,7 @@ onMounted(() => loadSkills())
         </button>
       </div>
     </template>
-  
+
       <!-- EXPORT MODAL -->
       <Teleport to="body">
       <div
@@ -1205,7 +1202,7 @@ onMounted(() => loadSkills())
 
                   {{ t.studentSkills.withRadarChartDesc }}
 
-            
+
 
                 </span>
               </div>
@@ -2245,5 +2242,25 @@ td {
   opacity: .35;
 }
 
+
+
+/* Skills header hierarchy and readable controls. */
+.skills-page .page-heading { display: flex; flex-direction: column; align-items: stretch; gap: 18px; margin-bottom: 24px; }
+.skills-page .page-heading h1 { font-size: 28px; line-height: 1.3; }
+.skills-page .page-heading p { font-size: 14px; color: #64748b; }
+.skills-page .heading-controls { flex-direction: row; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.skills-page .period-controls { flex-wrap: wrap; }
+.skills-page .track-toggle { flex-wrap: wrap; }
+.skills-page .track-option { min-height: 38px; padding: 8px 12px; font-size: 14px; }
+.skills-page .comparison-bar { margin: 0 0 20px; }
+.skills-page .comparison-hint { font-size: 14px; }
+.skills-page .section-title { font-size: 18px; }
+.skills-page .skill-name { font-size: 15px; line-height: 1.5; }
+.skills-page .skill-score { font-size: 20px; }
+.skills-page .radar-label { font-size: 11px; }
+@media (max-width: 600px) {
+  .skills-page .overview-card { padding: 18px 12px; }
+  .skills-page .heading-controls { align-items: flex-start; }
+}
 
 </style>

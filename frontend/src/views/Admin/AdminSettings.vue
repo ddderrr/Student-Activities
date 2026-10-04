@@ -27,7 +27,7 @@ import {
 import { useLanguage } from '../../composables/useLanguage'
 import { adminFetch, getAdminSession } from '../../constants/currentAdmin'
 import { BRANCHES } from '../../constants/branches'
-import { API_BASE } from '../../constants/currentStudent'
+import { API_BASE } from '../../config/api'
 
 const { t, currentLanguage } = useLanguage()
 

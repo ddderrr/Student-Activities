@@ -1,3 +1,4 @@
+from decimal import Decimal
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 
@@ -6,6 +7,7 @@ from functools import lru_cache
 from io import BytesIO, StringIO
 import json
 import math
+import os
 from pathlib import Path
 import secrets
 import shutil
@@ -22,6 +24,10 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
+
+from skill_scoring import source_skill_profiles
+
+from activity_hours import effective_completed, earned_internal_hours, total_activity_hours, activity_hours_summary, activity_hours_summaries
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
@@ -60,6 +66,7 @@ from admin_scope import (
 )
 import academic_calendar
 from database import Base, SessionLocal, engine, get_db
+from dev_migrations import apply_development_migrations
 from faculty_utils import normalize_faculty
 from import_limits import (
     MAX_IMPORT_ROWS,
@@ -150,6 +157,8 @@ async def lifespan(app: FastAPI):
     # สร้าง table ถ้ายังไม่มี
     # ภายหลังใช้ Alembic migration แทน create_all
     Base.metadata.create_all(bind=engine)
+    if os.getenv("DEV_SCHEMA_UPDATES", "false").strip().lower() == "true":
+        apply_development_migrations(engine)
     seed_skills()
     EXTERNAL_ACTIVITY_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     warn_if_auth_secret_missing()
@@ -168,6 +177,10 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        f"http://localhost:{os.getenv('FRONTEND_PORT', '5174')}",
+        f"http://127.0.0.1:{os.getenv('FRONTEND_PORT', '5174')}",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -359,11 +372,7 @@ def dashboard_effective_completed(activity: Activity, now_value: datetime) -> bo
 
     This is derived for reporting; it does not silently rewrite the database row.
     """
-    if activity.status == "cancelled":
-        return False
-    if activity.status == "completed":
-        return True
-    return activity.end_at is not None and activity.end_at < now_value
+    return effective_completed(activity, now_value)
 
 
 @app.get("/api/admin/dashboard")
@@ -928,7 +937,7 @@ def get_admin_student_skills(
         .distinct().all() if value is not None
     }
     available_years = sorted(internal_years | external_years | {now_value.year}, reverse=True)
-    selected_year = year if year in available_years else available_years[0]
+    selected_year = year if year in available_years else max(internal_years | {now_value.year})
 
     internal_rows = scope_student_query(
         db.query(
@@ -996,28 +1005,22 @@ def get_admin_student_skills(
                 "name": f"{first_name} {last_name}".strip(),
                 "major": major or "",
                 "skill_values": {key: [] for key in definitions},
-                # แยกตามขอบเขตกิจกรรม ให้หน้ารายละเอียดนักศึกษาสลับกราฟ สาขา / คณะ / ภายนอก
-                # (กิจกรรมของสาขาอื่นไม่นับในกราฟใดเลย)
-                "major_values": {key: [] for key in definitions},
-                "faculty_values": {key: [] for key in definitions},
-                "external_values": {key: [] for key in definitions},
+                # แยกตามขอบเขตกิจกรรม ให้หน้ารายละเอียดนักศึกษาสลับกราฟ สาขา / คณะ
+                # (ไม่นับกิจกรรมภายนอกและกิจกรรมของสาขาอื่น)
+                "source_activities": {},
                 "skill_activity_ids": {key: set() for key in definitions},
                 "activity_ids": set(),
             }
         evidence_id = f"{source}:{activity_id}"
         entry = grouped[student_id]
-        entry["activity_ids"].add(evidence_id)
-        entry["skill_activity_ids"][skill_key].add(evidence_id)
-        entry["skill_values"][skill_key].append(float(level))
-
+        scope = activity_source(row[8], major) if source == "internal" else "external"
+        activity = entry["source_activities"].setdefault(evidence_id, {"scope": scope, "skills": {}})
+        activity["skills"][skill_key] = float(level)
         if source == "internal":
-            scope = activity_source(row[8], major)
-            if scope == "faculty":
-                entry["faculty_values"][skill_key].append(float(level))
-            elif scope == "major":
-                entry["major_values"][skill_key].append(float(level))
-        else:
-            entry["external_values"][skill_key].append(float(level))
+            entry["activity_ids"].add(evidence_id)
+            entry["skill_activity_ids"][skill_key].add(evidence_id)
+            entry["skill_values"][skill_key].append(float(level))
+
 
     for row in internal_rows:
         add_row(row, "internal")
@@ -1031,6 +1034,8 @@ def get_admin_student_skills(
         now_value.date(),
     )
     students = []
+    hours_by_student = activity_hours_summaries(db, db.query(Student).filter(Student.student_id.in_(grouped)).all())
+    major_average_cache = {}
     for entry in grouped.values():
         skills = average_skill_levels(entry["skill_values"])
         skill_activity_counts = {
@@ -1038,6 +1043,12 @@ def get_admin_student_skills(
             for skill_key in definitions
         }
 
+        profiles = source_skill_profiles(list(entry["source_activities"].values()), definitions)
+        major = entry["major"]
+        if major not in major_average_cache:
+            major_average_cache[major] = scoped_skill_average_for_period(
+                db, selected_year, {"SEMESTER_1": 1, "SEMESTER_2": 2}.get(selected_semester), track, major
+            ) if major else {key: None for key in definitions}
         students.append({
             "id": entry["id"],
             "name": entry["name"],
@@ -1053,9 +1064,16 @@ def get_admin_student_skills(
             "activityCount": len(entry["activity_ids"]),
             "skillActivityCounts": skill_activity_counts,
             "skills": skills,
-            "majorSkills": average_skill_levels(entry["major_values"]),
-            "facultySkills": average_skill_levels(entry["faculty_values"]),
-            "externalSkills": average_skill_levels(entry["external_values"]),
+            "majorSkills": profiles["major"],
+            "facultySkills": profiles["faculty"],
+            "externalSkills": profiles["external"],
+            "majorActivityAverage": major_average_cache[major],
+            "hours": hours_by_student[entry["id"]],
+            "activityCounts": {
+                source: sum(a["scope"] == source for a in entry["source_activities"].values())
+                for source in ("major", "faculty", "external")
+            },
+            "skillsScope": "internal",
         })
 
     students.sort(key=lambda item: item["id"])
@@ -1070,12 +1088,6 @@ def get_admin_student_skills(
         selected_semester_no,
         track,
         None,
-    )
-    external_activity_average = external_skill_average_for_period(
-        db,
-        selected_year,
-        selected_semester_no,
-        track,
     )
 
     # จำนวนนักศึกษาทั้งหมดแยกตามชั้นปี (ในปีการศึกษาที่ใช้) และสาขา
@@ -1094,7 +1106,7 @@ def get_admin_student_skills(
 
         # ยังไม่ได้เข้าเรียนในปีนั้นจึงไม่นับ ยกเว้นคนที่มีข้อมูล skill ในรายงานนี้
         # (เช่นกิจกรรมภายนอกก่อนเข้าเรียน) ให้นับตรงกับรายชื่อด้านบนที่แสดงเป็น "ไม่ทราบชั้นปี"
-        if entry_year is not None and level is None and student_id not in grouped:
+        if entry_year is not None and level is None and not grouped.get(student_id, {}).get("activity_ids"):
             continue
 
         key = (level, major or "")
@@ -1120,7 +1132,6 @@ def get_admin_student_skills(
         "benchmarkScores": [benchmarks[key] for key in definitions],
         "benchmarkBySkill": benchmarks,
         "facultyActivityAverage": faculty_activity_average,
-        "externalActivityAverage": external_activity_average,
         "skillDefinitions": [
             {"key": key, "label": label}
             for key, label in definitions.items()
@@ -1171,6 +1182,7 @@ def get_admin_student_activities(
                 "id": activity.id,
                 "title": activity.name,
                 "activity_type": activity.activity_type,
+                "activity_hours": float(activity.activity_hours),
                 "start_at": activity.start_at,
                 "end_at": activity.end_at,
                 "role": member.role,
@@ -1193,6 +1205,7 @@ def get_admin_student_activities(
                 "id": external_activity.id,
                 "title": external_activity.title,
                 "activity_type": external_activity.activity_type,
+                "activity_hours": float(external_activity.activity_hours),
                 "start_at": datetime.combine(
                     external_activity.start_date,
                     datetime.min.time(),
@@ -1218,6 +1231,8 @@ def get_admin_student_activities(
             "last_name": student.last_name,
         },
         "total": len(items),
+        "total_activity_hours": float(total_activity_hours(db, student_id)),
+        "hours": activity_hours_summary(db, student),
         "activities": items,
     }
 
@@ -1228,6 +1243,8 @@ def get_admin_student_activities(
 
 
 class ActivityCreate(BaseModel):
+    # Legacy clients may omit hours; newly supplied values must be positive.
+    activity_hours: Decimal = Field(default=Decimal(0), gt=0, max_digits=10, decimal_places=2)
     activity_type: str
     name: str
 
@@ -1247,6 +1264,7 @@ class ActivityCreate(BaseModel):
 
 
 class ActivityUpdate(BaseModel):
+    activity_hours: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
     name: str | None = None
     activity_type: str | None = None
 
@@ -1453,6 +1471,8 @@ def serialize_activity(
         "advisor": activity.advisor,
         "location": activity.location,
         "description": activity.description,
+        "activity_hours": float(activity.activity_hours),
+        "earned_activity_hours": float(earned_internal_hours(activity)),
         "status": activity.status,
         "created_at": activity.created_at,
 
@@ -1581,6 +1601,7 @@ def create_activity(
         advisor=payload.advisor.strip(),
         location=payload.location.strip(),
         description=payload.description.strip(),
+        activity_hours=payload.activity_hours,
         status="active",
         # แอดมินสาขาสร้างกิจกรรมเป็นของสาขาตัวเองอัตโนมัติ ส่วนแอดมินกลาง
         # สร้างแล้วเห็นได้ทุกแอดมิน (major=None)
@@ -1639,6 +1660,9 @@ def update_activity(
     updates = payload.model_dump(
         exclude_unset=True,
     )
+
+    if "activity_hours" in updates and updates["activity_hours"] is None:
+        raise HTTPException(status_code=400, detail="activity_hours cannot be null")
 
     if "status" in updates:
         if updates["status"] is None:
@@ -3781,6 +3805,7 @@ def serialize_external_activity(
         "location": external_activity.location,
         "role": external_activity.role,
         "description": external_activity.description,
+        "activity_hours": float(external_activity.activity_hours),
         "status": external_activity.status,
         "reject_reason": external_activity.reject_reason,
         "submitted_at": external_activity.submitted_at,
@@ -3821,6 +3846,7 @@ async def submit_external_activity(
     location: str = Form(...),
     role: str = Form(...),
     description: str = Form(""),
+    activity_hours: Decimal | None = Form(None, gt=0, max_digits=10, decimal_places=2),
     skills: str = Form(...),
     evidence: list[UploadFile] | None = File(None),
     student: Student = Depends(get_current_student),
@@ -3877,6 +3903,7 @@ async def submit_external_activity(
             location=location.strip(),
             role=role,
             description=description.strip(),
+            activity_hours=activity_hours if activity_hours is not None else Decimal(0),
             status="pending",
             skill_levels=[
                 ExternalActivitySkill(
@@ -3918,6 +3945,7 @@ async def update_external_activity(
     location: str = Form(...),
     role: str = Form(...),
     description: str = Form(""),
+    activity_hours: Decimal | None = Form(None, gt=0, max_digits=10, decimal_places=2),
     skills: str = Form(...),
     evidence: list[UploadFile] | None = File(None),
     remove_evidence_ids: list[int] | None = Form(None),
@@ -4008,6 +4036,8 @@ async def update_external_activity(
         external_activity.location = location.strip()
         external_activity.role = role
         external_activity.description = description.strip()
+        if activity_hours is not None:
+            external_activity.activity_hours = activity_hours
 
         external_activity.status = "pending"
         external_activity.reject_reason = None
@@ -4265,6 +4295,8 @@ def list_my_activities(
                 "end_at": activity.end_at,
                 "location": activity.location,
                 "description": activity.description,
+                "activity_hours": float(activity.activity_hours),
+                "earned_activity_hours": float(earned_internal_hours(activity)),
                 "role": member.role,
                 "status": activity.status,
                 "skills": {
@@ -4308,6 +4340,7 @@ def list_my_activities(
                 ),
                 "location": external_activity.location,
                 "description": external_activity.description,
+                "activity_hours": float(external_activity.activity_hours),
                 "role": external_activity.role,
                 "status": external_activity.status,
                 "skills": external_activity_skills(external_activity),
@@ -4333,6 +4366,8 @@ def list_my_activities(
             "major": student.major,
         },
         "total": len(items),
+        "total_activity_hours": float(total_activity_hours(db, student.student_id)),
+        "hours": activity_hours_summary(db, student),
         "activities": items,
     }
 
@@ -4344,96 +4379,7 @@ def faculty_skill_average_for_period(
     semester: int | None,
     track: str = "participant",
 ) -> dict:
-    """
-    ค่าเฉลี่ยทักษะของคณะ ใช้หลักเดียวกับหน้า Admin:
-    activity evidence -> ค่าเฉลี่ยต่อ skill ของนักศึกษาแต่ละคน
-    -> ค่าเฉลี่ยของนักศึกษาทั้งหมดในคณะ/ระบบ
-
-    ทำแบบ student-first เพื่อไม่ให้นักศึกษาที่มีกิจกรรมเยอะ
-    มีน้ำหนักมากกว่าคนอื่น
-    """
-    member_role = SKILL_TRACKS[track]["member_role"]
-    target_role = SKILL_TRACKS[track]["target_role"]
-    definitions = SKILL_TRACKS[track]["definitions"]
-    grouped: dict[str, dict[str, list[float]]] = {}
-
-    def add_value(student_id, when, skill_key, level):
-        if when is None or when.year != year:
-            return
-        if skill_key not in definitions:
-            return
-
-        sem_no = 1 if when.month <= 6 else 2
-        if semester is not None and sem_no != semester:
-            return
-
-        if student_id not in grouped:
-            grouped[student_id] = {
-                key: []
-                for key in definitions
-            }
-
-        grouped[student_id][skill_key].append(float(level))
-
-    internal_rows = (
-        db.query(
-            Student.student_id,
-            Activity.start_at,
-            ActivitySkill.skill_key,
-            ActivitySkill.level,
-        )
-        .join(
-            ActivityMember,
-            ActivityMember.student_id == Student.student_id,
-        )
-        .join(
-            Activity,
-            Activity.id == ActivityMember.activity_id,
-        )
-        .join(
-            ActivitySkill,
-            ActivitySkill.activity_id == Activity.id,
-        )
-        .filter(
-            ActivityMember.role == member_role,
-            ActivitySkill.target_role == target_role,
-            counted_activity_filter(),
-            func.extract("year", Activity.start_at) == year,
-        )
-        .all()
-    )
-
-    external_rows = (
-        db.query(
-            Student.student_id,
-            ExternalActivity.start_date,
-            ExternalActivitySkill.skill_key,
-            ExternalActivitySkill.level,
-        )
-        .join(
-            ExternalActivity,
-            ExternalActivity.student_id == Student.student_id,
-        )
-        .join(
-            ExternalActivitySkill,
-            ExternalActivitySkill.external_activity_id == ExternalActivity.id,
-        )
-        .filter(
-            counted_external_activity_filter(),
-            ExternalActivity.role == member_role,
-            ExternalActivitySkill.target_role == target_role,
-            func.extract("year", ExternalActivity.start_date) == year,
-        )
-        .all()
-    )
-
-    for student_id, when, skill_key, level in internal_rows:
-        add_value(student_id, when, skill_key, level)
-
-    for student_id, when, skill_key, level in external_rows:
-        add_value(student_id, when, skill_key, level)
-
-    return student_first_average(grouped, definitions)
+    return scoped_skill_average_for_period(db, year, semester, track, None)
 
 
 def scoped_skill_average_for_period(
@@ -4507,58 +4453,6 @@ def scoped_skill_average_for_period(
     return student_first_average(grouped, definitions)
 
 
-def external_skill_average_for_period(
-    db: Session,
-    year: int,
-    semester: int | None,
-    track: str,
-) -> dict:
-    """
-    ค่าเฉลี่ยทักษะจากกิจกรรมภายนอกที่อนุมัติแล้ว ของนักศึกษาทั้งคณะ แบบ student-first
-    ใช้กับกราฟ "กิจกรรมภายนอก" ทั้งหน้า My Skills และหน้ารายละเอียดนักศึกษาฝั่ง admin
-    """
-    member_role = SKILL_TRACKS[track]["member_role"]
-    target_role = SKILL_TRACKS[track]["target_role"]
-    definitions = SKILL_TRACKS[track]["definitions"]
-
-    rows = (
-        db.query(
-            ExternalActivity.student_id,
-            ExternalActivity.start_date,
-            ExternalActivitySkill.skill_key,
-            ExternalActivitySkill.level,
-        )
-        .join(
-            ExternalActivitySkill,
-            ExternalActivitySkill.external_activity_id == ExternalActivity.id,
-        )
-        .filter(
-            counted_external_activity_filter(),
-            ExternalActivity.role == member_role,
-            ExternalActivitySkill.target_role == target_role,
-            func.extract("year", ExternalActivity.start_date) == year,
-        )
-        .all()
-    )
-
-    grouped: dict[str, dict[str, list[float]]] = {}
-
-    for student_id, when, skill_key, level in rows:
-        if when is None or skill_key not in definitions:
-            continue
-
-        sem_no = 1 if when.month <= 6 else 2
-        if semester is not None and sem_no != semester:
-            continue
-
-        grouped.setdefault(
-            student_id,
-            {key: [] for key in definitions},
-        )[skill_key].append(float(level))
-
-    return student_first_average(grouped, definitions)
-
-
 def student_skill_periods(
     student: Student,
     db: Session,
@@ -4590,6 +4484,7 @@ def student_skill_periods(
             Activity.id,
             Activity.name,
             Activity.description,
+            Activity.activity_hours,
             Activity.start_at,
             Activity.status,
             Activity.major,
@@ -4617,6 +4512,7 @@ def student_skill_periods(
         activity_id,
         title,
         description,
+        activity_hours,
         start_at,
         status,
         activity_major,
@@ -4634,6 +4530,7 @@ def student_skill_periods(
                 "id": activity_id,
                 "title": title,
                 "description": description or "",
+                "activity_hours": float(activity_hours),
                 "start_at": start_at,
                 "status": status,
                 # other_major ไม่นับเข้ากราฟเปรียบเทียบทั้งสองแบบ (ดู activity_source)
@@ -4650,6 +4547,7 @@ def student_skill_periods(
             ExternalActivity.id,
             ExternalActivity.title,
             ExternalActivity.description,
+            ExternalActivity.activity_hours,
             ExternalActivity.start_date,
             ExternalActivity.status,
             ExternalActivitySkill.skill_key,
@@ -4672,6 +4570,7 @@ def student_skill_periods(
         external_id,
         title,
         description,
+        activity_hours,
         start_date,
         status,
         skill_key,
@@ -4688,6 +4587,7 @@ def student_skill_periods(
                 "id": external_id,
                 "title": title,
                 "description": description or "",
+                "activity_hours": float(activity_hours),
                 "start_at": datetime.combine(
                     start_date,
                     datetime.min.time(),
@@ -4776,12 +4676,10 @@ def student_skill_periods(
         # กราฟเปรียบเทียบแยก 2 แบบ (ไม่นับกิจกรรมภายนอกและกิจกรรมของสาขาอื่น)
         # major:   กิจกรรมสาขาของฉัน   vs ค่าเฉลี่ยนักศึกษาสาขาเดียวกัน
         # faculty: กิจกรรมของคณะของฉัน vs ค่าเฉลี่ยนักศึกษาทั้งคณะ
+        profiles = source_skill_profiles(period_activities, definitions)
         comparisons = {
             "major": {
-                "skills": average_activity_skills(
-                    [a for a in period_activities if a["scope"] == "major"],
-                    definitions,
-                ),
+                "skills": profiles["major"],
                 "average": (
                     scoped_skill_average_for_period(
                         db,
@@ -4795,10 +4693,7 @@ def student_skill_periods(
                 ),
             },
             "faculty": {
-                "skills": average_activity_skills(
-                    [a for a in period_activities if a["scope"] == "faculty"],
-                    definitions,
-                ),
+                "skills": profiles["faculty"],
                 "average": scoped_skill_average_for_period(
                     db,
                     period["year"],
@@ -4807,19 +4702,8 @@ def student_skill_periods(
                     None,
                 ),
             },
-            # external: กิจกรรมภายนอกของฉัน vs ค่าเฉลี่ยกิจกรรมภายนอกของนักศึกษาทั้งคณะ
-            "external": {
-                "skills": average_activity_skills(
-                    [a for a in period_activities if a["scope"] == "external"],
-                    definitions,
-                ),
-                "average": external_skill_average_for_period(
-                    db,
-                    period["year"],
-                    period["semester"],
-                    track,
-                ),
-            },
+            # External skills belong only to this student; no population comparison.
+            "external": {"skills": profiles["external"], "average": None},
         }
 
         periods[period["key"]] = {
@@ -4828,6 +4712,8 @@ def student_skill_periods(
             "year": period["year"],
             "semester": period["semester"],
             "skills": skills,
+            "skillsScope": "personal_all_sources",
+            "skillsBySource": profiles,
             "facultyAverage": faculty_average,
             "comparisons": comparisons,
             "activities": period_activities,
@@ -4873,6 +4759,8 @@ def get_my_skills(
             "faculty": student.faculty,
             "major": student.major,
         },
+        "total_activity_hours": float(total_activity_hours(db, student.student_id)),
+        "hours": activity_hours_summary(db, student),
         "track": track,
         "skillDefinitions": [
             {
@@ -5079,6 +4967,7 @@ def export_my_skills_pdf(
     period: str | None = None,
     include_chart: bool = True,
     track: str = "participant",
+    source: str = "all",
     student: Student = Depends(get_current_student),
     db: Session = Depends(get_db),
 ):
@@ -5099,6 +4988,16 @@ def export_my_skills_pdf(
             status_code=404,
             detail="ไม่พบปี/ภาคเรียนที่ต้องการ Export",
         )
+
+    if source not in {"all", "major", "faculty", "external"}:
+        raise HTTPException(status_code=400, detail="Invalid skill source")
+    selected = dict(selected)
+    if source != "all":
+        selected["skills"] = selected["comparisons"][source]["skills"]
+        selected["facultyAverage"] = selected["comparisons"][source]["average"] or {}
+        selected["activities"] = [a for a in selected["activities"] if a["scope"] == source]
+    else:
+        selected["facultyAverage"] = {}  # Personal all-sources has no population benchmark.
 
     buffer = BytesIO()
     font_name = skill_pdf_font_name()
@@ -5150,15 +5049,15 @@ def export_my_skills_pdf(
                 f"{student.first_name} {student.last_name} "
                 f"| ID: {student.student_id} "
                 f"| Period: {selected['label']} "
-                f"| {SKILL_TRACKS[track]['label']}"
+                f"| {SKILL_TRACKS[track]['label']} | Source: {source if source != 'all' else 'Personal all sources'}"
             ),
             body_style,
         ),
         Spacer(1, 4 * mm),
     ]
 
-    # Optional radar chart
-    if include_chart:
+    # Optional radar chart; missing source evidence is not a zero-valued profile.
+    if include_chart and any(value is not None for value in selected["skills"].values()):
         story.append(
             build_skill_radar_pdf(
                 selected["skills"],
@@ -5168,6 +5067,9 @@ def export_my_skills_pdf(
             )
         )
         story.append(Spacer(1, 4 * mm))
+
+    if source == "external" and not any(value is not None for value in selected["skills"].values()):
+        story.append(Paragraph("No approved external activity skill data yet.", body_style))
 
     skill_rows = [["Skill", "Average / 5"]]
 
@@ -5203,10 +5105,16 @@ def export_my_skills_pdf(
 
     story.append(skill_table)
     story.append(Spacer(1, 7 * mm))
+    hours = activity_hours_summary(db, student)
+    story.append(Paragraph(
+        f"Overall accumulated hours — Total: {hours['total']} | Major: {hours['major']} | "
+        f"Faculty: {hours['faculty']} | External: {hours['external']}", body_style
+    ))
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("Activities used for calculation", body_style))
     story.append(Spacer(1, 2 * mm))
 
-    activity_rows = [["Activity", "Skills", "Date", "Status"]]
+    activity_rows = [["Activity", "Skills", "Date", "Status", "Source", "Hours"]]
 
     for activity in selected["activities"]:
         skills_text = ", ".join(
@@ -5223,6 +5131,8 @@ def export_my_skills_pdf(
                 Paragraph(escape_pdf_text(skills_text or "-"), small_style),
                 activity["start_at"].strftime("%d/%m/%Y"),
                 activity["status"] or "-",
+                activity["scope"],
+                str(activity["activity_hours"]),
             ]
         )
 
@@ -5230,15 +5140,13 @@ def export_my_skills_pdf(
         activity_rows.append(
             [
                 Paragraph("No activity data available", small_style),
-                "-",
-                "-",
-                "-",
+                "-", "-", "-", "-", "-",
             ]
         )
 
     activity_table = Table(
         activity_rows,
-        colWidths=[85 * mm, 110 * mm, 32 * mm, 30 * mm],
+        colWidths=[65 * mm, 87 * mm, 28 * mm, 27 * mm, 30 * mm, 20 * mm],
         repeatRows=1,
     )
     activity_table.setStyle(
@@ -5309,6 +5217,8 @@ def get_my_transcript_options(
     counts = transcript_data.scope_counts(db, student)
 
     return {
+        "total_activity_hours": float(total_activity_hours(db, student.student_id)),
+        "hours": activity_hours_summary(db, student),
         "current_year_level": transcript_data.current_year_level(student.student_id),
         "allowed_year_levels": transcript_data.allowed_year_levels(student.student_id),
         "major": (student.major or "").strip(),

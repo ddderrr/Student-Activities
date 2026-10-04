@@ -4,7 +4,8 @@ FROM node:22-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline --fetch-retries=5
 
 
 # ---------- dev: ใช้กับ compose.override.yml (Vite hot reload) ----------
@@ -21,6 +22,9 @@ CMD ["sh", "-c", "if [ ! -f src/main.js ]; then echo 'frontend/src is not mounte
 
 # ---------- build ----------
 FROM deps AS build
+
+ARG VITE_API_URL=http://127.0.0.1:8000
+ENV VITE_API_URL=$VITE_API_URL
 
 COPY . .
 RUN npm run build

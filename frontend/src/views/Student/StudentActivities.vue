@@ -36,6 +36,7 @@ import {
   useRouter
 } from 'vue-router'
 
+import ActivityHoursSummary from '../../components/common/ActivityHoursSummary.vue'
 import { useLanguage } from '../../composables/useLanguage'
 
 
@@ -118,6 +119,7 @@ const error = ref(null)
    ภายหลัง Backend ควรส่งเฉพาะข้อมูลของผู้ใช้ปัจจุบัน
 ===================================================== */
 
+const hours = ref({})
 const activities = ref([])
 
 
@@ -159,6 +161,7 @@ const toActivityView = (item, student) => {
       : t.value.studentActivities.facultyActivityLabel,
     title: item.title,
     description: item.description || '',
+    activityHours: item.activity_hours ?? 0,
     studentName:
       `${student.first_name} ${student.last_name}`,
     studentId: student.student_id,
@@ -217,6 +220,7 @@ const toSubmissionView = (item) => ({
   sourceLabel: t.value.studentActivities.externalActivityLabel,
   title: item.title,
   description: item.description || '',
+  activityHours: item.activity_hours ?? 0,
   studentName:
     `${item.student.first_name} ${item.student.last_name}`,
   studentId: item.student_id,
@@ -654,6 +658,7 @@ const fetchActivities = async () => {
       await submissionsResponse.json()
 
 
+    hours.value = data.hours || {}
     activities.value =
       data.activities.map(
         item => toActivityView(item, data.student)
@@ -732,6 +737,7 @@ onBeforeUnmount(() => {
     ================================================== -->
 
     <main class="content">
+      <ActivityHoursSummary v-if="!loading && !error" :hours="hours" />
 
 
       <!-- =================================================
@@ -1014,7 +1020,7 @@ onBeforeUnmount(() => {
               class="status"
               :class="activity.status"
             >
-              {{ activity.statusLabel }}
+              {{ activity.statusLabel }} · {{ activity.activityHours }} {{ t.activityHours.unit }}
             </span>
 
 
@@ -1198,6 +1204,7 @@ onBeforeUnmount(() => {
 
 
               <div class="detail-info-grid">
+                <div><span class="detail-label">{{ t.activityHours.label }}</span><p>{{ selectedActivity.activityHours }} {{ t.activityHours.unit }}</p></div>
 
                 <div>
 

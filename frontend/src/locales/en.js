@@ -1,4 +1,28 @@
 export default {
+  skillSources: {
+    major: "Major Activities",
+    faculty: "Faculty Activities",
+    external: "External Activities",
+    externalTitle: "External Activity Skills",
+    externalHint: "Skills from this student's approved external activities only.",
+    externalEmpty: "No approved external activity skill data yet.",
+    strongestExternal: "Strongest External Skill",
+    internalActivities: "Internal Activities Evaluated",
+    activitiesUsed: "Activities used",
+    sourceLabel: "Activity source",
+    sourceCaption: "Source",
+    personalSource: "Approved External Activities"
+  },
+  activityHours: {
+    major: 'Major Activity Hours',
+    faculty: 'Faculty Activity Hours',
+    external: 'External Activity Hours',
+    label: 'Activity Hours',
+    total: 'Total Activity Hours',
+    unit: 'Hours',
+    invalid: 'Enter positive hours with up to two decimal places.',
+    invalidEdit: 'Enter zero or positive hours with up to two decimal places.'
+  },
   common: {
     language: 'Language',
     thai: 'Thai',
@@ -209,14 +233,7 @@ export default {
   studentFacultyActivities: 'Student (faculty activities)',
   gapCompareMajor: 'Major',
   gapCompareFaculty: 'Faculty',
-  gapCompareExternal: 'External',
-  skillAnalysisSubExternal: 'Skills from approved external activities compared with the external-activity average of the faculty.',
   studentExternalActivities: 'Student (external activities)',
-  externalAvgShort: 'External Avg',
-  externalShort: 'External',
-  skillGapSubExternal: 'Skills below the external-activity average for this semester.',
-  belowExternalAverage: 'below external-activity average',
-  noGapSubExternal: 'This student is at or above the external-activity average across all six skills.',
   faculty: 'Faculty',
 
   recommendation: 'Recommendation:',
@@ -914,6 +931,25 @@ export default {
     logoutAndSwitchStudent: 'Log out / switch student'
   },
 
+  adminLogin: {
+    title: 'Admin Login',
+    subtitle: 'Faculty of Science',
+    signInButton: 'Sign In',
+    loading: 'Loading...',
+    bypassNotice: 'Test mode: pick or type a test admin email. No password needed.',
+    emailLabel: 'Admin email',
+    emailPlaceholder: 'e.g. central@test.local',
+    accountsTitle: 'Test admin accounts',
+    centralMajor: 'Central admin (all majors)',
+    unknownEmail: 'This email is not in the test admin list.',
+    sessionExpired: 'Please choose an admin email again.',
+    backendUnavailable: 'Cannot reach the backend. Check that it is running.',
+    retry: 'Try again',
+    bypassDisabledTitle: 'Admin test mode (bypass) is not enabled, so admin pages are unavailable.',
+    bypassDisabledStep1: '1. Add this line to the .env file in the project root',
+    bypassDisabledStep2: '2. Restart the backend, then click "Try again"'
+  },
+
   studentLogin: {
     loginTitle: 'Sign in',
     loginSubtitle: 'Use your email and password, for both students and admins',
@@ -921,6 +957,7 @@ export default {
     sessionExpired: 'Your session has expired or your account changed. Please sign in again.',
     universityName: 'Chiang Mai University',
     facultyName: 'Faculty of Science',
+    adminLogin: 'Admin Login',
     emailLabel: 'Email',
     emailPlaceholder: 'name@example.com',
     passwordLabel: 'Password',
@@ -935,6 +972,9 @@ export default {
     emailRequiredError: 'Please enter your email',
     passwordRequiredError: 'Please enter your password',
     invalidCredentialsError: 'Incorrect email or password',
+    emailNotFoundError: 'This email was not found in the system',
+    wrongPasswordError: 'Incorrect password',
+    authUnavailableError: 'Sign-in is temporarily unavailable. The backend authentication configuration needs attention.',
     backendUnavailableError: 'Could not reach the backend. Please try again.'
   },
 
@@ -1112,7 +1152,13 @@ export default {
     scopeFaculty: 'Faculty-wide only',
     scopeExternal: 'External only',
     activitiesUnit: 'activities',
+    yearTitle: 'Year level',
+    currentYear: 'Current year: Year',
+    yearRule: 'You can select up to your current year',
+    yearUnknown: 'Year level cannot be determined from your student ID, so only "All years" is available.',
     allYears: 'All years',
+    yearPrefix: 'Year',
+    yearDisabled: 'Above your current year',
     demoNote: 'Demo document with a "SAMPLE" watermark',
     download: 'Download PDF',
     downloading: 'Generating PDF...',

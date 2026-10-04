@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     func,
@@ -34,6 +35,7 @@ class Activity(Base):
     advisor = Column(String(255), nullable=False, default="")
     location = Column(String(255), nullable=False)
     description = Column(Text, nullable=False, default="")
+    activity_hours = Column(Numeric(10, 2), nullable=False, default=0, server_default="0")
 
     # เจ้าของกิจกรรม (สาขา) สำหรับ major-scoping เหมือน students.major
     # None = สร้างโดยแอดมินกลาง หรือกิจกรรมเก่าก่อนมีคอลัมน์นี้ -> เห็นได้ทุกแอดมิน
@@ -64,6 +66,8 @@ class Activity(Base):
         back_populates="activity",
         cascade="all, delete-orphan",
     )
+
+    __table_args__ = (CheckConstraint("activity_hours >= 0", name="ck_activity_hours_nonnegative"),)
 
     @validates("major")
     def _normalize_major(self, _key, value):
@@ -407,6 +411,7 @@ class ExternalActivity(Base):
     location = Column(String(255), nullable=False)
     role = Column(String(20), nullable=False)
     description = Column(Text, nullable=False, default="")
+    activity_hours = Column(Numeric(10, 2), nullable=False, default=0, server_default="0")
 
     # เลิกใช้แล้ว: หลักฐานย้ายไปอยู่ที่ external_activity_evidence (หลายไฟล์ต่อคำขอ)
     # เก็บคอลัมน์ไว้เป็นข้อมูลเดิมเผื่อย้อนกลับ ห้ามอ่าน/เขียนในโค้ดใหม่
@@ -438,6 +443,7 @@ class ExternalActivity(Base):
             "role IN ('participant', 'organizer')",
             name="ck_external_activity_role",
         ),
+        CheckConstraint("activity_hours >= 0", name="ck_external_hours_nonnegative"),
         CheckConstraint(
             "status IN ('pending', 'approved', 'rejected')",
             name="ck_external_activity_status",

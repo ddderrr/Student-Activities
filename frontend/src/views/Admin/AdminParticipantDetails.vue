@@ -12,11 +12,11 @@ import {
 } from 'lucide-vue-next'
 import { PARTICIPANT_SKILLS, STAFF_SKILLS } from '../../constants/activitySkills'
 import { useLanguage } from '../../composables/useLanguage'
+import { API_BASE } from '../../config/api'
 import { adminFetch } from '../../constants/currentAdmin'
 
 const { t } = useLanguage()
 
-const API_BASE = 'http://127.0.0.1:8000'
 
 const route = useRoute()
 const router = useRouter()
@@ -392,6 +392,7 @@ function roleLabel(role) {
         <span class="detail-heading">{{ t.adminParticipantDetails.activityDetailsLabel }}</span>
 
         <div class="activity-detail-grid">
+          <div class="activity-detail-item"><small>{{ t.activityHours.label }}</small><strong>{{ activity.activity_hours ?? 0 }} {{ t.activityHours.unit }}</strong></div>
           <div class="activity-detail-item">
             <small>{{ t.adminParticipantDetails.typeLabel }}</small>
             <strong>{{ activity.activity_type || '—' }}</strong>

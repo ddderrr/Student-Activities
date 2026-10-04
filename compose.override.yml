@@ -14,6 +14,8 @@
 
 services:
   backend:
+    environment:
+      DEV_SCHEMA_UPDATES: "true"
     # tag :dev แยกจาก production และ build ทุกครั้งที่ up (มี cache จึงเร็ว)
     image: student-activities-backend:dev
     pull_policy: build
@@ -35,14 +37,17 @@ services:
 
     environment:
       CHOKIDAR_USEPOLLING: "true"
+      VITE_API_URL: ${VITE_API_URL:-http://127.0.0.1:8000}
 
     # แทนที่ port ของ nginx (80) ด้วย port ของ Vite dev server
     ports: !override
-      - "127.0.0.1:5173:5173"
+      - "127.0.0.1:${FRONTEND_PORT:-5174}:5173"
 
     # mount แค่ src และ public เพื่อใช้ node_modules (Linux) ที่ติดตั้งไว้ใน image
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/public:/app/public
+      - ./frontend/vite.config.js:/app/vite.config.js:ro
+      - ./frontend/tests:/app/tests:ro
 
     init: true

@@ -15,6 +15,7 @@ import {
 } from 'lucide-vue-next'
 import SkillLevelEditor from '../../components/Admin/SkillLevelEditor.vue'
 import DatePicker from '../../components/common/DatePicker.vue'
+import { validHours } from '../../utils/activityHours'
 import { useLanguage } from '../../composables/useLanguage'
 import {
   API_BASE,
@@ -53,6 +54,7 @@ const emptySkillLevels = () => ({
 ========================= */
 const emptyForm = () => ({
   title: '',
+  activity_hours: '',
   organization: '',
   activity_type: '',
   // ยังไม่เลือก: ซ่อนแผงทักษะ ฟอร์มเต็มความกว้าง (เลือกแล้วจึงเป็นสองคอลัมน์)
@@ -190,7 +192,8 @@ onMounted(async () => {
       start_date: item.start_date,
       end_date: item.end_date,
       location: item.location,
-      description: item.description || ''
+      description: item.description || '',
+      activity_hours: item.activity_hours || ''
     }
     applyCategoryFromValue(item.activity_type)
 
@@ -376,6 +379,7 @@ function removeExistingEvidence(id) {
    Submit
 ========================= */
 function validateForm() {
+  if (!validHours(form.value.activity_hours)) return t.value.activityHours.invalid
   const value = form.value
 
   const required = [
@@ -559,6 +563,7 @@ async function confirmSubmit() {
           </div>
 
           <div class="form-grid">
+            <label class="field"><span>{{ t.activityHours.label }}</span><input v-model="form.activity_hours" name="activity_hours" type="number" min="0.01" max="99999999.99" step="0.01" required /></label>
             <label class="field full">
               <span>{{ t.studentExternalActivity.activityNameLabel }} <b>*</b></span>
               <input

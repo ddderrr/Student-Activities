@@ -22,13 +22,13 @@ import {
   STAFF_SKILLS
 } from '../../constants/activitySkills'
 import { useLanguage } from '../../composables/useLanguage'
+import { API_BASE } from '../../config/api'
 import { adminFetch, fetchAdminFileUrl } from '../../constants/currentAdmin'
 import BranchFilterSelect from '../../components/common/BranchFilterSelect.vue'
 import { ALL_BRANCHES_VALUE } from '../../constants/branches'
 
 const { t } = useLanguage()
 
-const API_BASE = 'http://127.0.0.1:8000'
 const PAGE_SIZE = 10
 
 const AVATAR_COLORS = ['#2f5fdb', '#1c2b4a', '#8ea0ba', '#7c5cd6']
@@ -754,6 +754,8 @@ async function decideRequest(request, status) {
             <section class="review-section">
               <h4>{{ t.adminApproval.activityDetailsLabel }}</h4>
               <dl class="review-details">
+                <dt>{{ t.activityHours.label }}</dt>
+                <dd data-field="activity_hours">{{ reviewItem.activity_hours ?? 0 }} {{ t.activityHours.unit }}</dd>
                 <dt>{{ t.adminApproval.externalOrganizerLabel }}</dt>
                 <dd data-field="organization">{{ reviewItem.organization }}</dd>
                 <dt>{{ t.adminApproval.categoryLabel }}</dt>

@@ -14,13 +14,14 @@ import {
   Users
 } from 'lucide-vue-next'
 
+import ActivityHoursSummary from '../../components/common/ActivityHoursSummary.vue'
 import { useLanguage } from '../../composables/useLanguage'
+import { API_BASE } from '../../config/api'
 import { adminFetch } from '../../constants/currentAdmin'
 import BranchFilterSelect from '../../components/common/BranchFilterSelect.vue'
 import { ALL_BRANCHES_VALUE } from '../../constants/branches'
 
 const { t, currentLanguage } = useLanguage()
-const API_BASE = 'http://localhost:8000'
 
 /* =========================
    Skill definitions
@@ -317,7 +318,7 @@ const loadStudentSkills = async () => {
     params.set('track', skillTrack.value)
 
     const response = await adminFetch(`${API_BASE}/api/admin/student-skills?${params.toString()}`)
-    const data = await response.json()
+    const data = await response.json().catch(() => ({}))
 
     if (loadId !== latestLoadId) return
 
@@ -330,7 +331,6 @@ const loadStudentSkills = async () => {
     skillKeys.splice(0, skillKeys.length, ...SKILL_KEYS_BY_TRACK[loadedTrack.value])
     students.value = Array.isArray(data.students) ? data.students : []
     facultyActivityAverage.value = data.facultyActivityAverage || {}
-    externalActivityAverage.value = data.externalActivityAverage || {}
 
     // หน้ารายละเอียดนักศึกษาที่เปิดค้างไว้ ให้ใช้ข้อมูลชุดใหม่ของคนเดิม (ถ้าไม่มีในชุดนี้ให้ปิด)
     if (selectedStudent.value) {
@@ -433,7 +433,8 @@ const scoreMatchesFilter = (score) => {
 // นักศึกษาในช่วงเวลาที่เลือก หลังกรองชั้นปี/สาขา (ใช้กับทุกส่วนของหน้า)
 const semesterStudents = computed(() => students.value.filter(matchesCohort))
 
-const studentsEvaluated = computed(() => semesterStudents.value.length)
+const evaluatedStudents = computed(() => semesterStudents.value.filter(student => averageOfSkills(student) !== null))
+const studentsEvaluated = computed(() => evaluatedStudents.value.length)
 
 // จำนวนนักศึกษาทั้งหมดในกลุ่มที่เลือก (รวมคนที่ยังไม่มีข้อมูล skill)
 const studentPopulation = computed(() => {
@@ -560,7 +561,7 @@ const radarGroups = computed(() => {
 
   const groups = new Map()
 
-  for (const student of semesterStudents.value) {
+  for (const student of evaluatedStudents.value) {
     const year = yearLevelGroup(student.yearLevel)
     const major = student.major || ''
     const key = radarView.value === 'YEAR'
@@ -816,11 +817,13 @@ const imageErrors = ref({})
 // กราฟรายบุคคลสลับได้ 3 แบบ (ใช้กับ radar, คะแนนรายทักษะ และ Skill Gap):
 // MAJOR    = ทักษะจากกิจกรรมสาขาของนักศึกษา   vs ค่าเฉลี่ยกิจกรรมสาขาของนักศึกษาสาขาเดียวกัน
 // FACULTY  = ทักษะจากกิจกรรมคณะของนักศึกษา vs ค่าเฉลี่ยกิจกรรมคณะของนักศึกษาทั้งคณะ
-// EXTERNAL = ทักษะจากกิจกรรมภายนอกของนักศึกษา vs ค่าเฉลี่ยกิจกรรมภายนอกของนักศึกษาทั้งคณะ
+// EXTERNAL = Only this student's approved external activity skills.
 // กิจกรรมของสาขาอื่นไม่นับในกราฟใดเลย
 const gapBasis = ref('MAJOR')
+const isExternalSource = computed(() => gapBasis.value === 'EXTERNAL')
+const hasSelectedSourceData = computed(() => selectedStudent.value && skillKeys.some(skill => scopedSkillValueOf(selectedStudent.value, skill.key) !== null))
+const selectedSourceCount = computed(() => selectedStudent.value?.activityCounts?.[gapBasis.value.toLowerCase()] ?? 0)
 const facultyActivityAverage = ref({})
-const externalActivityAverage = ref({})
 
 const GAP_BASIS_OPTIONS = ['MAJOR', 'FACULTY', 'EXTERNAL']
 
@@ -859,14 +862,10 @@ const gapBasisText = computed(() => {
       noGap: text.noGapSub
     },
     EXTERNAL: {
-      option: text.gapCompareExternal,
-      analysisSub: text.skillAnalysisSubExternal,
+      option: t.value.skillSources.external,
+      analysisSub: t.value.skillSources.externalHint,
       studentLegend: text.studentExternalActivities,
-      averageLegend: text.externalAvgShort,
-      gapSub: text.skillGapSubExternal,
-      below: text.belowExternalAverage,
-      shortLabel: text.externalShort,
-      noGap: text.noGapSubExternal
+      averageLegend: null
     }
   }
 })
@@ -903,11 +902,11 @@ const selectedMajorAverages = computed(() =>
 )
 
 // ค่าเฉลี่ยที่ใช้เทียบตามกราฟที่เลือก
-const selectedCompareAverages = computed(() => {
-  if (gapBasis.value === 'MAJOR') return selectedMajorAverages.value
-  if (gapBasis.value === 'EXTERNAL') return externalActivityAverage.value
-  return facultyActivityAverage.value
-})
+const selectedCompareAverages = computed(() =>
+  isExternalSource.value ? {} : gapBasis.value === 'MAJOR'
+    ? (selectedStudent.value?.majorActivityAverage || selectedMajorAverages.value)
+    : facultyActivityAverage.value
+)
 
 const selectedCompareRadarPoints = computed(() =>
   buildRadarPoints(
@@ -923,7 +922,7 @@ const formatScore = (value) => (value === null || value === undefined ? '—' : 
 
 const selectedStudentAverage = computed(() => {
   if (!selectedStudent.value) return null
-  return averageOfSkills(selectedStudent.value)
+  return averageOfSkills({ skills: selectedStudent.value[scopedSkillsField.value] })
 })
 
 const selectedStrongestSkill = computed(() => {
@@ -932,7 +931,7 @@ const selectedStrongestSkill = computed(() => {
   return skillKeys
     .map(skill => ({
       ...skill,
-      score: skillValueOf(selectedStudent.value, skill.key)
+      score: scopedSkillValueOf(selectedStudent.value, skill.key)
     }))
     .filter(skill => skill.score !== null)
     .sort((a, b) => b.score - a.score)[0] ?? null
@@ -954,7 +953,7 @@ const recommendationBySkill = computed(() => ({
 }))
 
 const selectedSkillGaps = computed(() => {
-  if (!selectedStudent.value) return []
+  if (!selectedStudent.value || isExternalSource.value) return []
 
   const basisAverages = selectedCompareAverages.value
 
@@ -1889,7 +1888,7 @@ onBeforeUnmount(() => {
               </th>
 
               <th>
-                {{ t.adminStudentSkills.activitiesAttended }}
+                {{ t.skillSources.internalActivities }}
               </th>
 
               <th>
@@ -2047,7 +2046,6 @@ onBeforeUnmount(() => {
                 <span class="student-meta-chip">{{ yearLevelLabel(yearLevelGroup(selectedStudent.yearLevel)) }}</span>
                 <span class="student-meta-chip">{{ t.adminStudentSkills.major }}: {{ selectedStudent.major || '—' }}</span>
                 <span class="student-meta-chip">{{ selectedStudent.periodLabel || selectedStudent.semester }}</span>
-                <span class="student-meta-chip">{{ t.adminStudentSkills.joinedPrefix }} {{ selectedStudent.activityCount ?? 0 }} {{ t.adminStudentSkills.activitiesUnit }}</span>
               </div>
             </div>
           </div>
@@ -2062,18 +2060,22 @@ onBeforeUnmount(() => {
           </button>
         </header>
 
+        <div class="detail-summary">
+          <p class="detail-activity-count">{{ t.skillSources.activitiesUsed }}: <strong>{{ selectedSourceCount }}</strong> {{ t.adminStudentSkills.activitiesUnit }}</p>
+          <ActivityHoursSummary :hours="selectedStudent.hours || {}" panel />
+        </div>
         <div class="detail-content-grid">
 
           <!-- Left: Radar -->
           <section class="detail-panel radar-detail-panel">
             <div class="detail-section-heading">
               <div>
-                <h4>{{ t.adminStudentSkills.skillAnalysis }}</h4>
-                <p>{{ currentGapBasisText.analysisSub }}</p>
+                <h4>{{ isExternalSource ? t.skillSources.externalTitle : t.adminStudentSkills.skillAnalysis }}</h4>
+                <p>{{ isExternalSource ? t.skillSources.externalHint : currentGapBasisText.analysisSub }}</p>
               </div>
 
               <div class="gap-basis-switch" role="group" :aria-label="t.adminStudentSkills.gapCompareLabel">
-                <span>{{ t.adminStudentSkills.gapCompareLabel }}</span>
+                <span>{{ t.skillSources.sourceLabel }}</span>
                 <button
                   v-for="basis in GAP_BASIS_OPTIONS"
                   :key="basis"
@@ -2090,15 +2092,19 @@ onBeforeUnmount(() => {
             <div class="detail-legend">
               <span>
                 <i class="legend-swatch student"></i>
-                {{ currentGapBasisText.studentLegend }}
+                {{ isExternalSource ? t.skillSources.externalTitle : gapBasis === 'MAJOR' ? t.adminStudentSkills.studentMajorActivities : t.adminStudentSkills.studentFacultyActivities }}
               </span>
-              <span :title="gapBasis === 'MAJOR' ? selectedMajorLabel : undefined">
-                <i class="legend-swatch" :class="gapBasisConfig.swatch"></i>
-                {{ currentGapBasisText.averageLegend }}<template v-if="gapBasis === 'MAJOR'"> ({{ selectedMajorStudents.length }})</template>
+              <span v-if="gapBasis === 'MAJOR'" :title="selectedMajorLabel">
+                <i class="legend-swatch major"></i>
+                {{ t.adminStudentSkills.majorAvgShort }} ({{ selectedMajorStudents.length }})
+              </span>
+              <span v-else-if="!isExternalSource">
+                <i class="legend-swatch faculty"></i> {{ t.adminStudentSkills.facultyAvgShort }}
               </span>
             </div>
 
-            <div class="detail-radar-wrap">
+            <p v-if="isExternalSource && !hasSelectedSourceData" class="no-gap-state" data-testid="external-empty">{{ t.skillSources.externalEmpty }}</p>
+            <div v-if="!isExternalSource || hasSelectedSourceData" class="detail-radar-wrap">
               <svg class="detail-radar" viewBox="0 0 500 400">
                 <!-- Radar scale: center = 0, rings = 1, 2, 3, 4, 5 -->
                 <polygon points="250,165 276,180 276,210 250,225 224,210 224,180" class="radar-grid" />
@@ -2115,10 +2121,11 @@ onBeforeUnmount(() => {
                 <line x1="250" y1="195" x2="120" y2="120" class="radar-axis" />
 
                 <polygon
+                  v-if="!isExternalSource"
                   :points="selectedCompareRadarPoints"
                   :class="gapBasisConfig.area"
                 />
-                <polygon :points="selectedStudentRadarPoints" class="student-profile-area" />
+                <polygon v-if="hasSelectedSourceData" :points="selectedStudentRadarPoints" class="student-profile-area" />
 
                 <text
                   v-for="label in radarLabels"
@@ -2138,7 +2145,7 @@ onBeforeUnmount(() => {
               </svg>
             </div>
 
-            <div class="student-score-grid">
+            <div v-if="!isExternalSource || hasSelectedSourceData" class="student-score-grid">
               <div
                 v-for="skill in skillKeys"
                 :key="skill.key"
@@ -2146,7 +2153,7 @@ onBeforeUnmount(() => {
               >
                 <div class="score-item-text">
                   <span>{{ skillDisplay(skill.label) }}</span>
-                  <small>
+                  <small v-if="!isExternalSource">
                     <i class="legend-swatch" :class="gapBasisConfig.swatch"></i>{{ formatScore(selectedCompareAverages[skill.key]) }}
                   </small>
                 </div>
@@ -2157,20 +2164,22 @@ onBeforeUnmount(() => {
 
           <!-- Right -->
           <aside class="detail-side-column">
-            <section class="strongest-skill-card">
-              <div class="strongest-label">{{ t.adminStudentSkills.strongestSkill }}</div>
+            <section v-if="isExternalSource" class="detail-panel"><strong>{{ t.skillSources.personalSource }}</strong><p>{{ hasSelectedSourceData ? t.skillSources.externalHint : t.skillSources.externalEmpty }}</p></section>
+            <section v-if="!isExternalSource || hasSelectedSourceData" class="strongest-skill-card">
+              <div class="strongest-label">{{ isExternalSource ? t.skillSources.strongestExternal : t.adminStudentSkills.strongestSkill }}</div>
               <h4>{{ selectedStrongestSkill ? skillDisplay(selectedStrongestSkill.label) : '—' }}</h4>
               <p>
                 {{ t.adminStudentSkills.studentScore }}:
                 <strong>{{ selectedStrongestSkill ? selectedStrongestSkill.score.toFixed(1) : '—' }}</strong>
                 / 5.0
               </p>
-              <p class="average-caption">
+              <p v-if="!isExternalSource" class="average-caption">
                 {{ t.adminStudentSkills.overallAverage }}: {{ selectedStudentAverage !== null ? selectedStudentAverage.toFixed(2) : t.adminStudentSkills.notAvailable }}<template v-if="selectedStudentAverage !== null"> / 5.0</template>
               </p>
+              <p v-if="isExternalSource" class="source-caption">{{ t.skillSources.sourceCaption }}: {{ t.skillSources.personalSource }}</p>
             </section>
 
-            <section class="detail-panel skill-gap-panel">
+            <section v-if="!isExternalSource" class="detail-panel skill-gap-panel">
               <div class="gap-heading">
                 <h4>{{ t.adminStudentSkills.skillGapAnalysis }}</h4>
                 <p>{{ currentGapBasisText.gapSub }}</p>
@@ -4270,5 +4279,61 @@ td {
 .benchmark-save { border:none; background:#315de6; color:#fff; display:flex; align-items:center; gap:6px; font-weight:700; }
 .benchmark-save:disabled { opacity:.6; cursor:not-allowed; }
 @media (max-width:650px) { .benchmark-form { grid-template-columns:1fr; } .report-controls { justify-content:flex-start; } }
+
+
+/* Individual student modal: independent of the aggregate Admin page. */
+.student-detail-modal { width: min(1200px, 94vw); max-height: 90vh; overflow-x: hidden; }
+.student-detail-modal .detail-header { padding: 20px 24px; align-items: flex-start; }
+.student-detail-modal .student-identity-text h3 { font-size: 26px; line-height: 1.35; }
+.student-detail-modal .student-meta-chip { font-size: 13px; line-height: 1.5; padding: 4px 9px; border-radius: 6px; }
+.detail-summary { padding: 16px 24px 0; }
+.detail-activity-count { margin: 0 0 12px; color: #64748b; font-size: 14px; }
+.student-detail-modal .detail-content-grid { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); padding: 20px 24px 24px; gap: 20px; }
+.student-detail-modal .radar-detail-panel { padding: 20px; }
+.student-detail-modal .detail-section-heading { flex-direction: column; align-items: stretch; gap: 16px; }
+.student-detail-modal .detail-section-heading h4 { font-size: 20px; line-height: 1.4; }
+.student-detail-modal .detail-section-heading p, .student-detail-modal .gap-heading p { font-size: 14px; color: #64748b; line-height: 1.6; }
+.student-detail-modal .gap-basis-switch { margin: 0; flex-wrap: wrap; gap: 8px; font-size: 14px; }
+.student-detail-modal .gap-basis-switch > span { flex-basis: 100%; }
+.student-detail-modal .gap-basis-switch button { min-height: 38px; padding: 8px 14px; font-size: 14px; line-height: 1.4; }
+.student-detail-modal .detail-legend { margin-top: 16px; gap: 8px 16px; font-size: 13px; line-height: 1.5; }
+.student-detail-modal .legend-swatch { flex-shrink: 0; }
+.student-detail-modal .detail-radar-wrap { min-height: 0; padding: 16px 0; }
+.student-detail-modal .detail-radar { width: 100%; max-width: 600px; height: auto; aspect-ratio: 5 / 4; }
+.student-detail-modal .radar-label { font-size: 12px; }
+.student-detail-modal .student-score-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 10px; }
+.student-detail-modal .student-score-item { padding: 12px; align-items: flex-start; font-size: 14px; line-height: 1.5; }
+.student-detail-modal .score-item-text span { overflow-wrap: anywhere; }
+.student-detail-modal .score-item-text small { font-size: 13px; }
+.student-detail-modal .student-score-item strong { flex-shrink: 0; font-size: 20px; line-height: 1.3; }
+.student-detail-modal .strongest-skill-card { padding: 20px; }
+.student-detail-modal .strongest-label { font-size: 14px; margin-bottom: 10px; }
+.student-detail-modal .strongest-skill-card h4 { font-size: 20px; line-height: 1.5; }
+.student-detail-modal .strongest-skill-card p { font-size: 15px; line-height: 1.6; margin-top: 14px; }
+.student-detail-modal .strongest-skill-card p strong { font-size: 24px; color: #17356e; }
+.student-detail-modal .strongest-skill-card .average-caption { font-size: 14px; color: #526c5f; margin-top: 8px; }
+.student-detail-modal .skill-gap-panel { padding: 20px; }
+.student-detail-modal .gap-heading h4 { font-size: 18px; line-height: 1.4; }
+.student-detail-modal .no-gap-state { padding: 20px 12px; gap: 12px; }
+.student-detail-modal .no-gap-state strong { font-size: 16px; line-height: 1.5; }
+.student-detail-modal .no-gap-state span { font-size: 14px; }
+.student-detail-modal .gap-card-header strong { font-size: 15px; line-height: 1.5; }
+.student-detail-modal .gap-card-header span, .student-detail-modal .gap-comparison { font-size: 14px; }
+.student-detail-modal .detail-side-column > .detail-panel > p { font-size: 14px; line-height: 1.6; color: #64748b; }
+.student-detail-modal .detail-side-column > .detail-panel:not(.skill-gap-panel) { padding: 20px; }
+@media (max-width: 1000px) {
+ .student-detail-modal .detail-content-grid { grid-template-columns: 1fr; }
+ .student-detail-modal .detail-side-column { display: flex; }
+}
+@media (max-width: 650px) {
+ .student-detail-modal { width: 94vw; max-height: 90vh; }
+ .student-detail-modal .detail-header { padding: 14px; }
+ .student-detail-modal .student-identity-text h3 { font-size: 22px; }
+ .detail-summary { padding: 14px 14px 0; }
+ .student-detail-modal .detail-content-grid { padding: 14px; gap: 14px; }
+ .student-detail-modal .radar-detail-panel { padding: 14px; }
+ .student-detail-modal .student-score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 360px) { .student-detail-modal .student-score-grid { grid-template-columns: 1fr; } }
 
 </style>

@@ -1,4 +1,29 @@
 export default {
+  skillSources: {
+    major: "กิจกรรมสาขา",
+    faculty: "กิจกรรมคณะ",
+    external: "กิจกรรมภายนอก",
+    externalTitle: "ทักษะจากกิจกรรมภายนอก",
+    externalHint: "ทักษะจากกิจกรรมภายนอกที่ได้รับการอนุมัติของนักศึกษาคนนี้เท่านั้น",
+    externalEmpty: "ยังไม่มีข้อมูลทักษะจากกิจกรรมภายนอกที่ได้รับการอนุมัติ",
+    strongestExternal: "ทักษะภายนอกที่โดดเด่นที่สุด",
+    internalActivities: "กิจกรรมภายในที่ใช้ประเมิน",
+    activitiesUsed: "กิจกรรมที่ใช้คำนวณ",
+    sourceLabel: "แหล่งกิจกรรม",
+    sourceCaption: "แหล่งข้อมูล",
+    personalSource: "กิจกรรมภายนอกที่ได้รับการอนุมัติ"
+  },
+  activityHours: {
+    major: 'ชั่วโมงกิจกรรมของสาขา',
+    faculty: 'ชั่วโมงกิจกรรมของคณะ',
+    external: 'ชั่วโมงกิจกรรมภายนอก',
+
+    label: 'ชั่วโมงกิจกรรม',
+    total: 'ชั่วโมงกิจกรรมสะสมทั้งหมด',
+    unit: 'ชั่วโมง',
+    invalid: 'กรอกชั่วโมงมากกว่า 0 และทศนิยมไม่เกิน 2 ตำแหน่ง',
+    invalidEdit: 'กรอกชั่วโมงตั้งแต่ 0 และทศนิยมไม่เกิน 2 ตำแหน่ง'
+  },
   common: {
     language: 'ภาษา',
     thai: 'ไทย',
@@ -213,14 +238,7 @@ export default {
   studentFacultyActivities: 'นักศึกษา (กิจกรรมคณะ)',
   gapCompareMajor: 'สาขา',
   gapCompareFaculty: 'คณะ',
-  gapCompareExternal: 'ภายนอก',
-  skillAnalysisSubExternal: 'ทักษะจากกิจกรรมภายนอกที่อนุมัติแล้ว เทียบกับค่าเฉลี่ยกิจกรรมภายนอกของทั้งคณะ',
   studentExternalActivities: 'นักศึกษา (กิจกรรมภายนอก)',
-  externalAvgShort: 'เฉลี่ยกิจกรรมภายนอก',
-  externalShort: 'ภายนอก',
-  skillGapSubExternal: 'ทักษะที่ต่ำกว่าค่าเฉลี่ยกิจกรรมภายนอกในภาคการศึกษานี้',
-  belowExternalAverage: 'ต่ำกว่าค่าเฉลี่ยกิจกรรมภายนอก',
-  noGapSubExternal: 'นักศึกษาคนนี้มีคะแนนเท่ากับหรือสูงกว่าค่าเฉลี่ยกิจกรรมภายนอกในทั้ง 6 ทักษะ',
   faculty: 'คณะ',
 
   recommendation: 'คำแนะนำ:',
@@ -915,6 +933,25 @@ export default {
     logoutAndSwitchStudent: 'ออกจากระบบ / สลับนักศึกษา'
   },
 
+  adminLogin: {
+    title: 'เข้าสู่ระบบผู้ดูแลระบบ',
+    subtitle: 'คณะวิทยาศาสตร์',
+    signInButton: 'เข้าสู่ระบบ',
+    loading: 'กำลังโหลด...',
+    bypassNotice: 'โหมดทดสอบ: เลือกหรือพิมพ์อีเมลแอดมินทดสอบ ไม่ต้องใส่รหัสผ่าน',
+    emailLabel: 'อีเมลแอดมิน',
+    emailPlaceholder: 'เช่น central@test.local',
+    accountsTitle: 'บัญชีแอดมินทดสอบ',
+    centralMajor: 'แอดมินกลาง (ทุกสาขา)',
+    unknownEmail: 'ไม่พบอีเมลนี้ในรายชื่อแอดมินทดสอบ',
+    sessionExpired: 'กรุณาเลือกอีเมลแอดมินใหม่อีกครั้ง',
+    backendUnavailable: 'เชื่อมต่อ backend ไม่ได้ ตรวจสอบว่า backend รันอยู่',
+    retry: 'ลองอีกครั้ง',
+    bypassDisabledTitle: 'โหมดทดสอบแอดมิน (bypass) ยังไม่ได้เปิด จึงเข้าหน้า admin ไม่ได้',
+    bypassDisabledStep1: '1. เพิ่มบรรทัดนี้ในไฟล์ .env ที่ root ของโปรเจกต์',
+    bypassDisabledStep2: '2. รีสตาร์ท backend แล้วกด "ลองอีกครั้ง"'
+  },
+
   studentLogin: {
     loginTitle: 'เข้าสู่ระบบ',
     loginSubtitle: 'ใช้อีเมลและรหัสผ่านของคุณ สำหรับทั้งนักศึกษาและแอดมิน',
@@ -922,6 +959,7 @@ export default {
     sessionExpired: 'เซสชันหมดอายุหรือบัญชีถูกเปลี่ยนแปลง กรุณาเข้าสู่ระบบใหม่',
     universityName: 'มหาวิทยาลัยเชียงใหม่',
     facultyName: 'คณะวิทยาศาสตร์',
+    adminLogin: 'เข้าสู่ระบบผู้ดูแล',
     emailLabel: 'อีเมล',
     emailPlaceholder: 'name@example.com',
     passwordLabel: 'รหัสผ่าน',
@@ -936,6 +974,9 @@ export default {
     emailRequiredError: 'กรุณากรอกอีเมล',
     passwordRequiredError: 'กรุณากรอกรหัสผ่าน',
     invalidCredentialsError: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง',
+    emailNotFoundError: 'ไม่พบอีเมลนี้ในระบบ',
+    wrongPasswordError: 'รหัสผ่านไม่ถูกต้อง',
+    authUnavailableError: 'ระบบเข้าสู่ระบบยังไม่พร้อม กรุณาตรวจสอบการตั้งค่าระบบยืนยันตัวตนของ backend',
     backendUnavailableError: 'เชื่อมต่อ backend ไม่ได้ กรุณาลองใหม่'
   },
 
@@ -1113,7 +1154,13 @@ export default {
     scopeFaculty: 'เฉพาะกิจกรรมส่วนกลางของคณะ',
     scopeExternal: 'เฉพาะกิจกรรมภายนอก',
     activitiesUnit: 'กิจกรรม',
+    yearTitle: 'ชั้นปี',
+    currentYear: 'ชั้นปีปัจจุบัน: ปี',
+    yearRule: 'เลือกได้ไม่เกินชั้นปีปัจจุบัน',
+    yearUnknown: 'ไม่ทราบชั้นปีจากรหัสนักศึกษา จึงเลือกได้เฉพาะทุกชั้นปี',
     allYears: 'ทุกชั้นปี',
+    yearPrefix: 'ปี',
+    yearDisabled: 'เกินชั้นปีปัจจุบัน',
     demoNote: 'เอกสารเดโม มีลายน้ำ "ตัวอย่าง"',
     download: 'ดาวน์โหลด PDF',
     downloading: 'กำลังสร้าง PDF...',

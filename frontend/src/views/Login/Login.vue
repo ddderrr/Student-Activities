@@ -68,6 +68,8 @@ const login = async () => {
     if (error.status === 401) {
       loginError.value = t.value.studentLogin.invalidCredentialsError
       password.value = ''
+    } else if (error.status === 503) {
+      loginError.value = t.value.studentLogin.authUnavailableError
     } else {
       loginError.value = t.value.studentLogin.backendUnavailableError
     }

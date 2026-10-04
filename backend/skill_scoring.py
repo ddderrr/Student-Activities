@@ -98,6 +98,16 @@ def average_activity_skills(
     return average_skill_levels(skill_levels_from_activities(activities, definitions))
 
 
+def source_skill_profiles(activities, definitions):
+    """Personal source profiles; external never has a population comparison."""
+    return {
+        source: average_activity_skills(
+            [activity for activity in activities if activity['scope'] == source], definitions
+        )
+        for source in ('major', 'faculty', 'external')
+    }
+
+
 def student_first_average(
     levels_by_student: Mapping[str, Mapping[str, list[float]]],
     definitions: Mapping[str, str],

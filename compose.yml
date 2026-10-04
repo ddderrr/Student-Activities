@@ -28,12 +28,13 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       TZ: Asia/Bangkok
+      FRONTEND_PORT: ${FRONTEND_PORT:-5174}
       # โหมดทดสอบแอดมิน (เลือกอีเมลโดยไม่ต้องใส่รหัสผ่าน) เปิดได้เฉพาะตอนพัฒนา ค่าเริ่มต้นคือปิด
       ADMIN_BYPASS_ENABLED: ${ADMIN_BYPASS_ENABLED:-false}
       # ใช้เซ็น token หลัง login ต้องตั้งใน .env (ดู .env.example) ไม่ตั้ง = login ไม่ได้
       AUTH_SECRET: ${AUTH_SECRET:-}
 
-    # frontend เรียก API ที่ http://127.0.0.1:8000 (hardcode ไว้ในโค้ด)
+    # VITE_API_URL must be reachable from the browser on the host.
     # bind แค่ 127.0.0.1 เพราะ API ยังไม่มีระบบ login ไม่ควรเปิดให้เครื่องอื่นใน network เข้าถึง
     ports:
       - "127.0.0.1:8000:8000"
@@ -45,17 +46,28 @@ services:
       db:
         condition: service_healthy
 
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://127.0.0.1:8000}
 
-    # ใช้พอร์ต 5173 เพราะ CORS ใน backend อนุญาตเฉพาะ localhost:5173
+    # Host frontend port; backend CORS follows FRONTEND_PORT.
     ports:
-      - "127.0.0.1:5173:80"
+      - "127.0.0.1:${FRONTEND_PORT:-5174}:80"
 
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
     restart: unless-stopped
 

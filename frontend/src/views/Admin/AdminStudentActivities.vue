@@ -40,11 +40,14 @@ import {
   skillLevelsFromSaved
 } from '../../constants/activitySkills'
 import { useLanguage } from '../../composables/useLanguage'
+import { validHours } from '../../utils/activityHours'
+import { API_BASE } from '../../config/api'
 import { adminFetch } from '../../constants/currentAdmin'
 
 const { t } = useLanguage()
 
 const searchText = ref('')
+const activitiesError = ref('')
 // filter สาขา สำหรับแอดมินกลางเท่านั้น (BranchFilterSelect ซ่อนตัวเองให้แอดมินสาขา)
 const selectedBranch = ref(ALL_BRANCHES_VALUE)
 const quickSearch = ref('')
@@ -179,7 +182,6 @@ const roleOptions = computed(() => [
   { value: 'organizer', label: t.value.adminStudentActivities.organizerLabel }
 ])
 
-const API_BASE = 'http://localhost:8000'
 
 // Import participants modal state
 const showImportModal = ref(false)
@@ -245,6 +247,7 @@ const activityActionLoadingId = ref(null)
 
 const editActivityForm = ref({
   name: '',
+  activity_hours: 0,
   activity_type: '',
   start_at: '',
   end_at: '',
@@ -603,6 +606,7 @@ function participantPercent(activity) {
 }
 
 async function fetchActivities() {
+  activitiesError.value = ''
   pageLoading.value = true
   tableLoading.value = true
 
@@ -613,7 +617,7 @@ async function fetchActivities() {
     }
 
     const response = await adminFetch(`${API_BASE}/api/activities?${params.toString()}`)
-    const data = await response.json()
+    const data = await response.json().catch(() => ({}))
 
     if (!response.ok) {
       throw new Error(data.detail || 'ไม่สามารถโหลดกิจกรรมได้')
@@ -622,6 +626,7 @@ async function fetchActivities() {
     activities.value = data.activities || []
   } catch (error) {
     console.error(error)
+    activitiesError.value = error.message || t.value.adminStudentActivities.backendConnectionError
     activities.value = []
   } finally {
     pageLoading.value = false
@@ -672,6 +677,7 @@ function openEditActivity(activity) {
 
   editActivityForm.value = {
     name: activity.name || '',
+    activity_hours: activity.activity_hours ?? 0,
     activity_type: activity.activity_type || activity.category || '',
     start_at: toDateTimeLocal(activity.start_at),
     end_at: toDateTimeLocal(activity.end_at),
@@ -732,6 +738,10 @@ async function saveActivityEdits() {
   if (!selectedActivity.value) return
 
   const form = editActivityForm.value
+  if (!validHours(form.activity_hours, true)) {
+    editActivityError.value = t.value.activityHours.invalidEdit
+    return
+  }
 
   if (
     !form.name.trim() ||
@@ -760,6 +770,7 @@ async function saveActivityEdits() {
       advisor: form.advisor.trim(),
       location: form.location.trim(),
       description: form.description.trim(),
+      activity_hours: Number(form.activity_hours),
       status: form.status,
       staff_skills: form.staff_skills,
       participant_skills: form.participant_skills
@@ -1294,6 +1305,11 @@ const confirmImportButtonText = computed(() =>
 
 <template>
   <section class="activities-page">
+    <div v-if="!pageLoading && activitiesError" class="import-message error" role="alert">
+      <TriangleAlert :size="17" />
+      {{ activitiesError }}
+      <button type="button" @click="fetchActivities">{{ t.adminLogin.retry }}</button>
+    </div>
 
     <!-- FULL PAGE SKELETON -->
     <div
@@ -1699,6 +1715,7 @@ const confirmImportButtonText = computed(() =>
               <td>
                 <div class="activity-name">
                   <strong>{{ activity.name }}</strong>
+                  <small>{{ activity.activity_hours ?? 0 }} {{ t.activityHours.unit }}</small>
                   <div class="activity-meta">
                     <span
                       class="activity-status"
@@ -2516,6 +2533,7 @@ const confirmImportButtonText = computed(() =>
         </div>
 
         <div class="activity-edit-grid">
+          <label class="edit-field"><span>{{ t.activityHours.label }}</span><input v-model="editActivityForm.activity_hours" name="activity_hours" type="number" min="0" max="99999999.99" step="0.01" required /></label>
           <label class="edit-field full">
             <span>{{ t.adminStudentActivities.activityNameLabel }}</span>
             <input

@@ -14,6 +14,7 @@ import {
   X
 } from 'lucide-vue-next'
 
+import ActivityHoursSummary from '../../components/common/ActivityHoursSummary.vue'
 import { useLanguage } from '../../composables/useLanguage'
 import { API_BASE, studentHeaders } from '../../constants/currentStudent'
 
@@ -278,6 +279,7 @@ onMounted(loadOptions)
     <div class="transcript-container">
     <div class="page-heading">
       <h1>{{ t.studentTranscript.title }}</h1>
+      <ActivityHoursSummary v-if="options" :hours="options.hours" />
       <p>{{ t.studentTranscript.subtitle }}</p>
     </div>
 

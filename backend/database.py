@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
@@ -7,7 +8,10 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from timeutil import DB_TIMEZONE
 
 
-load_dotenv()
+# Process/Docker values win; backend settings precede root defaults locally.
+BACKEND_DIR = Path(__file__).resolve().parent
+load_dotenv(BACKEND_DIR / ".env")
+load_dotenv(BACKEND_DIR.parent / ".env")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 

@@ -1,4 +1,5 @@
-export const API_BASE = 'http://127.0.0.1:8000'
+import { API_BASE } from '../config/api'
+export { API_BASE }
 
 // ศูนย์ช่วยเหลือของนักศึกษา: ติดต่อทางอีเมล
 export const HELP_CENTER_EMAIL = 'natthanon_t@cmu.ac.th'

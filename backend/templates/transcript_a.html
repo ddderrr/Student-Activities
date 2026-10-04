@@ -179,7 +179,7 @@
       <!-- thead ซ้ำทุกหน้าเมื่อตารางยาวข้ามหน้า จึงรู้ว่าเป็นปีการศึกษาไหน -->
       <thead>
         <tr>
-          <th class="year-head" colspan="5">{{ group.label }}{% if group.year_level_label %} ({{ group.year_level_label }}){% endif %}</th>
+          <th class="year-head" colspan="6">{{ group.label }}{% if group.year_level_label %} ({{ group.year_level_label }}){% endif %}</th>
         </tr>
         <tr>
           <th class="no">{{ tx.no }}</th>
@@ -187,6 +187,7 @@
           <th>{{ tx.activity_and_organizer }}</th>
           <th class="source">{{ tx.source }}</th>
           <th class="role">{{ tx.role }}</th>
+          <th>{{ tx.activity_hours }}</th>
         </tr>
       </thead>
       <tbody>
@@ -197,6 +198,7 @@
           <td>{{ item.title }}<br><small>{{ item.organizer }}</small></td>
           <td class="source">{{ item.source_label }}</td>
           <td class="role">{{ item.role_label }}</td>
+          <td>{{ item.activity_hours }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -206,6 +208,8 @@
   {% endfor %}
 
   <h2>{{ tx.summary_heading }}</h2>
+  <p>{{ tx.earned_hours }}: {{ summary.total_activity_hours }} {{ tx.hours_unit }} ({{ tx.earned_hours_note }})</p>
+  <p>{{ tx.major_hours }}: {{ summary.hours.major }} · {{ tx.faculty_hours }}: {{ summary.hours.faculty }} · {{ tx.external_hours }}: {{ summary.hours.external }}</p>
   <table class="summary">
     <tr class="head">
       <td>{{ tx.total }}</td>

@@ -210,6 +210,8 @@
   <p class="note">{{ tx.skills_note_out_of_5 }}</p>
 
   <h2>{{ tx.summary_heading }}</h2>
+  <p>{{ tx.earned_hours }}: {{ summary.total_activity_hours }} {{ tx.hours_unit }} ({{ tx.earned_hours_note }})</p>
+  <p>{{ tx.major_hours }}: {{ summary.hours.major }} · {{ tx.faculty_hours }}: {{ summary.hours.faculty }} · {{ tx.external_hours }}: {{ summary.hours.external }}</p>
   <div class="stats">
     <div class="stat"><b>{{ summary.total }}</b><small>{{ tx.total }}</small></div>
     <div class="stat"><b>{{ summary.by_source.faculty }}</b><small>{{ tx.sources.faculty }}</small></div>
@@ -222,13 +224,15 @@
     <table class="activities">
       <!-- thead ซ้ำทุกหน้าเมื่อตารางยาวข้ามหน้า จึงรู้ว่าเป็นปีการศึกษาไหน -->
       <thead>
-        <tr><th colspan="3"><div class="year">{{ group.label }}{% if group.year_level_label %} · {{ group.year_level_label }}{% endif %}</div></th></tr>
+        <tr><th colspan="4"><div class="year">{{ group.label }}{% if group.year_level_label %} · {{ group.year_level_label }}{% endif %}</div></th></tr>
+        <tr><th>{{ tx.date }}</th><th>{{ tx.activity_and_organizer }}</th><th>{{ tx.source }} / {{ tx.role }}</th><th>{{ tx.activity_hours }}</th></tr>
       </thead>
       {% for item in group.activities %}
       <tr>
         <td class="date">{{ fmt_date_short(item.date) }}</td>
         <td>{{ item.title }}<br><small>{{ item.organizer }}</small></td>
         <td class="meta">{{ item.source_label }}<br>{{ item.role_label }}</td>
+        <td>{{ item.activity_hours }} {{ tx.hours_unit }}</td>
       </tr>
       {% endfor %}
     </table>

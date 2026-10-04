@@ -171,8 +171,9 @@ def test_admin_report_splits_each_student_by_major_and_faculty(client, db_sessio
     by_id = {student["id"]: student for student in body["students"]}
 
     first = by_id["670510001"]
-    # skills รวมยังนับทุกกิจกรรม: Chem 1, Physics, Faculty 1, Outside
-    assert first["skills"]["volunteerism"] == 2.25
+    # Admin aggregate is internal only: Chem 1, Physics, Faculty 1.
+    assert first["skills"]["volunteerism"] == 2.67
+    assert first["externalSkills"]["volunteerism"] == 1
     assert first["majorSkills"]["volunteerism"] == 5
     assert first["facultySkills"]["volunteerism"] == 2
 
@@ -184,7 +185,7 @@ def test_admin_report_splits_each_student_by_major_and_faculty(client, db_sessio
     assert body["facultyActivityAverage"]["volunteerism"] == 3
 
 
-def test_external_comparison_uses_approved_external_activities_only(client, db_session):
+def test_external_personal_profile_uses_approved_external_activities_only(client, db_session):
     seed(db_session)
     add_external(db_session, "670510003", 5)
     add_external(db_session, "670510003", 1, status="pending")  # ยังไม่อนุมัติ ไม่นับ
@@ -193,11 +194,11 @@ def test_external_comparison_uses_approved_external_activities_only(client, db_s
 
     # ของฉัน: เฉพาะ Outside (ไม่นับกิจกรรมสาขา / คณะ)
     assert external["skills"]["volunteerism"] == 1
-    # ทั้งคณะ แบบ student-first: (1 + 5) / 2
-    assert external["average"]["volunteerism"] == 3
+    assert external["average"] is None
+    assert "populationAverage" not in external
 
 
-def test_admin_report_has_external_skills_and_average(client, db_session):
+def test_admin_report_has_personal_external_skills_without_average(client, db_session):
     seed(db_session)
     add_external(db_session, "670510003", 5)
 
@@ -209,7 +210,7 @@ def test_admin_report_has_external_skills_and_average(client, db_session):
     assert by_id["670510002"]["externalSkills"]["volunteerism"] is None
     # กิจกรรมภายนอกไม่ปนในกราฟสาขา / คณะ
     assert by_id["670510003"]["facultySkills"]["volunteerism"] == 4
-    assert body["externalActivityAverage"]["volunteerism"] == 3
+    assert "externalActivityAverage" not in body
 
 
 def test_student_without_major_has_empty_major_comparison(client, db_session):

@@ -28,7 +28,8 @@ import {
 import { useLanguage } from '../../composables/useLanguage'
 import { adminFetch } from '../../constants/currentAdmin'
 
-const API_BASE = 'http://127.0.0.1:8000'
+import { validHours } from '../../utils/activityHours'
+import { API_BASE } from '../../config/api'
 const router = useRouter()
 const { t } = useLanguage()
 
@@ -54,6 +55,7 @@ const customActivityType = ref('')
 const form = ref({
   activity_type: '',
   name: '',
+  activity_hours: '',
   start_at: '',
   end_at: '',
   department: '',
@@ -229,6 +231,10 @@ function goBack() {
 }
 
 function validateStepOne() {
+  if (!validHours(form.value.activity_hours)) {
+    errorMessage.value = t.value.activityHours.invalid
+    return false
+  }
   errorMessage.value = ''
 
   if (
@@ -269,6 +275,7 @@ function nextStep() {
 }
 
 async function createActivity() {
+  if (!validateStepOne()) return
   if (submitting.value) return
 
   submitting.value = true
@@ -386,6 +393,7 @@ async function createActivity() {
               </div>
 
               <div class="form-grid">
+                <label class="field"><span>{{ t.activityHours.label }} <b>*</b></span><input v-model="form.activity_hours" name="activity_hours" type="number" min="0.01" max="99999999.99" step="0.01" required /></label>
                 <label class="field">
                   <span>{{ t.adminCreateActivity.activityTypeLabel }} <b>*</b></span>
                   <select v-model="form.activity_type">

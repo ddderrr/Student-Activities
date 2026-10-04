@@ -12,6 +12,8 @@ from timeutil import today_bangkok
 import re
 from datetime import date
 
+from activity_hours import earned_internal_hours, hours_summary_from_items
+
 from sqlalchemy.orm import Session
 
 import transcript_config
@@ -168,6 +170,8 @@ def load_internal_items(db: Session, student: Student) -> list[dict]:
             {
                 "key": f"activity-{activity.id}",
                 "title": activity.name,
+                "activity_hours": float(activity.activity_hours),
+                "earned_activity_hours": float(earned_internal_hours(activity)),
                 "activity_type": activity.activity_type,
                 "organizer": (
                     f"สาขา{activity.major}"
@@ -218,6 +222,8 @@ def load_external_items(db: Session, student: Student) -> list[dict]:
         {
             "key": f"external-{activity.id}",
             "title": activity.title,
+            "activity_hours": float(activity.activity_hours),
+            "earned_activity_hours": float(activity.activity_hours),
             "activity_type": activity.activity_type,
             "organizer": activity.organization,
             "date": activity.start_date,
@@ -240,7 +246,7 @@ def source_label(item: dict) -> str:
     if item["source"] == "faculty":
         return "กิจกรรมคณะ"
 
-    return "กิจกรรมสาขา"
+    return "กิจกรรมสาขาอื่น" if item["source"] == "other_major" else "กิจกรรมสาขา"
 
 
 def average_skills(items: list[dict]) -> dict[str, float | None]:
@@ -290,6 +296,7 @@ def collect_transcript(
         groups[-1]["activities"].append(item)
 
     skills = average_skills(items)
+    hours = hours_summary_from_items(items)
 
     return {
         "student": {
@@ -307,6 +314,8 @@ def collect_transcript(
         "groups": groups,
         "summary": {
             "total": len(items),
+            "total_activity_hours": hours["total"],
+            "hours": hours,
             "by_source": {
                 key: sum(1 for item in items if item["source"] == key)
                 for key in SOURCE_KEYS

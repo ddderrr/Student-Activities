@@ -2,6 +2,7 @@
 import { ref, computed, reactive, onMounted, watch } from 'vue'
 import { CalendarDays, Users, CheckCircle, TrendingUp } from 'lucide-vue-next'
 import { useLanguage } from '../../composables/useLanguage'
+import { API_BASE } from '../../config/api'
 import { adminFetch } from '../../constants/currentAdmin'
 import BranchFilterSelect from '../../components/common/BranchFilterSelect.vue'
 import { ALL_BRANCHES_VALUE } from '../../constants/branches'
@@ -12,7 +13,6 @@ import {
 } from '../../utils/dashboardPeriod'
 
 const { t } = useLanguage()
-const API_BASE = 'http://127.0.0.1:8000'
 
 const now = new Date()
 const currentMonthLabel = MONTH_LABELS[now.getMonth()]

@@ -1,4 +1,4 @@
-import { API_BASE } from './currentStudent'
+import { API_BASE } from '../config/api'
 
 // session แอดมินหลัง login ที่หน้า /login (ดู constants/auth.js) เก็บ token ไว้ใน localStorage
 // ทุกคำขอฝั่ง admin ส่ง token เป็น Authorization: Bearer ผ่าน adminFetch / adminHeaders

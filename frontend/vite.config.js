@@ -3,5 +3,11 @@ import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
+  envDir: '..',
   plugins: [vue()],
+  server: {
+    port: 5173,
+    strictPort: true,
+    watch: { usePolling: process.env.CHOKIDAR_USEPOLLING === 'true' },
+  },
 })
