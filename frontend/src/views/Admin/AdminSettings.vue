@@ -2,12 +2,16 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
+  Eye,
   FileSpreadsheet,
+  FileText,
   LoaderCircle,
   RotateCcw,
+  Save,
   Search,
   ShieldAlert,
   Info,
@@ -29,6 +33,167 @@ const { t, currentLanguage } = useLanguage()
 
 // หน้า Settings ใช้ได้เฉพาะแอดมินกลาง (backend ตรวจซ้ำด้วย require_central_admin)
 const isCentral = computed(() => Boolean(getAdminSession()?.is_central))
+
+/* =========================
+   เมนูแบบ accordion: เปิดได้ทีละหัวข้อ (null = ปิดหมด)
+========================= */
+const openSection = ref(null)
+
+function toggleSection(key) {
+  openSection.value = openSection.value === key ? null : key
+  if (openSection.value === 'transcript' && !transcriptLoaded.value) loadTranscriptSettings()
+}
+
+/* =========================
+   หัวเอกสาร Transcript (แก้แล้วมีผลกับ PDF ที่สร้างหลังบันทึก)
+   แต่ละช่องมีภาษาไทย + อังกฤษ เพราะ PDF ออกได้สองภาษา
+========================= */
+const TRANSCRIPT_FIELDS = [
+  { key: 'university_name', label: 'transcriptUniversity' },
+  { key: 'faculty_name', label: 'transcriptFaculty' },
+  { key: 'document_title', label: 'transcriptTitle' },
+  { key: 'signer_name', label: 'transcriptSignerName' },
+  { key: 'signer_position', label: 'transcriptSignerPosition' }
+]
+
+const transcriptForm = ref({})
+const transcriptDefaults = ref({})
+const transcriptSaved = ref({})
+const transcriptMaxLength = ref(200)
+const transcriptLoaded = ref(false)
+const transcriptLoading = ref(false)
+const transcriptSaving = ref(false)
+const transcriptError = ref('')
+const transcriptNotice = ref('')
+
+const transcriptDirty = computed(() =>
+  Object.keys(transcriptForm.value).some((key) => (transcriptForm.value[key] || '').trim() !== (transcriptSaved.value[key] || ''))
+)
+
+function applyTranscriptSettings(data) {
+  transcriptDefaults.value = data.defaults
+  transcriptSaved.value = { ...data.values }
+  transcriptForm.value = { ...data.values }
+  transcriptMaxLength.value = data.max_length
+  transcriptLoaded.value = true
+}
+
+async function loadTranscriptSettings() {
+  transcriptLoading.value = true
+  transcriptError.value = ''
+
+  try {
+    const response = await adminFetch(`${API_BASE}/api/admin/settings/transcript`)
+    if (!response.ok) throw new Error()
+    applyTranscriptSettings(await response.json())
+    loadPreview()
+  } catch {
+    transcriptError.value = t.value.adminSettings.transcriptLoadError
+  } finally {
+    transcriptLoading.value = false
+  }
+}
+
+async function saveTranscriptSettings() {
+  if (transcriptSaving.value) return
+  transcriptSaving.value = true
+  transcriptError.value = ''
+  transcriptNotice.value = ''
+
+  try {
+    const response = await adminFetch(`${API_BASE}/api/admin/settings/transcript`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(transcriptForm.value)
+    })
+    const data = await response.json().catch(() => null)
+    if (!response.ok) throw new Error(typeof data?.detail === 'string' ? data.detail : t.value.adminSettings.transcriptSaveFailed)
+
+    applyTranscriptSettings(data)
+    transcriptNotice.value = t.value.adminSettings.transcriptSaved
+  } catch (error) {
+    transcriptError.value = error.message || t.value.adminSettings.transcriptSaveFailed
+  } finally {
+    transcriptSaving.value = false
+  }
+}
+
+function resetTranscriptToDefaults() {
+  transcriptForm.value = { ...transcriptDefaults.value }
+  transcriptNotice.value = ''
+}
+
+/* ตัวอย่าง PDF: นักศึกษาสมมติ + ค่าที่กรอกอยู่ (ยังไม่บันทึก) อัปเดตเองหลังหยุดพิมพ์ */
+const PREVIEW_DELAY_MS = 900
+const previewStyle = ref('A')
+const previewLang = ref('th')
+const previewUrl = ref('')
+const previewLoading = ref(false)
+const previewError = ref('')
+let previewTimer = null
+let previewRequest = 0
+// ค่าที่ส่งไปทำตัวอย่างล่าสุด: ฟอร์มถูกตั้งค่าใหม่แต่ค่าเท่าเดิม (เช่น หลังบันทึก) ไม่ต้องทำซ้ำ
+let previewFormKey = ''
+
+function clearPreview() {
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  previewUrl.value = ''
+}
+
+async function loadPreview() {
+  clearTimeout(previewTimer)
+  const request = ++previewRequest
+  previewFormKey = JSON.stringify(transcriptForm.value)
+  previewLoading.value = true
+  previewError.value = ''
+
+  try {
+    const params = new URLSearchParams({ style: previewStyle.value, lang: previewLang.value })
+    const response = await adminFetch(`${API_BASE}/api/admin/settings/transcript/preview?${params}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(transcriptForm.value)
+    })
+    if (!response.ok) {
+      const data = await response.json().catch(() => null)
+      throw new Error(typeof data?.detail === 'string' ? data.detail : t.value.adminSettings.transcriptPreviewFailed)
+    }
+    const blob = await response.blob()
+    // คำขอเก่าที่ตอบช้ากว่าคำขอใหม่ ทิ้งไป
+    if (request !== previewRequest) return
+    clearPreview()
+    previewUrl.value = URL.createObjectURL(blob)
+  } catch (error) {
+    if (request === previewRequest) previewError.value = error.message || t.value.adminSettings.transcriptPreviewFailed
+  } finally {
+    if (request === previewRequest) previewLoading.value = false
+  }
+}
+
+function schedulePreview() {
+  clearTimeout(previewTimer)
+  previewTimer = setTimeout(loadPreview, PREVIEW_DELAY_MS)
+}
+
+watch([previewStyle, previewLang], () => {
+  if (transcriptLoaded.value) loadPreview()
+})
+
+watch(transcriptForm, () => {
+  if (!transcriptLoaded.value || openSection.value !== 'transcript') return
+  if (JSON.stringify(transcriptForm.value) !== previewFormKey) schedulePreview()
+}, { deep: true })
+
+watch(openSection, (key) => {
+  if (key !== 'transcript') {
+    clearTimeout(previewTimer)
+    previewRequest++
+    previewLoading.value = false
+    clearPreview()
+  } else if (transcriptLoaded.value) {
+    loadPreview()
+  }
+})
 
 const MAX_BYTES = 5 * 1024 * 1024
 const ACCEPTED_EXTENSIONS = ['.xlsx', '.xls', '.csv']
@@ -430,6 +595,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown)
   clearTimeout(searchTimer)
+  clearTimeout(previewTimer)
+  clearPreview()
 })
 </script>
 
@@ -447,13 +614,32 @@ onBeforeUnmount(() => {
       <p>{{ t.adminSettings.noPermissionText }}</p>
     </section>
 
-    <!-- แอดมินกลาง: นำเข้าข้อมูลนักศึกษา -->
-    <template v-else>
-    <h2 class="section-heading">
-      <Users :size="20" />
-      {{ t.adminSettings.sectionStudents }}
-    </h2>
+    <!-- แอดมินกลาง: เมนูแบบ accordion เปิดได้ทีละหัวข้อ -->
+    <div v-else class="settings-menu">
 
+    <!-- 1) จัดการนักศึกษา -->
+    <section class="settings-panel" :class="{ open: openSection === 'students' }" data-section="students">
+      <div class="panel-header">
+        <span class="panel-icon students"><Users :size="22" /></span>
+        <div class="panel-text">
+          <h2 id="panel-students-title">{{ t.adminSettings.sectionStudents }}</h2>
+          <p>{{ t.adminSettings.sectionStudentsDescription }}</p>
+        </div>
+        <span class="panel-meta">{{ fill(t.adminSettings.studentsCount, { count: studentsAllTotal }) }}</span>
+        <button
+          type="button"
+          class="panel-toggle"
+          :aria-expanded="openSection === 'students'"
+          aria-controls="panel-students-body"
+          data-testid="toggle-students"
+          @click="toggleSection('students')"
+        >
+          {{ openSection === 'students' ? t.adminSettings.closeSection : t.adminSettings.manageSection }}
+          <ChevronDown :size="16" class="chevron" />
+        </button>
+      </div>
+
+      <div v-show="openSection === 'students'" id="panel-students-body" class="panel-body" role="region" aria-labelledby="panel-students-title">
     <section class="card import-card" data-testid="student-import">
       <div class="card-header">
         <div class="card-title">
@@ -784,12 +970,32 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <!-- Section B: จัดการแอดมิน -->
-    <h2 class="section-heading">
-      <ShieldCheck :size="20" />
-      {{ t.adminSettings.sectionAdmins }}
-    </h2>
+      </div>
+    </section>
 
+    <!-- 2) จัดการแอดมิน -->
+    <section class="settings-panel" :class="{ open: openSection === 'admins' }" data-section="admins">
+      <div class="panel-header">
+        <span class="panel-icon admins"><ShieldCheck :size="22" /></span>
+        <div class="panel-text">
+          <h2 id="panel-admins-title">{{ t.adminSettings.sectionAdmins }}</h2>
+          <p>{{ t.adminSettings.sectionAdminsDescription }}</p>
+        </div>
+        <span class="panel-meta">{{ fill(t.adminSettings.adminsCount, { count: admins.length }) }}</span>
+        <button
+          type="button"
+          class="panel-toggle"
+          :aria-expanded="openSection === 'admins'"
+          aria-controls="panel-admins-body"
+          data-testid="toggle-admins"
+          @click="toggleSection('admins')"
+        >
+          {{ openSection === 'admins' ? t.adminSettings.closeSection : t.adminSettings.manageSection }}
+          <ChevronDown :size="16" class="chevron" />
+        </button>
+      </div>
+
+      <div v-show="openSection === 'admins'" id="panel-admins-body" class="panel-body" role="region" aria-labelledby="panel-admins-title">
     <section class="card admins-card" data-testid="admins-list">
       <div class="card-header">
         <div class="card-title">
@@ -855,7 +1061,169 @@ onBeforeUnmount(() => {
         </table>
       </div>
     </section>
-    </template>
+      </div>
+    </section>
+
+    <!-- 3) จัดการทรานสคริปต์ -->
+    <section class="settings-panel" :class="{ open: openSection === 'transcript' }" data-section="transcript">
+      <div class="panel-header">
+        <span class="panel-icon transcript"><FileText :size="22" /></span>
+        <div class="panel-text">
+          <h2 id="panel-transcript-title">{{ t.adminSettings.sectionTranscript }}</h2>
+          <p>{{ t.adminSettings.sectionTranscriptDescription }}</p>
+        </div>
+        <button
+          type="button"
+          class="panel-toggle"
+          :aria-expanded="openSection === 'transcript'"
+          aria-controls="panel-transcript-body"
+          data-testid="toggle-transcript"
+          @click="toggleSection('transcript')"
+        >
+          {{ openSection === 'transcript' ? t.adminSettings.closeSection : t.adminSettings.manageSection }}
+          <ChevronDown :size="16" class="chevron" />
+        </button>
+      </div>
+
+      <div v-if="openSection === 'transcript'" id="panel-transcript-body" class="panel-body" role="region" aria-labelledby="panel-transcript-title">
+        <form class="card transcript-card" novalidate data-testid="transcript-settings" @submit.prevent="saveTranscriptSettings" @input="transcriptNotice = ''">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="card-icon"><FileText :size="18" /></span>
+              <div>
+                <h2>{{ t.adminSettings.transcriptHeaderTitle }}</h2>
+                <p>{{ t.adminSettings.transcriptHeaderDescription }}</p>
+              </div>
+            </div>
+          </div>
+
+          <p v-if="transcriptLoading && !transcriptLoaded" class="empty-state">{{ t.adminSettings.transcriptLoading }}</p>
+
+          <template v-else-if="transcriptLoaded">
+            <div class="transcript-grid">
+              <span class="grid-head"></span>
+              <span class="grid-head">{{ t.adminSettings.transcriptThai }}</span>
+              <span class="grid-head">{{ t.adminSettings.transcriptEnglish }}</span>
+
+              <template v-for="field in TRANSCRIPT_FIELDS" :key="field.key">
+                <span class="field-label">{{ t.adminSettings[field.label] }}</span>
+                <input
+                  v-model="transcriptForm[field.key]"
+                  type="text"
+                  :name="field.key"
+                  :maxlength="transcriptMaxLength"
+                  :placeholder="transcriptDefaults[field.key]"
+                  :aria-label="`${t.adminSettings[field.label]} (${t.adminSettings.transcriptThai})`"
+                />
+                <input
+                  v-model="transcriptForm[`${field.key}_en`]"
+                  type="text"
+                  :name="`${field.key}_en`"
+                  :maxlength="transcriptMaxLength"
+                  :placeholder="transcriptDefaults[`${field.key}_en`]"
+                  :aria-label="`${t.adminSettings[field.label]} (${t.adminSettings.transcriptEnglish})`"
+                />
+              </template>
+            </div>
+
+            <p class="transcript-hint">
+              <Info :size="15" />
+              {{ t.adminSettings.transcriptHint }}
+            </p>
+          </template>
+
+          <div v-if="transcriptError" class="alert error" role="alert">
+            <TriangleAlert :size="16" />
+            <span>{{ transcriptError }}</span>
+            <button v-if="!transcriptLoaded" type="button" class="link-button" @click="loadTranscriptSettings">{{ t.adminSettings.retry }}</button>
+          </div>
+
+          <div v-if="transcriptNotice" class="alert success" role="status">
+            <CheckCircle2 :size="16" />
+            <span>{{ transcriptNotice }}</span>
+          </div>
+
+          <div v-if="transcriptLoaded" class="actions">
+            <button type="button" class="secondary-button" :disabled="transcriptSaving" @click="resetTranscriptToDefaults">
+              <RotateCcw :size="16" />
+              {{ t.adminSettings.transcriptResetDefaults }}
+            </button>
+            <button type="submit" class="primary-button" :disabled="transcriptSaving || !transcriptDirty" data-testid="save-transcript-settings">
+              <LoaderCircle v-if="transcriptSaving" class="spin" :size="16" />
+              <Save v-else :size="16" />
+              {{ transcriptSaving ? t.adminSettings.saving : t.adminSettings.saveButton }}
+            </button>
+          </div>
+        </form>
+
+        <div v-if="transcriptLoaded" class="card preview-card" data-testid="transcript-preview">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="card-icon"><Eye :size="20" /></span>
+              <div>
+                <h2>{{ t.adminSettings.transcriptPreviewTitle }}</h2>
+                <p>{{ t.adminSettings.transcriptPreviewDescription }}</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="preview-toolbar">
+            <div class="segmented" role="group" :aria-label="t.adminSettings.transcriptPreviewStyle">
+              <span class="segmented-label">{{ t.adminSettings.transcriptPreviewStyle }}</span>
+              <button
+                v-for="style in ['A', 'B']"
+                :key="style"
+                type="button"
+                :class="{ active: previewStyle === style }"
+                :aria-pressed="previewStyle === style"
+                :data-testid="`preview-style-${style}`"
+                @click="previewStyle = style"
+              >
+                {{ style === 'A' ? t.adminSettings.transcriptStyleA : t.adminSettings.transcriptStyleB }}
+              </button>
+            </div>
+            <div class="segmented" role="group" :aria-label="t.adminSettings.transcriptPreviewLanguage">
+              <span class="segmented-label">{{ t.adminSettings.transcriptPreviewLanguage }}</span>
+              <button
+                v-for="lang in ['th', 'en']"
+                :key="lang"
+                type="button"
+                :class="{ active: previewLang === lang }"
+                :aria-pressed="previewLang === lang"
+                :data-testid="`preview-lang-${lang}`"
+                @click="previewLang = lang"
+              >
+                {{ lang === 'th' ? t.adminSettings.transcriptThai : 'English' }}
+              </button>
+            </div>
+            <button type="button" class="secondary-button refresh-preview" :disabled="previewLoading" @click="loadPreview">
+              <LoaderCircle v-if="previewLoading" class="spin" :size="16" />
+              <RotateCcw v-else :size="16" />
+              {{ t.adminSettings.transcriptPreviewRefresh }}
+            </button>
+          </div>
+
+          <div v-if="previewError" class="alert error" role="alert">
+            <TriangleAlert :size="16" />
+            <span>{{ previewError }}</span>
+          </div>
+
+          <div class="preview-frame" :class="{ loading: previewLoading }">
+            <iframe
+              v-if="previewUrl"
+              :src="`${previewUrl}#view=FitH`"
+              :title="t.adminSettings.transcriptPreviewTitle"
+              data-testid="transcript-preview-frame"
+            ></iframe>
+            <div v-if="previewLoading" class="preview-overlay">
+              <LoaderCircle class="spin" :size="22" />
+              <span>{{ t.adminSettings.transcriptPreviewLoading }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    </div>
 
     <!-- เพิ่มแอดมินสาขา: คลิกนอกกรอบไม่ปิด (Esc / ยกเลิก = ปิด) -->
     <div v-if="showAddAdmin" class="modal-backdrop" data-testid="add-admin-modal">
@@ -1010,6 +1378,13 @@ onBeforeUnmount(() => {
   color: #1c293d;
 }
 
+/* หัวข้อทุกระดับในหน้านี้เป็นสีเข้ม (ไม่ใช้สีจาก style.css ที่เคยเปลี่ยนตาม dark mode ของเครื่อง) */
+.settings-page h2,
+.settings-page h3,
+.settings-page h4 {
+  color: #1c293d;
+}
+
 .page-header {
   max-width: 1100px;
   margin: 0 auto 24px;
@@ -1093,6 +1468,7 @@ onBeforeUnmount(() => {
 
 .card-title h2 {
   margin: 0;
+  color: #1c293d;
   font-size: 20px;
 }
 
@@ -1658,21 +2034,6 @@ tr.row-invalid .status-reason {
   justify-content: center;
 }
 
-/* หัวข้อ section */
-.section-heading {
-  max-width: 1100px;
-  margin: 28px auto 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #1d3268;
-  font-size: 19px;
-}
-
-.section-heading:first-of-type {
-  margin-top: 0;
-}
-
 .admins-table {
   margin-top: 16px;
 }
@@ -1785,6 +2146,283 @@ tr.row-invalid .status-reason {
 .default-password-note svg {
   flex-shrink: 0;
   margin-top: 2px;
+}
+
+/* =========================
+   เมนู accordion
+========================= */
+.settings-menu {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-panel {
+  border: 1px solid #e3e8f0;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(29, 50, 104, 0.04), 0 6px 20px rgba(29, 50, 104, 0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.settings-panel.open {
+  border-color: #c9d6ee;
+  box-shadow: 0 1px 2px rgba(29, 50, 104, 0.05), 0 10px 28px rgba(47, 95, 219, 0.08);
+}
+
+.panel-header {
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.panel-icon {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: #eaf0ff;
+  color: #2f5fdb;
+}
+
+.panel-icon.admins {
+  background: #ecf8f1;
+  color: #15803d;
+}
+
+.panel-icon.transcript {
+  background: #f4ecff;
+  color: #7e10c6;
+}
+
+.panel-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.panel-text h2 {
+  margin: 0;
+  color: #1c293d;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.panel-text p {
+  margin: 3px 0 0;
+  color: #6b7a90;
+  font-size: var(--fs-small);
+}
+
+.panel-meta {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #f1f4f9;
+  color: #52617a;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.panel-toggle {
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 0 14px 0 18px;
+  border: 1.5px solid #c9d6ee;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  color: #2f5fdb;
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.panel-toggle:hover {
+  background: #f3f7ff;
+}
+
+.panel-toggle .chevron {
+  transition: transform 0.2s ease;
+}
+
+.settings-panel.open .panel-toggle {
+  border-color: #2f5fdb;
+  background: #2f5fdb;
+  color: #fff;
+}
+
+.settings-panel.open .panel-toggle .chevron {
+  transform: rotate(180deg);
+}
+
+.panel-body {
+  padding: 4px 24px 24px;
+  border-top: 1px solid #eef1f6;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  background: #fafbfd;
+  border-radius: 0 0 16px 16px;
+}
+
+/* การ์ดเดิมที่อยู่ในแผง: ไม่ต้องจำกัดความกว้าง/จัดกลางซ้ำ */
+.panel-body > .card {
+  max-width: none;
+  margin: 18px 0 0;
+}
+
+.panel-body > .card + .card {
+  margin-top: 0;
+}
+
+/* ฟอร์มหัวเอกสาร Transcript */
+.transcript-grid {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(0, 1.6fr) minmax(0, 1.6fr);
+  align-items: center;
+  gap: 12px 14px;
+}
+
+.grid-head {
+  color: #7b8ba3;
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.field-label {
+  color: #1c293d;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.transcript-grid input {
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid #dce5ef;
+  border-radius: 10px;
+  background: #fff;
+  color: #1c293d;
+  font: inherit;
+}
+
+.transcript-grid input::placeholder {
+  color: #a3aebf;
+}
+
+.transcript-grid input:focus {
+  outline: none;
+  border-color: #7bb1f5;
+  box-shadow: 0 0 0 3px rgba(47, 95, 219, 0.12);
+}
+
+.transcript-hint {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #eef4ff;
+  color: #1e45c8;
+  font-size: var(--fs-small);
+}
+
+.transcript-hint svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* ตัวอย่าง Transcript */
+.preview-toolbar {
+  margin-top: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+}
+
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.segmented-label {
+  margin-right: 6px;
+  color: #5b6b82;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.segmented button {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid #dce5ef;
+  border-radius: 9px;
+  background: #fff;
+  color: #42526b;
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.segmented button.active {
+  border-color: #2f5fdb;
+  background: #eef4ff;
+  color: #1e45c8;
+}
+
+.refresh-preview {
+  margin-left: auto;
+}
+
+.preview-card .alert {
+  margin-top: 14px;
+}
+
+.preview-frame {
+  position: relative;
+  margin-top: 16px;
+  height: 900px;
+  border: 1px solid #dce5ef;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #eef1f6;
+}
+
+.preview-frame iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.preview-frame.loading iframe {
+  opacity: 0.45;
+}
+
+.preview-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #42526b;
+  font-size: var(--fs-small);
+  font-weight: 600;
 }
 
 /* popup ยืนยันการลบ */
@@ -1917,6 +2555,45 @@ tr.row-invalid .status-reason {
 
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .panel-header {
+    padding: 16px;
+    flex-wrap: wrap;
+  }
+
+  .panel-meta {
+    order: 3;
+  }
+
+  .panel-toggle {
+    order: 4;
+    margin-left: auto;
+  }
+
+  .panel-body {
+    padding: 4px 12px 16px;
+  }
+
+  .transcript-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .grid-head {
+    display: none;
+  }
+
+  .refresh-preview {
+    margin-left: 0;
+  }
+
+  .preview-frame {
+    height: 600px;
+  }
+
+  .field-label {
+    margin-top: 10px;
   }
 }
 </style>
