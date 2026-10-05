@@ -128,7 +128,7 @@ class LocalFileFetcher(URLFetcher):
 
 
 def render_transcript_html(
-    data: dict, style: str, issued_on: date | None = None, lang: str = "th"
+    data: dict, style: str, issued_on: date | None = None, lang: str = "th", header: dict | None = None
 ) -> str:
     if style not in STYLES:
         raise ValueError(f"style ต้องเป็น {', '.join(STYLES)}")
@@ -142,7 +142,7 @@ def render_transcript_html(
     return environment.get_template(STYLES[style]["template"]).render(
         config=transcript_config,
         lang=lang,
-        tx=i18n.TEXT[lang],
+        tx=i18n.document_text(lang, header),
         fmt_date=lambda value: i18n.format_date(value, lang),
         fmt_date_short=lambda value: i18n.format_date_short(value, lang),
         font_dir=transcript_config.FONT_DIR.as_uri(),
@@ -160,9 +160,9 @@ def render_transcript_html(
 
 
 def render_transcript_pdf(
-    data: dict, style: str, issued_on: date | None = None, lang: str = "th"
+    data: dict, style: str, issued_on: date | None = None, lang: str = "th", header: dict | None = None
 ) -> bytes:
-    html = render_transcript_html(data, style, issued_on, lang)
+    html = render_transcript_html(data, style, issued_on, lang, header)
 
     return HTML(
         string=html,

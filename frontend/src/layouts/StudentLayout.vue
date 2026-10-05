@@ -18,8 +18,6 @@ import {
 
 import {
 
-  Bell,
-
   LogOut,
 
   Menu,
@@ -29,6 +27,10 @@ import {
 } from 'lucide-vue-next'
 
 import { useRoute, useRouter } from 'vue-router'
+
+import StudentNotificationBell
+
+  from '../components/Student/StudentNotificationBell.vue'
 
 import StudentSideBar
 
@@ -193,198 +195,17 @@ const logoutStudent = () => {
 
 /* =====================================================
 
-   Notifications
-
-   ดึงจาก GET /api/student/me/notifications
-   activityId ที่ได้มาคือ external_activity_id (ใช้เปิด My Submissions)
-
-===================================================== */
-
-const notifications = ref([])
-
-const fetchNotifications = async () => {
-
-  try {
-
-    const response = await fetch(
-
-      `${API_BASE}/api/student/me/notifications`,
-
-      { headers: studentHeaders() }
-
-    )
-
-    if (!response.ok) {
-
-      throw new Error(
-        t.value.studentLayout.cannotLoadNotifications
-      )
-
-    }
-
-    notifications.value =
-
-      await response.json()
-
-  } catch (error) {
-
-    notifications.value = []
-
-  }
-
-}
-
-
-
-const unreadCount = computed(() => {
-
-  return notifications.value.filter(
-
-    notification => !notification.read
-
-  ).length
-
-})
-
-
-
-/* =====================================================
-
    Dropdown State
 
 ===================================================== */
 
-const notificationOpen = ref(false)
-
 const profileOpen = ref(false)
-
-const notificationWrapper = ref(null)
 
 const profileWrapper = ref(null)
 
-
-
-const toggleNotifications = () => {
-
-  notificationOpen.value =
-
-    !notificationOpen.value
-
-  /*
-
-    เปิด Notification แล้วปิด Profile
-
-  */
-
-  profileOpen.value = false
-
-}
-
-
-
 const toggleProfile = () => {
 
-  profileOpen.value =
-
-    !profileOpen.value
-
-  /*
-
-    เปิด Profile แล้วปิด Notification
-
-  */
-
-  notificationOpen.value = false
-
-}
-
-
-
-/* =====================================================
-
-   Notification Actions
-
-===================================================== */
-
-const openNotification = async (notification) => {
-
-  /*
-
-    ถือว่าอ่านข้อความนี้แล้ว (อัปเดตทั้งฝั่ง UI และ backend)
-
-  */
-
-  notification.read = true
-
-  notificationOpen.value = false
-
-  profileOpen.value = false
-
-  fetch(
-
-    `${API_BASE}/api/student/me/notifications/${notification.id}/read`,
-
-    { method: 'PATCH', headers: studentHeaders() }
-
-  ).catch(() => {})
-
-  /*
-
-    ส่ง activityId ไปให้ StudentActivities.vue
-
-    ตัวอย่าง:
-
-    /student/activities?open=4&source=external_activity
-
-    StudentActivities.vue จะเปิด Modal
-
-    ของคำขอกิจกรรมภายนอก id 4 (My Submissions) ให้อัตโนมัติ
-
-    แจ้งเตือนของ student_request ไม่มีหน้าให้เปิด อ่านอย่างเดียว
-
-    (id ของสองตารางชนกันได้ ห้ามเอาไปเปิดเป็นกิจกรรมอื่น)
-
-  */
-
-  if (!notification.activityId || notification.source !== 'external_activity') return
-
-  await router.push({
-
-    path: '/student/activities',
-
-    query: {
-
-      open: notification.activityId,
-
-      source: notification.source
-
-    }
-
-  })
-
-}
-
-
-
-const markAllAsRead = () => {
-
-  notifications.value.forEach(
-
-    notification => {
-
-      notification.read = true
-
-    }
-
-  )
-
-  fetch(
-
-    `${API_BASE}/api/student/me/notifications/mark-all-read`,
-
-    { method: 'PATCH', headers: studentHeaders() }
-
-  ).catch(() => {})
+  profileOpen.value = !profileOpen.value
 
 }
 
@@ -399,28 +220,6 @@ const markAllAsRead = () => {
 ===================================================== */
 
 const closeDropdownOnOutside = (event) => {
-
-  /*
-
-    Notification
-
-  */
-
-  if (
-
-    notificationOpen.value &&
-
-    notificationWrapper.value &&
-
-    !notificationWrapper.value.contains(event.target)
-
-  ) {
-
-    notificationOpen.value = false
-
-  }
-
-
 
   /*
 
@@ -472,7 +271,6 @@ onMounted(() => {
 
   )
 
-  fetchNotifications()
   fetchCurrentStudent()
 
 })
@@ -557,177 +355,11 @@ onBeforeUnmount(() => {
 
           <!-- =========================
 
-               Notification
+               Notification (StudentNotificationBell.vue)
 
           ========================== -->
 
-          <div
-
-            ref="notificationWrapper"
-
-            class="action-wrapper"
-
-          >
-
-            <button
-
-              class="icon-button notification-button"
-
-              type="button"
-
-              :title="t.studentLayout.notifications"
-
-              :aria-label="t.studentLayout.notifications"
-
-              @click.stop="toggleNotifications"
-
-            >
-
-              <Bell :size="19" />
-
-              <!-- จุดแดง -->
-
-              <span
-
-                v-if="unreadCount > 0"
-
-                class="notification-dot"
-
-              ></span>
-
-            </button>
-
-
-
-            <!-- Notification Dropdown -->
-
-            <div
-
-              v-if="notificationOpen"
-
-              class="dropdown notification-dropdown"
-
-              @click.stop
-
-            >
-
-              <div class="dropdown-header">
-
-                <div>
-
-                  <strong>
-
-                    {{ t.studentLayout.notifications }}
-
-                  </strong>
-
-                  <span>
-
-                    {{ unreadCount }} {{ t.studentLayout.unread }}
-
-                  </span>
-
-                </div>
-
-
-
-                <button
-
-                  v-if="unreadCount > 0"
-
-                  type="button"
-
-                  @click="markAllAsRead"
-
-                >
-
-                  {{ t.studentLayout.markAllRead }}
-
-                </button>
-
-              </div>
-
-
-
-              <div
-
-                v-if="notifications.length > 0"
-
-                class="notification-list"
-
-              >
-
-                <button
-
-                  v-for="notification in notifications"
-
-                  :key="notification.id"
-
-                  class="notification-item"
-
-                  :class="{
-
-                    unread: !notification.read
-
-                  }"
-
-                  type="button"
-
-                  @click="openNotification(notification)"
-
-                >
-
-                  <div
-
-                    class="notification-status"
-
-                    :class="
-
-                      notification.status.toLowerCase()
-
-                    "
-
-                  ></div>
-
-
-
-                  <div class="notification-text">
-
-                    <strong>
-
-                      {{ notification.title }}
-
-                    </strong>
-
-                    <p>
-
-                      {{ notification.message }}
-
-                    </p>
-
-                  </div>
-
-                </button>
-
-              </div>
-
-
-
-              <div
-
-                v-else
-
-                class="dropdown-empty"
-
-              >
-
-                {{ t.studentLayout.noNotifications }}
-
-              </div>
-
-            </div>
-
-          </div>
+          <StudentNotificationBell />
 
 
 
@@ -1137,34 +769,6 @@ onBeforeUnmount(() => {
 
 /* =====================================================
 
-   Notification Dot
-
-===================================================== */
-
-.notification-dot {
-
-  position: absolute;
-
-  top: 4px;
-
-  right: 5px;
-
-  width: 8px;
-
-  height: 8px;
-
-  border: 2px solid white;
-
-  border-radius: 50%;
-
-  background: #ef4444;
-
-}
-
-
-
-/* =====================================================
-
    Profile Button
 
 ===================================================== */
@@ -1244,210 +848,6 @@ onBeforeUnmount(() => {
   box-shadow:
 
     0 12px 35px rgba(30, 40, 70, 0.16);
-
-}
-
-
-
-/* =====================================================
-
-   Notifications
-
-===================================================== */
-
-.notification-dropdown {
-
-  width: 340px;
-
-  overflow: hidden;
-
-}
-
-
-
-.dropdown-header {
-
-  display: flex;
-
-  justify-content: space-between;
-
-  align-items: center;
-
-  padding: 15px;
-
-  border-bottom: 1px solid #edf0f4;
-
-}
-
-
-
-.dropdown-header div {
-
-  display: flex;
-
-  flex-direction: column;
-
-  gap: 3px;
-
-}
-
-
-
-.dropdown-header strong {
-
-  color: #253047;
-
-  font-size: var(--fs-body);
-
-}
-
-
-
-.dropdown-header span {
-
-  color: #929baa;
-
-  font-size: var(--fs-caption);
-
-}
-
-
-
-.dropdown-header button {
-
-  border: none;
-
-  background: transparent;
-
-  color: #345eea;
-
-  font-size: var(--fs-small);
-
-  cursor: pointer;
-
-}
-
-
-
-.notification-list {
-
-  max-height: 320px;
-
-  overflow-y: auto;
-
-}
-
-
-
-.notification-item {
-
-  width: 100%;
-
-  display: flex;
-
-  gap: 11px;
-
-  padding: 14px;
-
-  border: none;
-
-  border-bottom: 1px solid #f0f2f5;
-
-  background: white;
-
-  text-align: left;
-
-  cursor: pointer;
-
-}
-
-
-
-.notification-item:hover {
-
-  background: #f8f9fc;
-
-}
-
-
-
-.notification-item.unread {
-
-  background: #f5f7ff;
-
-}
-
-
-
-.notification-status {
-
-  width: 8px;
-
-  height: 8px;
-
-  flex-shrink: 0;
-
-  margin-top: 5px;
-
-  border-radius: 50%;
-
-}
-
-
-
-.notification-status.pending {
-
-  background: #f5a623;
-
-}
-
-
-
-.notification-status.rejected {
-
-  background: #e64b4b;
-
-}
-
-
-
-.notification-status.approved {
-
-  background: #20bd68;
-
-}
-
-
-
-.notification-text {
-
-  min-width: 0;
-
-}
-
-
-
-.notification-text strong {
-
-  display: block;
-
-  color: #2c3442;
-
-  font-size: var(--fs-small);
-
-}
-
-
-
-.notification-text p {
-
-  margin: 5px 0 0;
-
-  color: #7f8998;
-
-  font-size: var(--fs-caption);
-
-  line-height: 1.6;
 
 }
 
@@ -1626,20 +1026,6 @@ onBeforeUnmount(() => {
 
 
 
-.dropdown-empty {
-
-  padding: 25px;
-
-  text-align: center;
-
-  color: #929baa;
-
-  font-size: var(--fs-small);
-
-}
-
-
-
 /* =====================================================
 
    Content
@@ -1743,22 +1129,6 @@ onBeforeUnmount(() => {
     flex-shrink: 0;
 
     gap: 7px;
-
-  }
-
-
-
-  .notification-dropdown {
-
-    width:
-
-      min(
-
-        340px,
-
-        calc(100vw - 30px)
-
-      );
 
   }
 

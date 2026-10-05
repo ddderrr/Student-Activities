@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bell, BellOff, CheckCheck, FilePlus2, RefreshCw } from 'lucide-vue-next'
+import { Bell, BellOff, CheckCheck, FilePlus2, RefreshCw, Trash2 } from 'lucide-vue-next'
 
 import { useLanguage } from '../../composables/useLanguage'
 import { adminFetch } from '../../constants/currentAdmin'
@@ -16,8 +16,14 @@ const router = useRouter()
 
 const notifications = ref([])
 const unreadCount = ref(0)
+const hasMore = ref(false)
 const open = ref(false)
 const loading = ref(false)
+const loadingMore = ref(false)
+// ลบทั้งหมด: กดแล้วขึ้นแถวยืนยันก่อน
+const confirmingClear = ref(false)
+const clearing = ref(false)
+const clearError = ref(false)
 const loadError = ref(false)
 const wrapper = ref(null)
 // ใช้คำนวณ "x นาทีที่แล้ว" ใหม่ทุกครั้งที่ poll
@@ -35,7 +41,7 @@ async function loadNotifications() {
     const response = await adminFetch(`${API_BASE}/api/admin/notifications`)
     if (!response.ok) throw new Error()
     const data = await response.json()
-    notifications.value = data.notifications
+    applyFirstPage(data.notifications, data.has_more)
     unreadCount.value = data.unread_count
     loadError.value = false
   } catch {
@@ -43,6 +49,35 @@ async function loadNotifications() {
   } finally {
     loading.value = false
     now.value = Date.now()
+  }
+}
+
+// หน้าแรกจาก poll: ถ้าผู้ใช้กด "ดูเพิ่มเติม" ไว้แล้ว เก็บรายการที่เก่ากว่าหน้าแรกไว้ด้วย ไม่ให้หายตอนรีเฟรช
+function applyFirstPage(page, pageHasMore) {
+  const oldestOnPage = page.at(-1)?.id
+  const older = oldestOnPage == null ? [] : notifications.value.filter((item) => item.id < oldestOnPage)
+  notifications.value = [...page, ...older]
+  if (!older.length) hasMore.value = pageHasMore
+}
+
+// ดูเพิ่มเติม: หน้าถัดไปที่เก่ากว่ารายการสุดท้ายที่มี
+async function loadMore() {
+  const last = notifications.value.at(-1)
+  if (!last || loadingMore.value) return
+  loadingMore.value = true
+
+  try {
+    const response = await adminFetch(`${API_BASE}/api/admin/notifications?before_id=${last.id}`)
+    if (!response.ok) throw new Error()
+    const data = await response.json()
+    const known = new Set(notifications.value.map((item) => item.id))
+    notifications.value.push(...data.notifications.filter((item) => !known.has(item.id)))
+    hasMore.value = data.has_more
+    unreadCount.value = data.unread_count
+  } catch {
+    // โหลดไม่สำเร็จ: ปุ่มยังอยู่ให้กดใหม่ได้
+  } finally {
+    loadingMore.value = false
   }
 }
 
@@ -69,7 +104,32 @@ function relativeTime(iso) {
 
 function toggle() {
   open.value = !open.value
+  confirmingClear.value = false
   if (open.value) loadNotifications()
+}
+
+function askClear() {
+  clearError.value = false
+  confirmingClear.value = true
+}
+
+async function clearAll() {
+  if (clearing.value) return
+  clearing.value = true
+  clearError.value = false
+
+  try {
+    const response = await adminFetch(`${API_BASE}/api/admin/notifications`, { method: 'DELETE' })
+    if (!response.ok) throw new Error()
+    notifications.value = []
+    unreadCount.value = 0
+    hasMore.value = false
+    confirmingClear.value = false
+  } catch {
+    clearError.value = true
+  } finally {
+    clearing.value = false
+  }
 }
 
 async function markRead(item) {
@@ -155,7 +215,8 @@ onBeforeUnmount(() => {
     <div v-if="open" class="dropdown" role="dialog" :aria-label="t.adminNotifications.title" data-testid="admin-notification-dropdown">
       <div class="dropdown-header">
         <strong>{{ t.adminNotifications.title }}</strong>
-        <button
+        <div class="header-actions">
+          <button
           type="button"
           class="mark-all"
           :disabled="!unreadCount"
@@ -164,7 +225,29 @@ onBeforeUnmount(() => {
         >
           <CheckCheck :size="15" />
           {{ t.adminNotifications.markAllRead }}
-        </button>
+          </button>
+          <button
+            type="button"
+            class="clear-all"
+            :disabled="!notifications.length"
+            :title="t.adminNotifications.clearAll"
+            data-testid="admin-notification-clear-all"
+            @click="askClear"
+          >
+            <Trash2 :size="15" />
+            {{ t.adminNotifications.clearAll }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="confirmingClear" class="clear-confirm" role="alert" data-testid="admin-notification-clear-confirm">
+        <p>{{ clearError ? t.adminNotifications.clearFailed : t.adminNotifications.clearConfirm }}</p>
+        <div class="clear-confirm-actions">
+          <button type="button" class="ghost" :disabled="clearing" @click="confirmingClear = false">{{ t.adminNotifications.cancel }}</button>
+          <button type="button" class="danger" :disabled="clearing" data-testid="admin-notification-clear-yes" @click="clearAll">
+            {{ clearing ? t.adminNotifications.clearing : t.adminNotifications.confirmClear }}
+          </button>
+        </div>
       </div>
 
       <p v-if="loadError && !notifications.length" class="dropdown-state">{{ t.adminNotifications.loadError }}</p>
@@ -199,6 +282,11 @@ onBeforeUnmount(() => {
             </span>
 
             <span v-if="!item.is_read" class="unread-dot" :aria-label="t.adminNotifications.unread"></span>
+          </button>
+        </li>
+        <li v-if="hasMore" class="load-more-row">
+          <button type="button" class="load-more" :disabled="loadingMore" data-testid="admin-notification-load-more" @click="loadMore">
+            {{ loadingMore ? t.adminNotifications.loadingMore : t.adminNotifications.loadMore }}
           </button>
         </li>
       </ul>
@@ -270,15 +358,19 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  row-gap: 8px;
   gap: 10px;
 }
 
 .dropdown-header strong {
+  white-space: nowrap;
   color: #1c293d;
   font-size: var(--fs-body);
 }
 
 .mark-all {
+  white-space: nowrap;
   border: 0;
   display: inline-flex;
   align-items: center;
@@ -289,6 +381,78 @@ onBeforeUnmount(() => {
   font-size: var(--fs-caption);
   font-weight: 600;
   cursor: pointer;
+}
+
+.header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.clear-all {
+  white-space: nowrap;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  color: #c2410c;
+  font: inherit;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.clear-all:disabled {
+  color: #a3aebf;
+  cursor: default;
+}
+
+.clear-confirm {
+  padding: 12px 16px;
+  border-bottom: 1px solid #fde2d6;
+  background: #fff7f3;
+}
+
+.clear-confirm p {
+  margin: 0 0 10px;
+  color: #7c2d12;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+
+.clear-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.clear-confirm-actions button {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.clear-confirm-actions .ghost {
+  border: 1px solid #e4e8ef;
+  background: #fff;
+  color: #42526b;
+}
+
+.clear-confirm-actions .danger {
+  border: 0;
+  background: #dc2626;
+  color: #fff;
+}
+
+.clear-confirm-actions button:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .mark-all:disabled {
@@ -387,6 +551,32 @@ onBeforeUnmount(() => {
 .item-time {
   color: #8a97ab;
   font-size: var(--fs-caption);
+}
+
+.load-more-row {
+  padding: 10px 16px;
+}
+
+.load-more {
+  width: 100%;
+  height: 36px;
+  border: 1px solid #e3e8f0;
+  border-radius: 9px;
+  background: #fff;
+  color: #2f5fdb;
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.load-more:hover:not(:disabled) {
+  background: #f3f7ff;
+}
+
+.load-more:disabled {
+  color: #a3aebf;
+  cursor: wait;
 }
 
 .unread-dot {

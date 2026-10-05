@@ -147,7 +147,7 @@ def test_list_and_mark_notifications(client, db_session):
     )
     assert list_response.status_code == 200
 
-    notifications = list_response.json()
+    notifications = list_response.json()["notifications"]
     assert len(notifications) == 1
     assert notifications[0]["read"] is False
     assert notifications[0]["message"] == "กรุณาแนบไฟล์ใหม่"
@@ -163,7 +163,7 @@ def test_list_and_mark_notifications(client, db_session):
         "/api/student/me/notifications",
         headers={"X-Student-Id": "670510659"},
     )
-    assert list_response_after.json()[0]["read"] is True
+    assert list_response_after.json()["notifications"][0]["read"] is True
 
 
 def test_notifications_say_which_source_their_id_belongs_to(client, db_session):
@@ -193,7 +193,7 @@ def test_notifications_say_which_source_their_id_belongs_to(client, db_session):
     notifications = client.get(
         "/api/student/me/notifications",
         headers={"X-Student-Id": "670510659"},
-    ).json()
+    ).json()["notifications"]
 
     by_source = {item["source"]: item["activityId"] for item in notifications}
     assert by_source == {

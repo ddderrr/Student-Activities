@@ -74,6 +74,9 @@ from import_limits import (
     read_import_upload,
 )
 import transcript_data
+import transcript_preview
+from notification_retention import prune_old_notifications
+import transcript_settings
 from transcript_pdf import STYLES as TRANSCRIPT_STYLES, render_transcript_pdf
 from transcript_i18n import LANGUAGES as TRANSCRIPT_LANGUAGES
 from skill_scoring import (
@@ -106,6 +109,7 @@ from auth_tokens import (
 from branches import BRANCHES
 from models import (
     AdminNotification,
+    AdminNotificationClear,
     AdminNotificationRead,
     Admin,
     Activity,
@@ -160,6 +164,8 @@ async def lifespan(app: FastAPI):
     if os.getenv("DEV_SCHEMA_UPDATES", "false").strip().lower() == "true":
         apply_development_migrations(engine)
     seed_skills()
+    with SessionLocal() as db:
+        prune_old_notifications(db)
     EXTERNAL_ACTIVITY_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     warn_if_auth_secret_missing()
 
@@ -181,6 +187,12 @@ app.add_middleware(
         "http://127.0.0.1:5174",
         f"http://localhost:{os.getenv('FRONTEND_PORT', '5174')}",
         f"http://127.0.0.1:{os.getenv('FRONTEND_PORT', '5174')}",
+        # URL หน้าเว็บที่คนภายนอกเปิด (เช่น tunnel / IP ในวง LAN) คั่นด้วย , ใน CORS_ORIGINS
+        *[
+            origin.strip().rstrip("/")
+            for origin in os.getenv("CORS_ORIGINS", "").split(",")
+            if origin.strip()
+        ],
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -2603,7 +2615,7 @@ def build_student_import_rows(contents: bytes, extension: str, db: Session) -> l
 
 
 @app.get("/api/admin/students/import/template")
-def download_student_import_template(_admin: AdminContext = Depends(require_central_admin)):
+def download_student_import_template(_admin: AdminContext = Depends(get_current_admin)):
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = "students"
@@ -2633,7 +2645,7 @@ def import_students_from_settings(
     file: UploadFile = File(...),
     dry_run: bool = False,
     db: Session = Depends(get_db),
-    _admin: AdminContext = Depends(require_central_admin),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     """
     นำเข้านักศึกษาจากหน้า Settings: dry_run=true = พรีวิวอย่างเดียว ไม่บันทึก
@@ -2650,6 +2662,7 @@ def import_students_from_settings(
     ensure_import_file_within_limits(contents, extension)
 
     rows = build_student_import_rows(contents, extension, db)
+    restrict_import_rows_to_admin_major(rows, admin)
 
     if not dry_run:
         for record in rows:
@@ -2688,8 +2701,23 @@ def import_students_from_settings(
     }
 
 
+def restrict_import_rows_to_admin_major(rows: list[dict], admin: AdminContext) -> None:
+    """แอดมินสาขานำเข้าได้เฉพาะนักศึกษาสาขาตัวเอง: ช่องสาขาว่าง = ใส่สาขาของแอดมินให้,
+    สาขาอื่น = แถวไม่ถูกต้อง (แอดมินกลางนำเข้าได้ทุกสาขาตามไฟล์)"""
+    if admin.is_central:
+        return
+
+    for record in rows:
+        major = (record["major"] or "").strip()
+        if not major:
+            record["major"] = admin.major
+        elif major != admin.major and record["status"] != "invalid":
+            record["status"] = "invalid"
+            record["message"] = f"นำเข้าได้เฉพาะนักศึกษาสาขา{admin.major}"
+
+
 # ============================================================
-# ADMIN SETTINGS: MANAGE STUDENTS (central admin)
+# ADMIN SETTINGS: MANAGE STUDENTS (แอดมินกลาง = ทุกสาขา, แอดมินสาขา = สาขาตัวเอง)
 # ============================================================
 
 
@@ -2713,11 +2741,11 @@ def list_students_for_settings(
     page: int = 1,
     page_size: int = 20,
     db: Session = Depends(get_db),
-    _admin: AdminContext = Depends(require_central_admin),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
-    query = db.query(Student)
+    query = scope_student_query(db.query(Student), admin)
     keyword = search.strip()
 
     if keyword:
@@ -2756,7 +2784,7 @@ def list_students_for_settings(
 
     return {
         "total": total,
-        "all_total": db.query(func.count(Student.student_id)).scalar(),
+        "all_total": scope_student_query(db.query(func.count(Student.student_id)), admin).scalar(),
         "page": page,
         "page_size": page_size,
         "students": [
@@ -2821,12 +2849,13 @@ def delete_students_and_related(db: Session, students: list[Student]) -> dict:
 def delete_student_from_settings(
     student_id: str,
     db: Session = Depends(get_db),
-    _admin: AdminContext = Depends(require_central_admin),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     student = db.get(Student, student_id.strip())
 
     if not student:
         raise HTTPException(status_code=404, detail="ไม่พบนักศึกษานี้ในระบบ")
+    ensure_can_access_student(admin, student)
 
     return delete_students_and_related(db, [student])
 
@@ -2835,13 +2864,80 @@ def delete_student_from_settings(
 def delete_all_students_from_settings(
     confirm: str = "",
     db: Session = Depends(get_db),
-    _admin: AdminContext = Depends(require_central_admin),
+    admin: AdminContext = Depends(get_current_admin),
 ):
     # กันกดพลาด/เรียกผิด: ต้องส่ง ?confirm=all มาเท่านั้น
     if confirm != "all":
         raise HTTPException(status_code=400, detail="ต้องยืนยันการลบทั้งหมด (confirm=all)")
 
-    return delete_students_and_related(db, db.query(Student).all())
+    # แอดมินสาขา: ลบเฉพาะนักศึกษาสาขาตัวเอง
+    return delete_students_and_related(db, scope_student_query(db.query(Student), admin).all())
+
+
+# ============================================================
+# ADMIN SETTINGS: TRANSCRIPT HEADER (แอดมินทุกคน หัวเอกสารใช้ร่วมกันทั้งคณะ)
+# ============================================================
+
+
+@app.get("/api/admin/settings/transcript")
+def get_transcript_settings(
+    db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(get_current_admin),
+):
+    return {
+        "values": transcript_settings.load_header(db),
+        "defaults": transcript_settings.DEFAULTS,
+        "max_length": transcript_settings.MAX_LENGTH,
+    }
+
+
+@app.put("/api/admin/settings/transcript")
+def update_transcript_settings(
+    payload: dict,
+    db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
+):
+    unknown = set(payload) - set(transcript_settings.FIELDS)
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"ไม่รู้จักช่อง: {', '.join(sorted(unknown))}")
+
+    try:
+        values = transcript_settings.save_header(db, payload, admin.email)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+    return {"values": values, "defaults": transcript_settings.DEFAULTS, "max_length": transcript_settings.MAX_LENGTH}
+
+
+@app.post("/api/admin/settings/transcript/preview")
+def preview_transcript_settings(
+    payload: dict,
+    style: str = "A",
+    lang: str = "th",
+    db: Session = Depends(get_db),
+    _admin: AdminContext = Depends(get_current_admin),
+):
+    """PDF ตัวอย่าง (นักศึกษาสมมติ) ด้วยค่าที่กรอกอยู่ในฟอร์ม ยังไม่บันทึก"""
+    if style not in TRANSCRIPT_STYLES:
+        raise HTTPException(status_code=400, detail="style ต้องเป็น A หรือ B")
+    if lang not in TRANSCRIPT_LANGUAGES:
+        raise HTTPException(status_code=400, detail="lang ต้องเป็น th หรือ en")
+
+    unknown = set(payload) - set(transcript_settings.FIELDS)
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"ไม่รู้จักช่อง: {', '.join(sorted(unknown))}")
+
+    try:
+        header = transcript_settings.preview_header(db, payload)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+    pdf_bytes = render_transcript_pdf(transcript_preview.sample_transcript(), style, lang=lang, header=header)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'inline; filename="transcript-preview.pdf"', "Cache-Control": "no-store"},
+    )
 
 
 # ============================================================
@@ -2944,6 +3040,9 @@ def delete_branch_admin(
     if admin.is_central:
         raise HTTPException(status_code=400, detail="ลบแอดมินกลางไม่ได้")
 
+    # สถานะอ่าน / ล้างกระดิ่งผูกกับอีเมล: เพิ่มแอดมินอีเมลเดิมทีหลังต้องเริ่มใหม่
+    db.query(AdminNotificationRead).filter(AdminNotificationRead.admin_email == admin.email).delete(synchronize_session=False)
+    db.query(AdminNotificationClear).filter(AdminNotificationClear.admin_email == admin.email).delete(synchronize_session=False)
     db.delete(admin)
     db.commit()
 
@@ -4182,6 +4281,14 @@ def create_notification(
     )
 
 
+def notification_link(notification: Notification) -> str | None:
+    # คำขอกิจกรรมภายนอก: เปิด My Submissions พร้อมรายละเอียดคำขอนั้น (แก้แล้วส่งใหม่ได้จากตรงนั้น)
+    # คำขอประเภทอื่นไม่มีหน้าให้เปิด
+    if notification.source == "external_activity" and notification.external_activity_id:
+        return f"/student/activities?open={notification.external_activity_id}"
+    return None
+
+
 def serialize_notification(notification: Notification) -> dict:
     return {
         "id": notification.id,
@@ -4189,27 +4296,62 @@ def serialize_notification(notification: Notification) -> dict:
         "source": notification.source,
         "activityId": notification.external_activity_id or notification.request_id,
         "title": notification.title,
+        # rejected = เหตุผลที่ไม่อนุมัติ, approved = ว่าง (ข้อความเต็มประกอบที่ frontend ตามภาษา)
         "message": notification.message,
         "status": notification.status,
+        "type": notification.status.lower(),
         "read": notification.is_read,
+        "createdAt": as_bangkok_iso(notification.created_at),
+        "link": notification_link(notification),
     }
+
+
+NOTIFICATION_PAGE_SIZE = 30
+
+
+def notification_page(query, model, before_id: int | None):
+    """หน้าละ NOTIFICATION_PAGE_SIZE ใหม่ไปเก่า before_id = id สุดท้ายของหน้าก่อน (ดูเพิ่มเติม)
+
+    เรียงตาม id (สร้างทีหลัง id มากกว่า) จึงไม่ซ้ำ/ข้ามแม้มีรายการใหม่เข้ามาระหว่างดู
+    """
+    if before_id is not None:
+        query = query.filter(model.id < before_id)
+    rows = query.order_by(model.id.desc()).limit(NOTIFICATION_PAGE_SIZE + 1).all()
+    return rows[:NOTIFICATION_PAGE_SIZE], len(rows) > NOTIFICATION_PAGE_SIZE
 
 
 @app.get("/api/student/me/notifications")
 def list_my_notifications(
+    before_id: int | None = None,
     student: Student = Depends(get_current_student),
     db: Session = Depends(get_db),
 ):
-    notifications = (
+    mine = db.query(Notification).filter(Notification.student_id == student.student_id)
+    rows, has_more = notification_page(mine, Notification, before_id)
+
+    return {
+        # นับจากทั้งหมด ไม่ใช่เฉพาะหน้าที่ส่งไป
+        "unread_count": mine.filter(Notification.is_read.is_(False)).count(),
+        "has_more": has_more,
+        "notifications": [serialize_notification(item) for item in rows],
+    }
+
+
+@app.delete("/api/student/me/notifications")
+def delete_my_notifications(
+    student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    deleted = (
         db.query(Notification)
         .filter(Notification.student_id == student.student_id)
-        .order_by(Notification.created_at.desc())
-        .all()
+        .delete(synchronize_session=False)
     )
+    db.commit()
+    return {"deleted": deleted}
 
-    return [serialize_notification(item) for item in notifications]
 
-
+@app.patch("/api/student/me/notifications/read-all")
 @app.patch("/api/student/me/notifications/mark-all-read")
 def mark_all_notifications_read(
     student: Student = Depends(get_current_student),
@@ -5259,7 +5401,8 @@ def export_my_transcript(
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
-    pdf_bytes = render_transcript_pdf(data, style, lang=lang)
+    # หัวเอกสารที่แอดมินกลางแก้จากหน้า Settings (ไม่ได้ตั้ง = ค่าเริ่มต้น)
+    pdf_bytes = render_transcript_pdf(data, style, lang=lang, header=transcript_settings.load_header(db))
     filename = f"transcript-{student.student_id}-{style}-{lang}.pdf"
 
     return Response(
@@ -5400,7 +5543,6 @@ ADMIN_NOTIFICATION_MESSAGES = {
     "external_submitted": "นักศึกษา {student} ส่งคำขอเพิ่มกิจกรรมภายนอก {title}",
     "external_resubmitted": "นักศึกษา {student} แก้ไขและส่งคำขอกิจกรรมภายนอก {title} อีกครั้ง",
 }
-ADMIN_NOTIFICATION_LIMIT = 30
 
 
 def notify_admins_external_activity(db: Session, external_activity: ExternalActivity, student: Student, kind: str) -> None:
@@ -5422,6 +5564,10 @@ def notify_admins_external_activity(db: Session, external_activity: ExternalActi
 
 def scoped_admin_notifications(db: Session, admin: AdminContext):
     query = db.query(AdminNotification)
+    # รายการที่แอดมินคนนี้กด "ลบทั้งหมด" ไปแล้ว ไม่แสดงอีก (แอดมินคนอื่นยังเห็นตามปกติ)
+    cleared = db.get(AdminNotificationClear, admin.email)
+    if cleared:
+        query = query.filter(AdminNotification.id > cleared.cleared_through_id)
     if admin.is_central:
         return query
     return query.filter(func.trim(AdminNotification.major) == admin.major)
@@ -5436,6 +5582,7 @@ def as_bangkok_iso(value: datetime) -> str:
 
 @app.get("/api/admin/notifications")
 def list_admin_notifications(
+    before_id: int | None = None,
     db: Session = Depends(get_db),
     admin: AdminContext = Depends(get_current_admin),
 ):
@@ -5446,11 +5593,7 @@ def list_admin_notifications(
     )
     scoped = scoped_admin_notifications(db, admin)
     unread_count = scoped.filter(AdminNotification.id.notin_(read_ids.select())).count()
-    rows = (
-        scoped.order_by(AdminNotification.created_at.desc(), AdminNotification.id.desc())
-        .limit(ADMIN_NOTIFICATION_LIMIT)
-        .all()
-    )
+    rows, has_more = notification_page(scoped, AdminNotification, before_id)
     read = {
         notification_id
         for (notification_id,) in db.query(AdminNotificationRead.notification_id).filter(
@@ -5461,6 +5604,7 @@ def list_admin_notifications(
 
     return {
         "unread_count": unread_count,
+        "has_more": has_more,
         "notifications": [
             {
                 "id": row.id,
@@ -5492,6 +5636,32 @@ def mark_admin_notifications_read(db: Session, admin: AdminContext, ids: list[in
         db.add(AdminNotificationRead(notification_id=notification_id, admin_email=admin.email))
     db.commit()
     return len(new_ids)
+
+
+@app.delete("/api/admin/notifications")
+def clear_admin_notifications(
+    db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
+):
+    """ลบทั้งหมดออกจากกระดิ่งของแอดมินคนนี้ (ไม่กระทบแอดมินคนอื่น)"""
+    scoped = scoped_admin_notifications(db, admin)
+    count = scoped.count()
+    latest_id = scoped.with_entities(func.max(AdminNotification.id)).scalar()
+    if latest_id is None:
+        return {"cleared": 0}
+
+    cleared = db.get(AdminNotificationClear, admin.email)
+    if cleared:
+        cleared.cleared_through_id = max(cleared.cleared_through_id, latest_id)
+    else:
+        db.add(AdminNotificationClear(admin_email=admin.email, cleared_through_id=latest_id))
+    # สถานะอ่านของรายการที่ล้างแล้วไม่ต้องเก็บ
+    db.query(AdminNotificationRead).filter(
+        AdminNotificationRead.admin_email == admin.email,
+        AdminNotificationRead.notification_id <= latest_id,
+    ).delete(synchronize_session=False)
+    db.commit()
+    return {"cleared": count}
 
 
 @app.patch("/api/admin/notifications/read-all")
@@ -5550,6 +5720,16 @@ def decide_external_activity(
 
     if payload.status == "approved":
         external_activity.reject_reason = None
+
+        create_notification(
+            db,
+            student_id=external_activity.student_id,
+            title=external_activity.title,
+            message="",
+            status="Approved",
+            source="external_activity",
+            external_activity_id=external_activity.id,
+        )
     else:
         reject_reason = (payload.reject_reason or "").strip()
 

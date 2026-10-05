@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import {
+  BookOpen,
   LayoutDashboard,
   CalendarDays,
   GraduationCap,
@@ -207,6 +208,30 @@ const logout = () => {
     <!-- FOOTER -->
 
     <div class="sidebar-footer">
+
+      <!-- USER GUIDE -->
+
+      <button
+        class="menu-item guide-item"
+        :class="{
+          active: route.path === '/admin/guide'
+        }"
+        data-testid="sidebar-user-guide"
+        @click="router.push('/admin/guide')"
+        :title="!sidebarOpen ? t.adminSidebar.userGuide : ''"
+      >
+
+        <BookOpen
+          class="menu-icon"
+          :size="19"
+        />
+
+        <span>
+          {{ t.adminSidebar.userGuide }}
+        </span>
+
+      </button>
+
 
       <!-- LANGUAGE -->
 
@@ -548,6 +573,15 @@ const logout = () => {
   border-top: 1px solid #edf0f4;
 
   padding-top: 12px;
+}
+
+
+/* =========================
+   USER GUIDE
+========================= */
+
+.guide-item {
+  margin-bottom: 10px;
 }
 
 

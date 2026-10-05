@@ -7,7 +7,7 @@ export default {
     externalHint: "Skills from this student's approved external activities only.",
     externalEmpty: "No approved external activity skill data yet.",
     strongestExternal: "Strongest External Skill",
-    internalActivities: "Internal Activities Evaluated",
+    internalActivities: "University Activities",
     activitiesUsed: "Activities used",
     sourceLabel: "Activity source",
     sourceCaption: "Source",
@@ -47,6 +47,7 @@ export default {
     centralAdmin: 'Central admin · All majors',
     majorPrefix: 'Major:',
 
+    userGuide: 'User Guide',
     openSidebar: 'Open sidebar',
     closeSidebar: 'Close sidebar'
   },
@@ -60,6 +61,7 @@ export default {
     addExternalActivity: 'Add External Activity',
     transcript: 'Transcript',
 
+    userGuide: 'User Guide',
     openSidebar: 'Open sidebar',
     closeSidebar: 'Close sidebar'
   },
@@ -808,25 +810,8 @@ export default {
     tableStatus: 'STATUS',
     noActivityData: 'No activity data available',
     noActivityDataSubtitle: 'Activities used to calculate skills will appear here',
-    exportButton: 'Export to e-Portfolio / Transcript',
-    exportModalTitle: 'Export Transcript',
-    exportModalSubtitle: 'Choose a transcript format before printing or downloading',
-    selectedPeriodLabel: 'Selected period',
-    transcriptStyleTitle: 'Transcript Style',
-    withRadarChart: 'With Radar Chart',
-    withRadarChartDesc: 'Includes radar chart + skill scores + activity list',
-    withoutRadarChart: 'Without Radar Chart',
-    withoutRadarChartDesc: 'No chart, but still includes full skill scores and activity list',
-    printButton: 'Print',
-    preparingDots: 'Preparing...',
-    downloadPdfButton: 'Download PDF',
-    generatingPdf: 'Generating PDF...',
-    preparingTranscript: 'Preparing transcript...',
     loadError: 'Failed to load skill data',
     connectionError: 'Cannot connect to Backend',
-    exportError: 'Failed to generate transcript PDF',
-    notPdfError: 'The file returned by the Backend is not a PDF',
-    popupBlockedError: 'Browser blocked the print window. Please allow pop-ups and try again',
     skillTrackLabel: 'Skill set',
     participantSkillsOption: 'Participant skills',
     staffSkillsOption: 'Staff skills',
@@ -915,6 +900,34 @@ export default {
     removeFailedError: 'Failed to remove student'
   },
 
+  studentNotifications: {
+    title: 'Notifications',
+    markAllRead: 'Mark all as read',
+    empty: 'No notifications yet',
+    loadError: 'Could not load notifications',
+    justNow: 'Just now',
+    unread: 'Unread',
+    approved: "Your activity '{title}' has been approved ✓",
+    rejected: "Your activity '{title}' was rejected - {reason}",
+    requestApproved: "Your request '{title}' has been approved ✓",
+    requestRejected: "Your request '{title}' was rejected - {reason}",
+    loadMore: 'Show more',
+    loadingMore: 'Loading...',
+    clearAll: 'Clear all',
+    cancel: 'Cancel',
+    confirmClear: 'Delete',
+    clearing: 'Deleting...',
+    clearFailed: 'Could not delete. Please try again.',
+    clearConfirm: 'Delete all notifications? This cannot be undone.'
+  },
+
+  studentContact: {
+    title: 'Contact Us',
+    message: 'If you have any questions or need assistance, please contact us',
+    channelsTitle: 'Contact channels',
+    comingSoon: 'Contact details coming soon'
+  },
+
   studentLayout: {
     notifications: 'Notifications',
     unread: 'unread',
@@ -992,14 +1005,24 @@ export default {
     justNow: 'Just now',
     unread: 'Unread',
     externalSubmitted: '{name} submitted an external activity request: {title}',
-    externalResubmitted: '{name} edited and resubmitted the external activity request: {title}'
+    externalResubmitted: '{name} edited and resubmitted the external activity request: {title}',
+    loadMore: 'Show more',
+    loadingMore: 'Loading...',
+    clearAll: 'Clear all',
+    cancel: 'Cancel',
+    confirmClear: 'Delete',
+    clearing: 'Deleting...',
+    clearFailed: 'Could not delete. Please try again.',
+    clearConfirm: 'Clear all notifications from your bell? Other admins still see them.'
   },
 
   adminSettings: {
     title: 'Settings',
     subtitle: 'System settings for the central admin',
-    noPermissionTitle: 'You do not have permission to access this section',
-    noPermissionText: 'Settings are available to the faculty central admin only.',
+    subtitleBranch: 'Manage {major} students and the transcript header',
+    sectionStudentsDescriptionBranch: 'Import and manage {major} students',
+    importBranchNote: 'You can only import {major} students. Rows with an empty major are set to {major} automatically.',
+    deleteAllMessageBranch: 'All {count} {major} students will be deleted, along with their activity memberships, external activities, evidence files, requests and notifications (students in other majors are not affected).',
     importTitle: 'Import Students',
     importDescription: 'Upload an Excel or CSV file to add new students. Student IDs that already exist are skipped.',
     downloadTemplate: 'Download Template',
@@ -1039,6 +1062,7 @@ export default {
     importAnother: 'Import another file',
     studentsTitle: 'All Students',
     studentsDescription: 'View and manage every student in the system',
+    studentsDescriptionBranch: 'View and manage {major} students',
     studentsCount: '{count} students',
     studentsFound: '{count} of {all} students',
     searchPlaceholder: 'Search ID, name, email or major',
@@ -1178,5 +1202,534 @@ export default {
     previewEnglish: 'Preview (English)',
     downloadThai: 'Download PDF (Thai)',
     downloadEnglish: 'Download PDF (English)'
+  },
+
+  studentGuide: {
+    title: 'User Guide',
+    subtitle: 'How to use the student activity and skill tracking system. Choose a topic below to see the details.',
+    jumpTo: 'Jump to',
+    expandAll: 'Expand all',
+    collapseAll: 'Collapse all',
+    openPage: 'Open page',
+    tip: 'Tip',
+    stillNeedHelp: 'Still have questions? Email the staff at',
+    sections: {
+      activities: {
+        title: 'My Activities',
+        summary: 'See every activity you joined, both faculty and external activities',
+        topics: [
+          {
+            heading: 'What is a Faculty Activity?',
+            text: 'An activity run by your faculty or your major. When an admin records you as a participant or organizer, it appears on this page automatically. You do not need to submit anything.',
+            tip: 'Activities organized by other majors in the faculty appear under the "External Activities" tab.'
+          },
+          {
+            heading: 'What is an External Activity?',
+            text: 'An activity held outside the faculty, such as a camp, training, volunteer work or competition run by another organization. You submit the details and evidence yourself from "Add External Activity", and it counts once an admin of your major approves it.'
+          },
+          {
+            heading: 'Viewing activity details',
+            steps: [
+              'Click an activity card or the "Details" button.',
+              'The details window shows the date, location, organizer, your role, the description, and the skills with their levels.',
+              'For external activities, click "View evidence" to open the attached files.',
+              'The status at the bottom shows whether the activity is approved, waiting for review, or not approved (with the reason).'
+            ]
+          },
+          {
+            heading: 'Filtering and searching',
+            steps: [
+              'Choose a tab: "All", "Faculty Activities", "External Activities" or "My Submissions" (every request you sent, in any status).',
+              'Type an activity name in the search box at the top.',
+              'Use "Filter By Date" to show a specific date, and "Clear" to remove the filter.',
+              'If you have many activities, scroll down and click "Load More Activities".'
+            ]
+          }
+        ]
+      },
+      external: {
+        title: 'Add External Activity',
+        summary: 'Submit an activity you joined outside the faculty, with evidence, for admin approval',
+        topics: [
+          {
+            heading: 'Filling in the activity details',
+            steps: [
+              'Enter the activity name and the organizing organization.',
+              'Choose a category. If none fits, choose "Other" (อื่น ๆ) and type your own.',
+              'Pick the start and end dates (the end date cannot be before the start date).',
+              'Enter the location, or a link for an online activity.',
+              'Describe what you did and what you learned.'
+            ],
+            tip: 'Fields marked with * are required.'
+          },
+          {
+            heading: 'Choosing your role and skills',
+            steps: [
+              'Choose your role: Participant or Staff (organizer / team member).',
+              'The skills panel appears after you choose a role. Each role has its own set of skills.',
+              'Click "Adjust skill levels". Every skill starts at level 3; set each from 1 to 5 based on what you actually developed.',
+              'For skills unrelated to the activity, tick "Not related".',
+              'Keep at least one skill, then click "Save".'
+            ]
+          },
+          {
+            heading: 'Attaching evidence',
+            text: 'Attach a certificate or photos of you taking part: at least 1 and up to 10 files. JPG, PNG and PDF are supported, up to 5MB each. Click "Click to choose file" to attach, and the X button on a file to remove it.',
+            tip: 'Photos that clearly show the activity name, date or you help the admin approve faster.'
+          },
+          {
+            heading: 'Submitting and waiting for approval',
+            steps: [
+              'Click "Submit for Approval", then "Confirm" in the window that appears.',
+              'Your request appears under the "My Submissions" tab of My Activities with the status "Pending".',
+              'An admin of your major reviews the details, the evidence and the skill levels.',
+              'Once approved, the activity appears under "External Activities" and counts in My Skills and your transcript.'
+            ],
+            tip: 'While a request is pending you can delete it if you made a mistake (its evidence files are deleted too).'
+          },
+          {
+            heading: 'Fixing a rejected activity',
+            steps: [
+              'Go to the "My Submissions" tab. A rejected activity shows "Rejected" with the admin\'s reason.',
+              'Click "Edit". The form opens with your previous details and evidence.',
+              'Make the changes the reason asks for. You can add or remove evidence files.',
+              'Click "Resubmit for Approval". The status goes back to "Pending".'
+            ]
+          }
+        ]
+      },
+      skills: {
+        title: 'My Skills',
+        summary: 'See an overview of the skills you gained and compare them with the average',
+        topics: [
+          {
+            heading: 'Reading the skill radar chart',
+            steps: [
+              'Each corner of the chart is one skill. The further a point is from the center, the higher the score (out of 5).',
+              'The score is the average skill level from the activities that count.',
+              'Choose a year and term (whole year / term 1 / term 2) at the top right to see each period.',
+              'Choose the skill set: "Participant skills" come from activities you joined; "Staff skills" come only from activities you organized.',
+              'The table below the chart lists the activities used in the calculation.'
+            ]
+          },
+          {
+            heading: 'What each skill means',
+            groups: [
+              {
+                label: 'Participant skills',
+                items: [
+                  { term: 'Arts, Culture, and Traditions', text: 'Taking part in arts, culture and traditions' },
+                  { term: 'Volunteerism', text: 'Volunteering and contributing to society' },
+                  { term: 'Academics', text: 'Learning and academic development' },
+                  { term: 'Internationalization', text: 'Global outlook and cross-cultural learning' },
+                  { term: 'Health Promotion', text: 'Promoting health and well-being' },
+                  { term: 'Nature and Environmental Conservation', text: 'Protecting nature and the environment' }
+                ]
+              },
+              {
+                label: 'Staff skills',
+                items: [
+                  { term: 'Creative Leadership', text: 'Leading with creativity' },
+                  { term: 'Innovation', text: 'Thinking up and building new ideas' },
+                  { term: 'Entrepreneurship', text: 'An entrepreneurial mindset' },
+                  { term: 'Promote Equality', text: 'Promoting equality and inclusion' },
+                  { term: 'Academic', text: 'Academic skills' },
+                  { term: 'Nature and Environmental', text: 'Nature and the environment' }
+                ]
+              }
+            ]
+          },
+          {
+            heading: 'Comparing with the faculty average',
+            steps: [
+              'Under "Compare with", choose "Faculty activities" to compare with the average of all students in the faculty, or "Major activities" to compare with students in your major.',
+              'The chart shows two lines: your skills and the average. The legend below the chart shows which color is which.',
+              'Corners where your line is inside the average are skills worth finding more activities for.',
+              'The "External activities" option shows only the skills from your external activities, with no average to compare.'
+            ],
+            tip: 'Major and faculty comparisons leave out external activities, so everyone is compared on the same set of activities.'
+          }
+        ]
+      },
+      transcript: {
+        title: 'Transcript',
+        summary: 'Create an activity certificate as an A4 PDF',
+        topics: [
+          {
+            heading: 'Choosing a transcript style',
+            groups: [
+              {
+                label: 'Document style',
+                items: [
+                  { term: 'Style A Classic', text: 'Centered header, bordered tables and number boxes for skill scores. Suits formal documents.' },
+                  { term: 'Style B Modern', text: 'Colored header band, skill scores as bars and open tables. Easy to read.' }
+                ]
+              },
+              {
+                label: 'Activity type',
+                items: [
+                  { term: 'All activities', text: 'Every activity that counts' },
+                  { term: 'Major / faculty / external only', text: 'Only the group you choose. The number next to each option is the activity count.' }
+                ]
+              }
+            ]
+          },
+          {
+            heading: 'Previewing and downloading the PDF',
+            steps: [
+              'Choose the style, the activity type and the document language.',
+              'Click "Preview" to open the PDF on screen (some devices open it in a new tab; if the browser blocks the pop-up, allow it).',
+              'Check the details, then click "Download PDF" to save the file.'
+            ],
+            tip: 'The transcript counts faculty activities that were not cancelled and external activities that were approved.'
+          },
+          {
+            heading: 'Thai version vs English version',
+            groups: [
+              {
+                label: '',
+                items: [
+                  { term: 'Thai', text: 'The whole document is in Thai. Dates and academic years use the Buddhist Era (B.E.).' },
+                  { term: 'English', text: 'The whole document is in English, including major names, activity types and skills. Dates and academic years use the Common Era (A.D.). Suits job or scholarship applications abroad.' }
+                ]
+              }
+            ],
+            tip: 'In both languages, your name and activity names appear exactly as recorded in the system (they are not translated automatically).'
+          }
+        ]
+      }
+    }
+  },
+  adminGuide: {
+    title: 'User Guide',
+    subtitle: 'How to manage student activities and skills as an admin. Choose a topic below to see the details.',
+    guideFor: 'Guide for:',
+    roleCentral: 'Central admin',
+    roleBranch: 'Branch admin, {major}',
+    centralOnlyBadge: 'Central admin only',
+    jumpTo: 'Jump to',
+    expandAll: 'Expand all',
+    collapseAll: 'Collapse all',
+    openPage: 'Open page',
+    tip: 'Tip',
+    sections: {
+      dashboard: {
+        title: 'Dashboard',
+        summary: 'An overview of activities, participants and skills',
+        topics: [
+          {
+            heading: 'Reading the overview statistics',
+            groups: [
+              {
+                label: '',
+                items: [
+                  { term: 'Activities', text: 'Faculty activities in the selected period, excluding cancelled activities and student external activities.' },
+                  { term: 'Students', text: 'All students in the system within your scope. Not affected by the period.' },
+                  { term: 'Participants', text: 'Distinct students who took part as participants in activities in the selected period.' },
+                  { term: 'Completion Rate', text: 'Completed activities ÷ activities that were not cancelled × 100. Activities past their end date count as completed.' }
+                ]
+              }
+            ]
+          },
+          {
+            heading: 'Using the year and semester filters',
+            steps: [
+              'Under "Dashboard History", choose the year (based on the year of each activity\'s start date).',
+              'Choose the semester: All Semesters, Semester 1 (Jan–Jun) or Semester 2 (Jul–Dec).',
+              'The stat cards, the growth chart and the skill distribution update straight away.'
+            ]
+          },
+          {
+            heading: 'Using the branch filter',
+            audience: 'central',
+            steps: [
+              'Choose a branch from the "Branch" list to see only that branch, or "All Branches" for the whole faculty.',
+              'The same branch filter is on the Activities, Student Skills and Approvals pages.'
+            ]
+          },
+          {
+            heading: 'What data you see',
+            audience: 'branch',
+            text: 'The dashboard shows only your branch automatically: activities your branch runs and students in your branch. Faculty-wide activities created by the central admin are not counted in the dashboard numbers.'
+          },
+          {
+            heading: 'Reading the activity growth chart',
+            steps: [
+              'Each bar is the number of activities that started in that month (cancelled activities excluded).',
+              'Switch between "MONTHLY" and "QUARTERLY" to change the grouping.',
+              'Click a month or quarter label under the chart to narrow the stat cards and the skill distribution to that period.'
+            ]
+          },
+          {
+            heading: 'Reading the student skill distribution',
+            steps: [
+              'Switch between "PARTICIPANT" and "STAFF" to see the participant or organizer skill set.',
+              'Each bar is the average skill level set on activities, shown as a percentage of level 5. The number in brackets is how many activities include that skill.',
+              'The "AVG SCORE" ring is the average across every skill that has data.',
+              'Use it to see which skills this period\'s activities focus on, and which skills have few activities.'
+            ]
+          }
+        ]
+      },
+      activities: {
+        title: 'Activities',
+        summary: 'Create activities, manage participants, edit and cancel activities',
+        topics: [
+          {
+            heading: 'Creating a new activity',
+            steps: [
+              'Click "Create New Activity" at the top right of the Activities page.',
+              'Step 1: fill in the activity type, name, start and end dates, main responsible person and location (fields marked * are required). If you choose the "other" type, type it in. Click "Continue".',
+              'Step 2: set the skill levels on both the "Staff" and "Participant" tabs. Every skill starts at level 3 and can be set from 1 to 5. Tick "Not related" for skills that do not apply.',
+              'Click "Create Activity".'
+            ],
+            tip: 'Activities created by a branch admin belong to that branch. Activities created by the central admin are faculty-wide and visible to every branch.'
+          },
+          {
+            heading: 'Adding students to an activity',
+            steps: [
+              'In the table, click "Manage" in the "MANAGE PARTICIPANTS" column of the activity.',
+              'One at a time: choose "Add Student", search by student ID or name, choose the role "Participant" or "Organizer", and save.',
+              'Many at once: choose "Import from File" and pick an .xlsx, .xls or .csv file.',
+              'Click "Preview Import" and check the table (you can edit it there). Rows with issues are skipped.',
+              'Click "Confirm Import".'
+            ],
+            tip: 'Students must already be in the system (the central admin imports them in Settings). An unknown student ID cannot be added.'
+          },
+          {
+            heading: 'Downloading the import template',
+            text: 'In the "Import from File" window, click "Download Template". The Excel file has the columns รหัสนักศึกษา (student ID), ชื่อ (first name), นามสกุล (last name), อีเมล (email) and สาขาวิชา (major), with 2 example rows. Delete the examples and fill in your data. To set roles, add a Role column (participant / organizer); without it everyone is a participant.'
+          },
+          {
+            heading: 'Managing participants (edit, remove)',
+            steps: [
+              'Click "View Detail" on the activity to open its participant list.',
+              'Click "Edit" on a student\'s row to change the first or last name, faculty, major or role (the student ID cannot be changed), then click "Save".',
+              'Click "Remove" and confirm to take the student out of this activity (the student\'s record stays in the system).'
+            ]
+          },
+          {
+            heading: 'Editing and cancelling an activity',
+            steps: [
+              'In the table, click "Manage" in the "MANAGE ACTIVITY" column.',
+              '"Edit Activity": change the details, status and skill levels, then click "Save Changes".',
+              '"Mark as Completed" when the activity is over ("Reopen Activity" undoes it).',
+              '"Cancel Activity": takes effect immediately, without a confirmation. Cancelled activities do not count towards students\' skills or transcripts.',
+              '"Delete Activity": asks for confirmation first, then deletes permanently.'
+            ],
+            tip: 'If you cancel by mistake, change the status back in "Edit Activity". To keep the history, cancel instead of deleting.'
+          },
+          {
+            heading: 'Searching and sorting activities',
+            steps: [
+              'Type in "SEARCH ACTIVITY" or the quick search box above the table (matches activity names and organizers).',
+              'Use "CATEGORY" or "DATE FROM" to filter.',
+              'Switch the order between "Sort by latest" and "Sort by start date", and click the arrow to flip oldest/newest.'
+            ]
+          },
+          {
+            heading: 'Using the branch filter on the Activities page',
+            audience: 'central',
+            text: 'Choose a branch from the "Branch" list to see that branch\'s activities (faculty-wide activities always show too), or "All Branches" to see everything.'
+          }
+        ]
+      },
+      skills: {
+        title: 'Student Skills',
+        summary: 'Skill overview, individual skills and comparison with the benchmark',
+        topics: [
+          {
+            heading: 'Viewing the students\' skill overview',
+            steps: [
+              'The "AVERAGE SKILL SCORE" and "STUDENTS EVALUATED" cards at the top summarize the overview.',
+              'Use the "Skill set" (participant / staff), "Class year" and "Major" filters to focus on a group. Click "Clear" to see everyone again.',
+              'The "TOP AREA" and "GROWTH AREA" panels show the highest and lowest skills, with an action plan.'
+            ],
+            tip: 'Skill scores come from faculty activities and approved external activities.'
+          },
+          {
+            heading: 'Viewing an individual student\'s skills',
+            steps: [
+              'Scroll to the "Individual Skills" table and search by student ID or name.',
+              'Click "Filter Students" to filter by primary skill or score range.',
+              'Click "View Radar" to open that student\'s skill proficiency analysis.',
+              'In that window, use "Compare with" Major / Faculty / External to compare with the group average, and read the skill gap analysis with its recommendation.'
+            ]
+          },
+          {
+            heading: 'Viewing a student\'s activity history',
+            text: 'In the "Individual Skills" table, click "View Activities" to see every activity of the student, with the type (Faculty Activity / External Activity), date, role and status.'
+          },
+          {
+            heading: 'Reading the radar chart and the benchmark',
+            steps: [
+              'Choose the year and period (All Year / Semester 1 / Semester 2) above the chart.',
+              'Choose the "View": Overall, By class year, By major, or By major × class year (up to 3 groups overlaid).',
+              'The "Actual Proficiency" line is the students\' average score. The "Benchmark Level" line is the faculty target (4.0 by default).',
+              'Skills where the actual line is inside the benchmark need more activities. Click "Show numbers for each group" to see the values.'
+            ]
+          },
+          {
+            heading: 'Setting the benchmark level',
+            audience: 'central',
+            steps: [
+              'Click the "Benchmark" button on the radar chart.',
+              'Set a value from 1.0 to 5.0 for each skill (participant and staff skill sets are set separately).',
+              'Click "Save Benchmark". The values apply to every branch in the faculty.'
+            ]
+          },
+          {
+            heading: 'Using the branch filter',
+            audience: 'central',
+            text: 'Choose a branch from the "Branch" list at the top to limit the cards, chart and skill table to students in that branch.'
+          }
+        ]
+      },
+      approvals: {
+        title: 'Approvals',
+        summary: 'Review and approve external activities submitted by students',
+        topics: [
+          {
+            heading: 'Viewing pending requests',
+            steps: [
+              'The cards at the top show Total Pending, Approved Today and Rejected Today.',
+              'The "Pending" tab lists requests that have not been reviewed yet.',
+              'Click "Filter" to choose a type (Skill Validation / Special Request / External Activity) and "Sort" to switch newest/oldest.'
+            ]
+          },
+          {
+            heading: 'Viewing request details',
+            steps: [
+              'Click "View Detail" on a request.',
+              'Check the student, activity name, organizer, category, role, date and location.',
+              'Look at the "Evidence" (click an image or file to open it) and "Skill Mapping (by student)", the skill levels the student rated themselves.'
+            ]
+          },
+          {
+            heading: 'Approving an external activity',
+            steps: [
+              'Click "Approve". The "Confirm Approval" window shows the skill levels the student chose.',
+              'Click "Confirm Approve", then "OK" in the success window.',
+              'The activity counts towards the student\'s skills and transcript straight away.'
+            ],
+            tip: 'Admins cannot change the skill levels. If they are not right, reject with a reason; the student can fix them and resubmit.'
+          },
+          {
+            heading: 'Rejecting with a reason',
+            steps: [
+              'Click "Reject".',
+              'Type the reason in "Comment / Reason for rejection" (required).',
+              'Click "Confirm Reject". The student gets a notification with your reason.'
+            ],
+            tip: 'Say exactly what needs fixing, for example "The evidence does not show the activity name. Please attach the certificate."'
+          },
+          {
+            heading: 'Viewing rejected requests',
+            text: 'Open the "Rejected" tab to see rejected requests and their reasons. When a student edits and resubmits, the request moves back to "Pending" and you get a notification. (Approved requests are not listed on this page.)'
+          },
+          {
+            heading: 'Using the branch filter',
+            audience: 'central',
+            text: 'Choose a branch from the "Branch" list to see only requests from students in that branch. Requests from students without a major are visible only to the central admin.'
+          }
+        ]
+      },
+      settings: {
+        title: 'Settings',
+        summary: 'Manage students, branch admins (central admin) and the transcript header',
+        topics: [
+          {
+            heading: 'What branch admins can do in Settings',
+            audience: 'branch',
+            text: 'You can import, view and delete students in your own major only (rows with an empty major are set to your major automatically; rows for other majors are not imported). You can edit the transcript header like the central admin, and it applies to every major. Only the central admin can add or remove admins.'
+          },
+          {
+            heading: 'Importing students into the system',
+            steps: [
+              'Under "Manage Students", click "Manage".',
+              'Click "Choose file". .xlsx, .xls and .csv up to 5MB are supported (CSV can be UTF-8 or Windows-874).',
+              'Review the table before importing: "New" rows are imported, "Duplicate (skipped)" are IDs already in the system, "Invalid" rows have errors.',
+              'Click "Confirm Import", then check the summary and any rows not imported.'
+            ],
+            tip: 'Fill in every student\'s major. Branch admins cannot see students without a major.'
+          },
+          {
+            heading: 'Downloading the Excel template',
+            text: 'In the student import area, click "Download Template". The Excel file has the headers รหัสนักศึกษา, ชื่อ, นามสกุล, อีเมล and สาขาวิชา (student ID, first name, last name, email, major). Every cell is formatted as text, so leading zeros in student IDs are kept.'
+          },
+          {
+            heading: 'Viewing and deleting student data',
+            steps: [
+              '"All Students" shows the 5 newest. Click "View all" to see everyone and search by ID, name, email or major.',
+              'Click the trash icon on a row to delete that student (their activity memberships, external activities and evidence files are deleted too).',
+              'Click "Delete all" and type DELETE to remove every student (faculty activities are kept).'
+            ],
+            tip: 'Deleting cannot be undone. Double-check before confirming.'
+          },
+          {
+            heading: 'Adding a new branch admin',
+            audience: 'central',
+            steps: [
+              'Under "Manage Admins", click "Manage", then "Add admin".',
+              'Enter the email, choose the branch, and click "Save".',
+              'The new admin signs in on the login page with that email and the default password 1234.'
+            ],
+            tip: 'The email must not belong to an existing admin or student.'
+          },
+          {
+            heading: 'Removing a branch admin',
+            audience: 'central',
+            text: 'In the branch admin table, click the trash icon and confirm. That account is signed out immediately. You cannot delete your own account or the central admin.'
+          },
+          {
+            heading: 'Editing the transcript header',
+            steps: [
+              'Under "Manage Transcript", click "Manage".',
+              'Edit the university name, faculty name, document title, signatory name and signatory position in Thai and English. Empty fields use the defaults.',
+              'Check the "Transcript preview" below; you can switch Style A / B and the language. It updates when you stop typing.',
+              'Click "Save". New values apply to every PDF students generate from now on. "Use defaults" restores the original text.'
+            ]
+          }
+        ]
+      },
+      notifications: {
+        title: 'Notifications',
+        summary: 'Know when students submit external activity requests',
+        topics: [
+          {
+            heading: 'Viewing notifications from the bell',
+            steps: [
+              'The bell icon is at the top right of every page. The red number is how many are unread.',
+              'Click the bell to open the 30 latest notifications (unread ones have a blue dot).',
+              'Click a notification to open the Approvals page with that request\'s details.',
+              'Click "Mark all as read" to clear the count.'
+            ],
+            tip: 'New notifications are checked every 30 seconds. Read status is tracked separately for each admin account.'
+          },
+          {
+            heading: 'Types of notifications',
+            groups: [
+              {
+                label: '',
+                items: [
+                  { term: 'New external activity request', text: 'A student submitted an external activity for review (blue icon).' },
+                  { term: 'Edited and resubmitted', text: 'A student fixed a rejected external activity and sent it again (orange icon).' }
+                ]
+              }
+            ]
+          },
+          {
+            heading: 'The central admin receives notifications from every branch',
+            audience: 'central',
+            text: 'You see notifications from students in every branch, including students without a major. Branch admins see the same notifications, but only for their own branch.'
+          },
+          {
+            heading: 'Notifications for your branch only',
+            audience: 'branch',
+            text: 'You only receive notifications for requests from students in your branch. Requests from other branches, or from students without a major, go to that branch\'s admin and the central admin.'
+          }
+        ]
+      }
+    }
   },
 }

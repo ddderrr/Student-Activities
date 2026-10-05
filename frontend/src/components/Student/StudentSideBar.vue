@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import {
+  BookOpen,
   CalendarDays,
   Zap,
   CirclePlus,
@@ -16,7 +17,6 @@ import {
 
 import { useLanguage } from '../../composables/useLanguage'
 import { logout as logoutAll } from '../../constants/auth'
-import { HELP_CENTER_EMAIL } from '../../constants/currentStudent'
 
 const props = defineProps({
   collapsed: {
@@ -147,6 +147,24 @@ const logout = () => {
 
     <!-- Bottom -->
     <div class="bottom-menu">
+      <!-- คู่มือการใช้งาน -->
+      <button
+        class="menu-item guide-item"
+        :class="{ active: isActive('/student/guide') }"
+        :title="props.collapsed ? t.studentSidebar.userGuide : ''"
+        data-testid="sidebar-user-guide"
+        @click="goTo('/student/guide')"
+      >
+        <BookOpen
+          :size="18"
+          class="menu-icon"
+        />
+
+        <span class="menu-text">
+          {{ t.studentSidebar.userGuide }}
+        </span>
+      </button>
+
       <!-- Language -->
       <div
         class="language-box"
@@ -185,12 +203,13 @@ const logout = () => {
         </button>
       </div>
 
-      <!-- Help: ติดต่อทางอีเมล -->
-      <a
+      <!-- Help: หน้าติดต่อเรา -->
+      <button
         class="menu-item"
-        :href="`mailto:${HELP_CENTER_EMAIL}`"
-        :title="`${t.common.helpCenterContact} ${HELP_CENTER_EMAIL}`"
-        :aria-label="`${t.common.helpCenter}: ${t.common.helpCenterContact} ${HELP_CENTER_EMAIL}`"
+        :class="{ active: isActive('/student/contact') }"
+        :title="props.collapsed ? t.common.helpCenter : ''"
+        data-testid="sidebar-help-center"
+        @click="goTo('/student/contact')"
       >
         <CircleHelp
           :size="18"
@@ -200,7 +219,7 @@ const logout = () => {
         <span class="menu-text">
           {{ t.common.helpCenter }}
         </span>
-      </a>
+      </button>
 
       <!-- Logout -->
       <button
@@ -431,6 +450,14 @@ const logout = () => {
 
 .bottom-menu {
   margin-top: auto;
+}
+
+/* =========================
+   User Guide
+========================= */
+
+.guide-item {
+  margin-bottom: 10px;
 }
 
 /* =========================

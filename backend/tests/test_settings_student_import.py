@@ -177,12 +177,22 @@ def test_csv_duplicates_skipped_like_excel(client, db_session):
     assert (body["success"], body["skipped"]) == (1, 1)
 
 
-def test_branch_admin_gets_403(client, db_session):
+def test_branch_admin_imports_only_own_major(client, db_session):
     branch = {"X-Admin-Email": CHEM_ADMIN_EMAIL}
+    rows = VALID_ROWS + [["680510003", "สมศรี", "ไม่มีสาขา", "", ""]]
 
-    assert upload(client, build_xlsx(VALID_ROWS), headers=branch).status_code == 403
-    assert client.get("/api/admin/students/import/template", headers=branch).status_code == 403
-    assert db_session.query(Student).count() == 0
+    response = upload(client, build_xlsx(rows), headers=branch)
+
+    assert response.status_code == 200
+    body = response.json()
+    # เคมี = นำเข้า, สาขาอื่น = ไม่ถูกต้อง, ช่องสาขาว่าง = ใส่สาขาของแอดมิน
+    assert (body["success"], body["failed"]) == (2, 1)
+    [error] = body["errors"]
+    assert (error["student_id"], error["type"]) == ("680510002", "invalid")
+    assert "เคมี" in error["message"]
+    db_session.expire_all()
+    assert {s.student_id: s.major for s in db_session.query(Student)} == {"680510001": "เคมี", "680510003": "เคมี"}
+    assert client.get("/api/admin/students/import/template", headers=branch).status_code == 200
 
 
 def test_template_has_thai_headers(client):

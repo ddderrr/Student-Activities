@@ -9,5 +9,6 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     watch: { usePolling: process.env.CHOKIDAR_USEPOLLING === 'true' },
+    allowedHosts: true,
   },
 })

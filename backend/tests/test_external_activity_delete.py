@@ -147,7 +147,7 @@ def test_delete_removes_notifications_of_that_request(client, db_session, upload
 
     assert response.status_code == 204
     notifications = client.get("/api/student/me/notifications", headers=HEADERS)
-    assert notifications.json() == []
+    assert notifications.json()["notifications"] == []
 
 
 def test_delete_succeeds_when_evidence_file_already_missing(client, db_session, upload_dir):

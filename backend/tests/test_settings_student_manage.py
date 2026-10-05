@@ -162,12 +162,19 @@ def test_delete_all_students(client, db_session):
     assert db_session.query(Activity).count() == 1
 
 
-def test_branch_admin_cannot_list_or_delete(client, db_session):
-    make_student(db_session, "680510001")
+def test_branch_admin_manages_only_own_major(client, db_session):
+    make_student(db_session, "680510001")  # เคมี
+    make_student(db_session, "680510002", major="วิทยาการคอมพิวเตอร์")
+    make_student(db_session, "680510003")  # เคมี
     branch = {"X-Admin-Email": CHEM_ADMIN_EMAIL}
 
-    assert client.get("/api/admin/students", headers=branch).status_code == 403
-    assert client.delete("/api/admin/students/680510001", headers=branch).status_code == 403
-    assert client.delete("/api/admin/students", params={"confirm": "all"}, headers=branch).status_code == 403
+    body = client.get("/api/admin/students", headers=branch).json()
+    assert sorted(s["student_id"] for s in body["students"]) == ["680510001", "680510003"]
+    assert (body["total"], body["all_total"]) == (2, 2)
+
+    assert client.delete("/api/admin/students/680510002", headers=branch).status_code == 403
+    assert client.delete("/api/admin/students/680510001", headers=branch).status_code == 200
+    assert client.delete("/api/admin/students", params={"confirm": "all"}, headers=branch).json()["students"] == 1
+
     db_session.expire_all()
-    assert db_session.get(Student, "680510001") is not None
+    assert [s.student_id for s in db_session.query(Student)] == ["680510002"]

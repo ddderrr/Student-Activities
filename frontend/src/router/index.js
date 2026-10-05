@@ -22,6 +22,7 @@ import AdminDashBoard from '../views/Admin/AdminDashBoard.vue'
 import AdminStudentSkills from '../views/Admin/AdminStudentSkills.vue'
 import AdminApproval from '../views/Admin/AdminApproval.vue'
 import AdminSettings from '../views/Admin/AdminSettings.vue'
+import AdminGuide from '../views/Admin/AdminGuide.vue'
 
 
 // =========================
@@ -33,6 +34,8 @@ import StudentActivities from '../views/Student/StudentActivities.vue'
 import StudentSkills from '../views/Student/StudentSkills.vue'
 import StudentExternalActivity from '../views/Student/StudentExternalActivity.vue'
 import StudentTranscript from '../views/Student/StudentTranscript.vue'
+import StudentGuide from '../views/Student/StudentGuide.vue'
+import StudentContact from '../views/Student/StudentContact.vue'
 
 
 const routes = [
@@ -66,6 +69,13 @@ const routes = [
   path: '/admin/settings',
   name: 'AdminSettings',
   component: AdminSettings
+  },
+
+  // คู่มือการใช้งาน (เนื้อหาตามบทบาท แอดมินกลาง / แอดมินสาขา)
+  {
+    path: '/admin/guide',
+    name: 'AdminGuide',
+    component: AdminGuide
   },
   
   {
@@ -158,6 +168,24 @@ const routes = [
         path: 'transcript',
         name: 'StudentTranscript',
         component: StudentTranscript
+      },
+
+
+      // User Guide (คู่มือการใช้งาน)
+
+      {
+        path: 'guide',
+        name: 'StudentGuide',
+        component: StudentGuide
+      },
+
+
+      // Help Center (ติดต่อเรา)
+
+      {
+        path: 'contact',
+        name: 'StudentContact',
+        component: StudentContact
       }
 
     ]

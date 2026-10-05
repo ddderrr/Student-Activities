@@ -227,3 +227,24 @@ def year_levels_label(year_levels: list[int] | None, lang: str) -> str:
     if not year_levels:
         return TEXT[lang]["all_years"]
     return TEXT[lang]["year_levels"].format(levels=", ".join(str(level) for level in year_levels))
+
+
+def document_text(lang: str, header: dict | None = None) -> dict:
+    """ข้อความของเอกสารภาษา lang + หัวเอกสารที่แอดมินแก้จากหน้า Settings (transcript_settings)"""
+    text = dict(TEXT[lang])
+    if not header:
+        return text
+
+    suffix = "_en" if lang == "en" else ""
+    university = header.get("university_name" + suffix) or text["university"]
+    faculty = header.get("faculty_name" + suffix) or text["faculty"]
+
+    text.update(
+        university=university,
+        faculty=faculty,
+        faculty_and_university=f"{faculty}, {university}" if lang == "en" else f"{faculty} {university}",
+        title=header.get("document_title" + suffix) or text["title"],
+        signer_name=header.get("signer_name" + suffix) or text["signer_name"],
+        signer_position=header.get("signer_position" + suffix) or text["signer_position"],
+    )
+    return text

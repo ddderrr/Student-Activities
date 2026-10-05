@@ -169,3 +169,72 @@ def test_deleting_request_or_student_removes_notifications(client, db_session):
 def test_notifications_require_admin(client):
     client.headers.pop("X-Admin-Email", None)
     assert client.get("/api/admin/notifications").status_code == 401
+
+
+def add_admin_notifications(db_session, count, major=CS, created_at=None):
+    for index in range(count):
+        db_session.add(AdminNotification(
+            type="external_submitted", major=major, student_id="670510101",
+            student_name="สมชาย ใจดี", activity_title=f"Activity {index}",
+            message="m", link="/admin/approvals",
+            **({"created_at": created_at} if created_at else {}),
+        ))
+    db_session.commit()
+
+
+def test_feed_is_paged_and_unread_count_covers_everything(client, db_session):
+    add_admin_notifications(db_session, 45)
+
+    first = feed(client, CS_ADMIN_EMAIL)
+    assert len(first["notifications"]) == 30
+    assert first["has_more"] is True
+    assert first["unread_count"] == 45
+
+    last_id = first["notifications"][-1]["id"]
+    second = client.get("/api/admin/notifications", params={"before_id": last_id},
+                        headers={"X-Admin-Email": CS_ADMIN_EMAIL}).json()
+    assert len(second["notifications"]) == 15
+    assert second["has_more"] is False
+    assert all(item["id"] < last_id for item in second["notifications"])
+
+
+def test_prune_removes_old_admin_notifications_and_their_read_rows(client, db_session):
+    from models import AdminNotificationRead
+    from notification_retention import prune_old_notifications
+
+    add_admin_notifications(db_session, 3, created_at=datetime(2026, 1, 1, 9, 0))
+    add_admin_notifications(db_session, 2)
+    assert client.patch("/api/admin/notifications/read-all",
+                        headers={"X-Admin-Email": CS_ADMIN_EMAIL}).json()["marked"] == 5
+
+    result = prune_old_notifications(db_session, days=90, now=datetime(2026, 10, 5, 9, 0))
+
+    assert result["admin"] == 3
+    db_session.expire_all()
+    assert db_session.query(AdminNotification).count() == 2
+    assert db_session.query(AdminNotificationRead).count() == 2
+
+
+def test_clear_all_hides_only_for_this_admin(client, db_session):
+    from models import AdminNotificationRead
+
+    add_admin_notifications(db_session, 3)
+    cs = {"X-Admin-Email": CS_ADMIN_EMAIL}
+    client.patch("/api/admin/notifications/read-all", headers=cs)
+
+    assert client.delete("/api/admin/notifications", headers=cs).json() == {"cleared": 3}
+    after = feed(client, CS_ADMIN_EMAIL)
+    assert (after["notifications"], after["unread_count"]) == ([], 0)
+    db_session.expire_all()
+    assert db_session.query(AdminNotificationRead).count() == 0
+
+    # แอดมินกลางยังเห็นครบ และแถวจริงยังอยู่
+    assert len(feed(client, CENTRAL_ADMIN_EMAIL)["notifications"]) == 3
+    assert db_session.query(AdminNotification).count() == 3
+
+    # รายการใหม่หลังล้าง แสดงตามปกติ
+    add_admin_notifications(db_session, 1)
+    after_new = feed(client, CS_ADMIN_EMAIL)
+    assert (len(after_new["notifications"]), after_new["unread_count"]) == (1, 1)
+    assert client.delete("/api/admin/notifications", headers=cs).json() == {"cleared": 1}
+    assert client.delete("/api/admin/notifications", headers=cs).json() == {"cleared": 0}

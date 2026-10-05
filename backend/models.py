@@ -621,3 +621,36 @@ class AdminNotificationRead(Base):
         nullable=False,
         default=now_bangkok_aware,
     )
+
+
+class AdminNotificationClear(Base):
+    """"ลบทั้งหมด" ในกระดิ่งของแอดมิน: ซ่อนรายการที่ id <= cleared_through_id เฉพาะแอดมินคนนี้
+
+    การแจ้งเตือนหนึ่งรายการแอดมินหลายคนเห็นร่วมกัน (แอดมินสาขา + แอดมินกลาง) จึงลบแถวจริงไม่ได้
+    เก็บแค่ id ล่าสุดที่ล้างไว้ (แถวเดียวต่อแอดมิน) รายการใหม่ id มากกว่าเสมอจึงแสดงตามปกติ
+    """
+
+    __tablename__ = "admin_notification_clears"
+
+    admin_email = Column(String(255), primary_key=True)
+    cleared_through_id = Column(Integer, nullable=False)
+    cleared_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=now_bangkok_aware,
+        onupdate=now_bangkok_aware,
+    )
+
+
+class AppSetting(Base):
+    """ค่าตั้งของระบบที่แอดมินกลางแก้ได้จากหน้า Settings (key / value)
+
+    ตอนนี้ใช้กับหัวเอกสาร Transcript (ดู transcript_settings.py) ไม่มีแถว = ใช้ค่าเริ่มต้น
+    """
+
+    __tablename__ = "app_settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(Text, nullable=False)
+    updated_by = Column(String(255), nullable=True)
+    updated_at = Column(DateTime(timezone=False), nullable=False, default=now_bangkok, onupdate=now_bangkok)

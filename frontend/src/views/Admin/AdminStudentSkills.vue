@@ -1880,15 +1880,15 @@ onBeforeUnmount(() => {
               </th>
 
               <th>
-                {{ t.adminStudentSkills.primarySkill }}
-              </th>
-
-              <th>
                 {{ t.adminStudentSkills.scoreAvg }}
               </th>
 
               <th>
                 {{ t.skillSources.internalActivities }}
+              </th>
+
+              <th>
+                {{ t.skillSources.external }}
               </th>
 
               <th>
@@ -1936,15 +1936,16 @@ onBeforeUnmount(() => {
               </td>
 
               <td>
-                {{ student.primarySkill ? skillDisplay(student.primarySkill) : t.adminStudentSkills.notAvailable }}
-              </td>
-
-              <td>
                 {{ student.score !== null ? student.score.toFixed(2) : t.adminStudentSkills.notAvailable }}
               </td>
 
               <td>
                 <strong>{{ student.activityCount ?? 0 }}</strong> {{ t.adminStudentSkills.activitiesUnit }}
+              </td>
+
+              <!-- กิจกรรมภายนอกที่อนุมัติแล้ว (ชุดทักษะ + ช่วงเวลาเดียวกับคอลัมน์ก่อนหน้า) -->
+              <td>
+                <strong>{{ student.activityCounts?.external ?? 0 }}</strong> {{ t.adminStudentSkills.activitiesUnit }}
               </td>
 
               <td>

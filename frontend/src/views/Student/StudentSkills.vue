@@ -3,7 +3,6 @@ import { computed, onMounted, ref, watch } from 'vue'
 import {
   BarChart3,
   CalendarDays,
-  Download,
   Info,
   LoaderCircle,
   RefreshCw,
@@ -25,11 +24,7 @@ const DEFAULT_TRACK = 'participant'
 
 const loading = ref(true)
 const trackLoading = ref(false)
-const exporting = ref(false)
 const errorMessage = ref('')
-const exportOpen = ref(false)
-const exportIncludeChart = ref(true)
-const exportAction = ref('')
 
 // track = โหมดของข้อมูลที่แสดงอยู่ตอนนี้, pendingTrack = โหมดที่กำลังโหลด
 const track = ref(DEFAULT_TRACK)
@@ -108,11 +103,6 @@ const trackOptions = computed(() => [
 ])
 
 const isStaffTrack = computed(() => track.value === 'staff')
-
-const activeTrackLabel = computed(() =>
-  trackOptions.value.find((option) => option.key === track.value)
-    ?.label || track.value
-)
 
 // ข้อความที่เปลี่ยนตามโหมด (participant / staff)
 const trackText = computed(() => {
@@ -533,155 +523,6 @@ function selectTrack(nextTrack) {
   loadSkills(nextTrack)
 }
 
-function openExportModal() {
-  exportIncludeChart.value = true
-  exportAction.value = ''
-  exportOpen.value = true
-}
-
-function closeExportModal() {
-  if (exporting.value) return
-  exportOpen.value = false
-}
-
-async function fetchTranscriptPdf() {
-  const includeChart = exportIncludeChart.value
-    ? 'true'
-    : 'false'
-
-  const response = await fetch(
-    `${API_BASE}/api/student/me/skills/export?period=${encodeURIComponent(selectedPeriod.value)}&include_chart=${includeChart}&track=${encodeURIComponent(track.value)}&source=${encodeURIComponent(comparison.value)}`,
-    {
-      headers: studentHeaders()
-    }
-  )
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => null)
-
-    throw new Error(
-      data?.detail || t.value.studentSkills.exportError
-    )
-  }
-
-  const blob = await response.blob()
-
-  if (blob.type !== 'application/pdf') {
-    throw new Error(t.value.studentSkills.notPdfError)
-  }
-
-  return {
-    blob,
-    disposition:
-      response.headers.get('content-disposition') || ''
-  }
-}
-
-function filenameFromDisposition(disposition) {
-  const match = disposition.match(
-    /filename="?([^";]+)"?/i
-  )
-
-  return (
-    match?.[1] ||
-    `skill-transcript-${track.value}-${selectedPeriod.value}.pdf`
-  )
-}
-
-async function downloadTranscript() {
-  if (!selectedPeriod.value || exporting.value) return
-
-  exporting.value = true
-  exportAction.value = 'download'
-  errorMessage.value = ''
-
-  try {
-    const { blob, disposition } =
-      await fetchTranscriptPdf()
-
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-
-    link.href = url
-    link.download =
-      filenameFromDisposition(disposition)
-
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-
-    setTimeout(() => {
-      URL.revokeObjectURL(url)
-    }, 1000)
-
-    exportOpen.value = false
-  } catch (error) {
-    errorMessage.value = error.message
-  } finally {
-    exporting.value = false
-    exportAction.value = ''
-  }
-}
-
-async function printTranscript() {
-  if (!selectedPeriod.value || exporting.value) return
-
-  // เปิดหน้าต่างทันทีจาก click event ป้องกัน popup blocker
-  const printWindow = window.open('', '_blank')
-
-  if (!printWindow) {
-    errorMessage.value = t.value.studentSkills.popupBlockedError
-    return
-  }
-
-  const preparingTranscriptText = t.value.studentSkills.preparingTranscript
-
-  printWindow.document.write(`
-    <html>
-      <head>
-        <title>${preparingTranscriptText}</title>
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            display: grid;
-            min-height: 100vh;
-            place-items: center;
-            margin: 0;
-            color: #475467;
-          }
-        </style>
-      </head>
-      <body>${preparingTranscriptText}</body>
-    </html>
-  `)
-  printWindow.document.close()
-
-  exporting.value = true
-  exportAction.value = 'print'
-  errorMessage.value = ''
-
-  try {
-    const { blob } = await fetchTranscriptPdf()
-    const url = URL.createObjectURL(blob)
-
-    // เปิด PDF ใน browser viewer
-    // จากหน้านี้ผู้ใช้กด Print หรือ Save as PDF ได้ตามปกติ
-    printWindow.location.href = url
-
-    // เก็บ URL ไว้นานพอให้ PDF viewer โหลดไฟล์
-    setTimeout(() => {
-      URL.revokeObjectURL(url)
-    }, 60_000)
-
-    exportOpen.value = false
-  } catch (error) {
-    printWindow.close()
-    errorMessage.value = error.message
-  } finally {
-    exporting.value = false
-    exportAction.value = ''
-  }
-}
 onMounted(() => loadSkills())
 </script>
 
@@ -1127,163 +968,8 @@ onMounted(() => loadSkills())
         </div>
       </div>
 
-      <!-- EXPORT -->
-      <div class="export-row">
-        <button
-          class="export-button"
-          type="button"
-          :disabled="exporting || trackLoading"
-          @click="openExportModal"
-        >
-          <Download :size="15" />
-          {{ t.studentSkills.exportButton }}
-        </button>
-      </div>
     </template>
 
-      <!-- EXPORT MODAL -->
-      <Teleport to="body">
-      <div
-        v-if="exportOpen"
-        class="export-overlay"
-        @click.self="closeExportModal"
-      >
-        <div class="export-modal">
-          <div class="export-modal-header">
-            <div>
-              <h2>{{ t.studentSkills.exportModalTitle }}</h2>
-              <p>
-                {{ t.studentSkills.exportModalSubtitle }}
-              </p>
-            </div>
-
-            <button
-              class="modal-close"
-              type="button"
-              :disabled="exporting"
-              @click="closeExportModal"
-            >
-              ×
-            </button>
-          </div>
-
-          <div class="export-period-box">
-            <span>{{ t.studentSkills.selectedPeriodLabel }}</span>
-            <strong>
-              {{ currentPeriod.label || '-' }}
-            </strong>
-          </div>
-
-          <div class="export-period-box export-track-box">
-            <span>{{ t.studentSkills.skillTrackLabel }}</span>
-            <strong>
-              {{ activeTrackLabel }}
-            </strong>
-          </div>
-
-          <div class="export-section">
-            <h3>{{ t.studentSkills.transcriptStyleTitle }}</h3>
-
-            <label
-              class="export-option"
-              :class="{
-                selected: exportIncludeChart
-              }"
-            >
-              <input
-                v-model="exportIncludeChart"
-                type="radio"
-                :value="true"
-              />
-
-              <div>
-                <strong>{{ t.studentSkills.withRadarChart }}</strong>
-                <span>
-
-                  {{ t.studentSkills.withRadarChartDesc }}
-
-
-
-                </span>
-              </div>
-            </label>
-
-            <label
-              class="export-option"
-              :class="{
-                selected: !exportIncludeChart
-              }"
-            >
-              <input
-                v-model="exportIncludeChart"
-                type="radio"
-                :value="false"
-              />
-
-              <div>
-                <strong>{{ t.studentSkills.withoutRadarChart }}</strong>
-                <span>
-                  {{ t.studentSkills.withoutRadarChartDesc }}
-                </span>
-              </div>
-            </label>
-          </div>
-
-          <div class="export-modal-actions">
-            <button
-              class="print-button"
-              type="button"
-              :disabled="exporting"
-              @click="printTranscript"
-            >
-              <LoaderCircle
-                v-if="
-                  exporting &&
-                  exportAction === 'print'
-                "
-                class="spin"
-                :size="16"
-              />
-              <span v-else>🖨</span>
-
-              {{
-                exporting &&
-                exportAction === 'print'
-                  ? t.studentSkills.preparingDots
-                  : t.studentSkills.printButton
-              }}
-            </button>
-
-            <button
-              class="download-button"
-              type="button"
-              :disabled="exporting"
-              @click="downloadTranscript"
-            >
-              <LoaderCircle
-                v-if="
-                  exporting &&
-                  exportAction === 'download'
-                "
-                class="spin"
-                :size="16"
-              />
-              <Download
-                v-else
-                :size="16"
-              />
-
-              {{
-                exporting &&
-                exportAction === 'download'
-                  ? t.studentSkills.generatingPdf
-                  : t.studentSkills.downloadPdfButton
-              }}
-            </button>
-          </div>
-        </div>
-      </div>
-      </Teleport>
 
 </section>
 </template>
@@ -1835,41 +1521,6 @@ td {
   color: #98a2b3;
 }
 
-/* =========================
-   EXPORT
-========================= */
-
-.export-row {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
-}
-
-.export-button,
-.state-card button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  border: 0;
-  border-radius: 7px;
-  cursor: pointer;
-}
-
-.export-button {
-  min-height: 37px;
-  padding: 0 14px;
-  background: #8500b7;
-  color: #fff;
-  font-size: var(--fs-small);
-  font-weight: 700;
-}
-
-.export-button:disabled {
-  cursor: wait;
-  opacity: .7;
-}
-
 .state-card {
   display: flex;
   min-height: 220px;
@@ -1888,8 +1539,15 @@ td {
 }
 
 .state-card button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   padding: 8px 12px;
+  border: 0;
+  border-radius: 7px;
   color: #344054;
+  cursor: pointer;
 }
 
 .inline-error {
@@ -1910,178 +1568,6 @@ td {
   to {
     transform: rotate(360deg);
   }
-}
-
-
-/* =========================
-   EXPORT MODAL
-========================= */
-
-.export-overlay {
-  position: fixed;
-  z-index: 3000;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  background: rgba(15, 23, 42, .46);
-}
-
-.export-modal {
-  width: min(100%, 560px);
-  overflow: hidden;
-  border: 1px solid #d8deea;
-  border-radius: 16px;
-  background: #fff;
-  box-shadow: 0 24px 70px rgba(15, 23, 42, .18);
-}
-
-.export-modal-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 22px 22px 17px;
-  border-bottom: 1px solid #e9edf3;
-}
-
-.export-modal-header h2 {
-  margin: 0 0 5px;
-  color: #172d68;
-  font-size: 21px;
-}
-
-.export-modal-header p {
-  margin: 0;
-  color: #8793aa;
-  font-size: var(--fs-small);
-}
-
-.modal-close {
-  width: 34px;
-  height: 34px;
-  flex: none;
-  border: 1px solid #d8deea;
-  border-radius: 8px;
-  background: #fff;
-  color: #667085;
-  cursor: pointer;
-  font-size: 25px;
-  line-height: 1;
-}
-
-.export-period-box {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin: 18px 22px 0;
-  padding: 13px 14px;
-  border-radius: 10px;
-  background: #f5f7fb;
-}
-
-.export-period-box span {
-  color: #7b879c;
-  font-size: var(--fs-small);
-}
-
-.export-period-box strong {
-  color: #244d9e;
-  font-size: var(--fs-small);
-}
-
-.export-track-box {
-  margin-top: 10px;
-}
-
-.export-section {
-  padding: 20px 22px;
-}
-
-.export-section h3 {
-  margin: 0 0 11px;
-  color: #344054;
-  font-size: var(--fs-lead);
-}
-
-.export-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 11px;
-  margin-top: 10px;
-  padding: 14px;
-  border: 1px solid #d8deea;
-  border-radius: 11px;
-  cursor: pointer;
-  transition: .18s ease;
-}
-
-.export-option.selected {
-  border-color: #8750d7;
-  background: #faf7ff;
-  box-shadow: 0 0 0 2px rgba(135, 80, 215, .08);
-}
-
-.export-option input {
-  margin-top: 2px;
-  accent-color: #8500b7;
-}
-
-.export-option div {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.export-option strong {
-  color: #24324b;
-  font-size: var(--fs-small);
-}
-
-.export-option span {
-  color: #8793aa;
-  font-size: var(--fs-caption);
-  line-height: 1.6;
-}
-
-.export-modal-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  padding: 0 22px 22px;
-}
-
-.print-button,
-.download-button {
-  display: inline-flex;
-  min-height: 42px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: var(--fs-small);
-  font-weight: 700;
-}
-
-.print-button {
-  border: 1px solid #cfd7e6;
-  background: #fff;
-  color: #344054;
-}
-
-.download-button {
-  border: 1px solid #8500b7;
-  background: #8500b7;
-  color: #fff;
-}
-
-.print-button:disabled,
-.download-button:disabled,
-.modal-close:disabled {
-  cursor: wait;
-  opacity: .65;
 }
 
 
@@ -2142,14 +1628,6 @@ td {
 
   .radar-area {
     grid-column: auto;
-  }
-
-  .export-button {
-    width: 100%;
-  }
-
-  .export-modal-actions {
-    grid-template-columns: 1fr;
   }
 }
 
@@ -2217,10 +1695,6 @@ td {
 .skills-page .status-badge,
 .skills-page .activity-count {
   font-size: var(--fs-caption);
-}
-
-.skills-page .export-button {
-  font-size: var(--fs-small);
 }
 
 .legend-toggle .student-dot {

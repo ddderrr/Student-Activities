@@ -263,11 +263,22 @@ def collect_transcript(
         raise ValueError(f"scope ต้องเป็น {', '.join(SCOPE_SOURCES)}")
 
     selected_levels = validate_year_levels(student.student_id, year_levels)
+    loaded = load_internal_items(db, student) + load_external_items(db, student)
+    return build_transcript(student, loaded, scope, selected_levels)
+
+
+def build_transcript(
+    student: Student,
+    loaded: list[dict],
+    scope: str = "all",
+    selected_levels: list[int] | None = None,
+) -> dict:
+    """จัดกลุ่ม/สรุปรายการกิจกรรม (แยกจากการ query เพื่อใช้กับตัวอย่างในหน้า Settings ได้)"""
     entry_year = entry_year_from_student_id(student.student_id)
     sources = SCOPE_SOURCES[scope]
 
     items = []
-    for item in load_internal_items(db, student) + load_external_items(db, student):
+    for item in loaded:
         if sources is not None and item["source"] not in sources:
             continue
 

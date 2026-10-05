@@ -13,7 +13,6 @@ import {
   RotateCcw,
   Save,
   Search,
-  ShieldAlert,
   Info,
   ShieldCheck,
   Trash2,
@@ -33,6 +32,8 @@ const { t, currentLanguage } = useLanguage()
 
 // หน้า Settings ใช้ได้เฉพาะแอดมินกลาง (backend ตรวจซ้ำด้วย require_central_admin)
 const isCentral = computed(() => Boolean(getAdminSession()?.is_central))
+// แอดมินสาขา: จัดการได้เฉพาะนักศึกษาสาขาตัวเอง (backend กรองให้) และไม่มีส่วนจัดการแอดมิน
+const adminMajor = computed(() => getAdminSession()?.major || '')
 
 /* =========================
    เมนูแบบ accordion: เปิดได้ทีละหัวข้อ (null = ปิดหมด)
@@ -586,10 +587,8 @@ function onKeydown(event) {
 
 onMounted(() => {
   document.addEventListener('keydown', onKeydown)
-  if (isCentral.value) {
-    loadStudents()
-    loadAdmins()
-  }
+  loadStudents()
+  if (isCentral.value) loadAdmins()
 })
 
 onBeforeUnmount(() => {
@@ -604,18 +603,11 @@ onBeforeUnmount(() => {
   <div class="settings-page">
     <header class="page-header">
       <h1>{{ t.adminSettings.title }}</h1>
-      <p v-if="isCentral">{{ t.adminSettings.subtitle }}</p>
+      <p>{{ isCentral ? t.adminSettings.subtitle : fill(t.adminSettings.subtitleBranch, { major: adminMajor }) }}</p>
     </header>
 
-    <!-- แอดมินสาขา -->
-    <section v-if="!isCentral" class="card no-permission" data-testid="settings-no-permission">
-      <span class="no-permission-icon"><ShieldAlert :size="28" /></span>
-      <h2>{{ t.adminSettings.noPermissionTitle }}</h2>
-      <p>{{ t.adminSettings.noPermissionText }}</p>
-    </section>
-
-    <!-- แอดมินกลาง: เมนูแบบ accordion เปิดได้ทีละหัวข้อ -->
-    <div v-else class="settings-menu">
+    <!-- เมนูแบบ accordion เปิดได้ทีละหัวข้อ (แอดมินสาขา: ไม่มีส่วนจัดการแอดมิน) -->
+    <div class="settings-menu">
 
     <!-- 1) จัดการนักศึกษา -->
     <section class="settings-panel" :class="{ open: openSection === 'students' }" data-section="students">
@@ -623,7 +615,7 @@ onBeforeUnmount(() => {
         <span class="panel-icon students"><Users :size="22" /></span>
         <div class="panel-text">
           <h2 id="panel-students-title">{{ t.adminSettings.sectionStudents }}</h2>
-          <p>{{ t.adminSettings.sectionStudentsDescription }}</p>
+          <p>{{ isCentral ? t.adminSettings.sectionStudentsDescription : fill(t.adminSettings.sectionStudentsDescriptionBranch, { major: adminMajor }) }}</p>
         </div>
         <span class="panel-meta">{{ fill(t.adminSettings.studentsCount, { count: studentsAllTotal }) }}</span>
         <button
@@ -647,6 +639,7 @@ onBeforeUnmount(() => {
           <div>
             <h2>{{ t.adminSettings.importTitle }}</h2>
             <p>{{ t.adminSettings.importDescription }}</p>
+            <p v-if="!isCentral" class="branch-scope-note" data-testid="import-branch-note">{{ fill(t.adminSettings.importBranchNote, { major: adminMajor }) }}</p>
           </div>
         </div>
 
@@ -835,7 +828,7 @@ onBeforeUnmount(() => {
           <div>
             <h2>{{ t.adminSettings.studentsTitle }}</h2>
             <p>
-              {{ t.adminSettings.studentsDescription }} ·
+              {{ isCentral ? t.adminSettings.studentsDescription : fill(t.adminSettings.studentsDescriptionBranch, { major: adminMajor }) }} ·
               <strong>
                 {{
                   studentSearch.trim()
@@ -974,7 +967,7 @@ onBeforeUnmount(() => {
     </section>
 
     <!-- 2) จัดการแอดมิน -->
-    <section class="settings-panel" :class="{ open: openSection === 'admins' }" data-section="admins">
+    <section v-if="isCentral" class="settings-panel" :class="{ open: openSection === 'admins' }" data-section="admins">
       <div class="panel-header">
         <span class="panel-icon admins"><ShieldCheck :size="22" /></span>
         <div class="panel-text">
@@ -1316,7 +1309,7 @@ onBeforeUnmount(() => {
           </template>
 
           <template v-else>
-            <p>{{ fill(t.adminSettings.deleteAllMessage, { count: studentsAllTotal }) }}</p>
+            <p>{{ isCentral ? fill(t.adminSettings.deleteAllMessage, { count: studentsAllTotal }) : fill(t.adminSettings.deleteAllMessageBranch, { count: studentsAllTotal, major: adminMajor }) }}</p>
             <p class="muted">{{ t.adminSettings.deleteAllKeepsActivities }}</p>
             <label class="confirm-field">
               <span>{{ fill(t.adminSettings.deleteAllConfirmLabel, { word: t.adminSettings.deleteConfirmWord }) }}</span>
@@ -1411,32 +1404,11 @@ onBeforeUnmount(() => {
   box-shadow: 0 1px 2px rgba(29, 50, 104, 0.04), 0 6px 20px rgba(29, 50, 104, 0.04);
 }
 
-/* ไม่มีสิทธิ์ */
-.no-permission {
-  max-width: 560px;
-  padding: 40px 28px;
-  text-align: center;
-}
-
-.no-permission-icon {
-  width: 64px;
-  height: 64px;
-  margin: 0 auto 16px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: #fdf0e6;
-  color: #c2410c;
-}
-
-.no-permission h2 {
-  margin: 0 0 8px;
-  font-size: 20px;
-}
-
-.no-permission p {
-  margin: 0;
-  color: #6b7a90;
+/* แอดมินสาขา: บอกขอบเขตการนำเข้า */
+.branch-scope-note {
+  margin-top: 6px;
+  color: #b45f06;
+  font-weight: 500;
 }
 
 /* หัวการ์ด */
