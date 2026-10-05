@@ -56,18 +56,28 @@ faculty activities, and approved external activities. Activities owned by anothe
 major remain visible in history but do not enter this breakdown.
 Cancelled activities never contribute. External hours count only after approval.
 Totals are calculated from source activity records; editing hours updates totals.
-Skill scores and their existing eligibility rules remain unchanged.
+Personal skill evidence uses the same completion rule; external evidence must be approved.
 
 Development Compose startup automatically applies
 `backend/migration_add_activity_hours.sql` without resetting data. For a deployment
 without `DEV_SCHEMA_UPDATES`, apply that SQL before starting the updated backend.
 Transcript PDF totals follow the selected scope and year filters; Student page
-summaries show the student's overall accumulated hours.
+skill summaries follow the selected year/semester while activity-history totals remain cumulative.
 
 Student Skills and Admin individual radars use the same Major / Faculty / External
 profile calculation. External profiles contain only that student's approved
 external evidence and have no population average or benchmark. Admin aggregate
-statistics and evaluated-student counts use internal evidence only. The legacy
-personal all-sources skill field remains explicitly identified as such; source
-buttons and Skill PDF exports select one independent dataset. Transcript PDFs show
-personal skills for the chosen records, with source labels and hour breakdowns.
+statistics and evaluated-student counts select either Major or Faculty evidence.
+Personal levels are `sum(score * hours) / sum(hours)` within one source, using only
+activities that assess that skill. Each skill also returns exposure hours and an
+activity count. Missing skills are null observations; zero recorded hours cannot
+produce a weighted score. Existing data is preserved and no hours are inferred.
+Population averages weight students equally after calculating their personal
+weighted levels, excluding null levels separately for each skill.
+
+`sourceProfiles` extends the skill APIs with levels, exposures and counts.
+`populationProfiles` supplies Admin cohort averages and sample counts. Legacy
+default `skills` maps now represent a single source (`skillsScope`); the old
+`source=all` Skill PDF request is accepted as a Faculty alias. Transcript PDFs
+show separate source sections instead of combining scores. No schema migration
+or database reset is required for this scoring change.

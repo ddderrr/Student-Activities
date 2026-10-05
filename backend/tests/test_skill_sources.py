@@ -79,7 +79,7 @@ def test_three_source_example_and_admin_aggregate_invariance(client, db_session)
     assert row['externalSkills'] == period['skillsBySource']['external']
     assert row['hours'] == body['hours']
     assert row['activityCounts'] == {'major': 1, 'faculty': 1, 'external': 1}
-    assert row['activityCount'] == 2
+    assert row['activityCount'] == 1  # Faculty source, never mixed internal skills
     assert client.get('/api/student/me/activities', headers=HEADERS).json()['hours'] == body['hours']
     assert client.get('/api/student/me/transcript/options', headers=HEADERS).json()['hours'] == body['hours']
 
@@ -108,9 +108,9 @@ def test_multiple_approved_decimal_hours_and_individual_only(client, db_session)
     body = personal(client)
     assert body['hours']['external'] == 3.75
     assert body['hours']['total'] == 13.75
-    assert body['periods']['year-2026']['comparisons']['external']['skills']['volunteerism'] == 4
+    assert body['periods']['year-2026']['comparisons']['external']['skills']['volunteerism'] == pytest.approx(11 / 3)
     report = {row['id']: row for row in admin(client)['students']}
-    assert report[other.student_id]['skills']['volunteerism'] == 4
+    assert report[other.student_id]['majorSkills']['volunteerism'] == 4
     assert report[other.student_id]['externalSkills']['volunteerism'] is None
     baseline_profile = body['periods']['year-2026']['comparisons']
     baseline_report = admin(client)
@@ -125,7 +125,7 @@ def test_multiple_approved_decimal_hours_and_individual_only(client, db_session)
     for key in ('benchmarkScores', 'facultyActivityAverage', 'population'):
         assert after_report[key] == baseline_report[key]
     after_rows = {row['id']: row for row in after_report['students']}
-    assert after_rows[SID]['externalSkills']['volunteerism'] == 4
+    assert after_rows[SID]['externalSkills']['volunteerism'] == pytest.approx(11 / 3)
     assert after_rows[other.student_id]['externalSkills']['volunteerism'] == 1
 
 

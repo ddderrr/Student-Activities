@@ -63,6 +63,7 @@ def add_student(db_session, student_id, major):
 
 def add_activity_with_members(db_session, start_at, member_ids):
     activity = Activity(
+        activity_hours=3,
         activity_type="Volunteer",
         name="Skill Activity",
         start_at=start_at,

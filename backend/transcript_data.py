@@ -29,7 +29,8 @@ from models import (
 from skill_definitions import PARTICIPANT_SKILL_DEFINITIONS
 from skill_scoring import (
     activity_source,
-    average_activity_skills,
+    source_skill_details,
+    completed_activity_filter,
     counted_activity_filter,
     counted_external_activity_filter,
 )
@@ -141,7 +142,7 @@ def load_internal_items(db: Session, student: Student) -> list[dict]:
         .join(ActivityMember, ActivityMember.activity_id == Activity.id)
         .filter(
             ActivityMember.student_id == student.student_id,
-            counted_activity_filter(),
+            completed_activity_filter(),
         )
         .all()
     )
@@ -250,7 +251,9 @@ def source_label(item: dict) -> str:
 
 
 def average_skills(items: list[dict]) -> dict[str, float | None]:
-    return average_activity_skills(items, PARTICIPANT_SKILL_DEFINITIONS)
+    # Compatibility score map: Faculty is the default; never pool sources.
+    return {key: detail['level'] for key, detail in
+            source_skill_details(items, PARTICIPANT_SKILL_DEFINITIONS)['faculty']['skills'].items()}
 
 
 def collect_transcript(
@@ -306,7 +309,9 @@ def build_transcript(
             )
         groups[-1]["activities"].append(item)
 
-    skills = average_skills(items)
+    profiles = source_skill_details(items, PARTICIPANT_SKILL_DEFINITIONS)
+    default_source = scope if scope in profiles else 'faculty'
+    skills = {key: detail['level'] for key, detail in profiles[default_source]['skills'].items()}
     hours = hours_summary_from_items(items)
 
     return {
@@ -335,6 +340,15 @@ def build_transcript(
             "organizer": sum(1 for item in items if item["role"] != "participant"),
         },
         "skills": skills,
+        "skillsScope": default_source,
+        "sourceProfiles": profiles,
+        "skill_sections": [
+            {"source": source, "skill_rows": [
+                {"key": key, "label": label, "score": profiles[source]['skills'][key]['level']}
+                for key, label in PARTICIPANT_SKILL_DEFINITIONS.items()
+            ]}
+            for source in profiles if scope == 'all' or source == scope
+        ],
         "skill_rows": [
             {
                 "key": key,

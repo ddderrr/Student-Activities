@@ -102,6 +102,13 @@ def localize(data: dict, lang: str) -> dict:
             {**row, "label_local": i18n.SKILL_LABELS[lang].get(row["key"], row["label"])}
             for row in data["skill_rows"]
         ],
+        "skill_sections": [
+            {"label": text['sources'][section['source']], "skill_rows": [
+                {**row, "label_local": i18n.SKILL_LABELS[lang].get(row['key'], row['label'])}
+                for row in section['skill_rows']
+            ]}
+            for section in data.get('skill_sections', [])
+        ],
         "scope_label": text["scopes"][data["filters"]["scope"]],
         "year_levels_label": i18n.year_levels_label(data["filters"]["year_levels"], lang),
     }
@@ -152,6 +159,7 @@ def render_transcript_html(
         groups=local["groups"],
         summary=data["summary"],
         skill_rows=local["skill_rows"],
+        skill_sections=local["skill_sections"],
         scope_label=local["scope_label"],
         year_levels_label=local["year_levels_label"],
         document_number=new_document_number(issued_on),

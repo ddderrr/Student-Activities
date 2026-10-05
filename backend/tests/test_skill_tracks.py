@@ -30,6 +30,7 @@ def seed(db_session):
     db_session.commit()
 
     activity = Activity(
+        activity_hours=3,
         activity_type="Volunteer",
         name="Track Activity",
         start_at=datetime(2026, 8, 1, 9, 0, 0),
@@ -79,6 +80,9 @@ def test_staff_track_only_counts_organizers_with_staff_skills(client, db_session
     assert len(body["benchmarkScores"]) == len(STAFF_SKILL_DEFINITIONS)
     assert [student["id"] for student in body["students"]] == ["670510001"]
     assert body["students"][0]["skills"]["innovation"] == 5
+    assert body["students"][0]["sourceProfiles"]["faculty"]["skills"]["innovation"] == {
+        "level": 5, "exposure_hours": 3, "activity_count": 1
+    }
     assert set(body["students"][0]["skills"]) == set(STAFF_SKILL_DEFINITIONS)
 
 

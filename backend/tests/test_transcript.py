@@ -113,6 +113,7 @@ def add_activity(
     student_id=STUDENT_ID,
 ) -> Activity:
     activity = Activity(
+        activity_hours=3,
         activity_type="Workshop",
         name=name,
         start_at=start,
@@ -151,6 +152,7 @@ def add_external(
     student_id=STUDENT_ID,
 ) -> ExternalActivity:
     activity = ExternalActivity(
+        activity_hours=3,
         student_id=student_id,
         title=title,
         organization="Some Org",
@@ -332,8 +334,8 @@ def test_groups_are_ordered_by_academic_year(db_session, student):
 
 def test_skill_scores_use_selected_activities_only(db_session, student):
     all_scores = collect_transcript(db_session, student, scope="all")["skills"]
-    assert all_scores["academics"] == 3.0  # (4 + 2) / 2, ไม่นับกิจกรรมที่ยกเลิก
-    assert all_scores["volunteerism"] == 4.0  # (5 + 3) / 2
+    assert all_scores["academics"] == 4.0  # Faculty-only default; ไม่นับกิจกรรมที่ยกเลิก
+    assert all_scores["volunteerism"] is None  # Major and External never mix into Faculty
     # งานวันคอมพิวเตอร์เป็น organizer: ไม่นับในทักษะผู้เข้าร่วม
     assert all_scores["arts_culture_traditions"] is None
 

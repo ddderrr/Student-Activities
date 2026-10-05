@@ -32,6 +32,7 @@ def add_student(db_session, student_id, major):
 
 def add_activity(db_session, name, major, level, members):
     activity = Activity(
+        activity_hours=3,
         activity_type="Volunteer",
         name=name,
         start_at=datetime(2026, 8, 1, 9, 0, 0),
@@ -66,6 +67,7 @@ def seed(db_session):
     add_activity(db_session, "Faculty 2", None, 4, ["670510003"])
 
     external = ExternalActivity(
+        activity_hours=3,
         student_id="670510001",
         title="Outside",
         organization="Outside Org",
@@ -91,6 +93,7 @@ def seed(db_session):
 
 def add_external(db_session, student_id, level, status="approved"):
     external = ExternalActivity(
+        activity_hours=3,
         student_id=student_id,
         title=f"Outside {student_id} {status}",
         organization="Outside Org",
@@ -157,11 +160,11 @@ def test_activities_are_tagged_with_scope(client, db_session):
     }
 
 
-def test_combined_skills_are_unchanged(client, db_session):
+def test_default_skills_are_faculty_only(client, db_session):
     seed(db_session)
 
-    # skills รวม (ใช้กับ PDF export) ยังนับทุกกิจกรรมเหมือนเดิม: (5 + 1 + 2 + 1) / 4
-    assert my_period(client)["skills"]["volunteerism"] == 2.25
+    # Default score maps never combine sources; Faculty is the compatibility default.
+    assert my_period(client)["skills"]["volunteerism"] == 2
 
 
 def test_admin_report_splits_each_student_by_major_and_faculty(client, db_session):
@@ -171,8 +174,8 @@ def test_admin_report_splits_each_student_by_major_and_faculty(client, db_sessio
     by_id = {student["id"]: student for student in body["students"]}
 
     first = by_id["670510001"]
-    # Admin aggregate is internal only: Chem 1, Physics, Faculty 1.
-    assert first["skills"]["volunteerism"] == 2.67
+    # The default admin profile contains only Faculty activities.
+    assert first["skills"]["volunteerism"] == 2
     assert first["externalSkills"]["volunteerism"] == 1
     assert first["majorSkills"]["volunteerism"] == 5
     assert first["facultySkills"]["volunteerism"] == 2

@@ -14,6 +14,7 @@ import {
   studentHeaders
 } from '../../constants/currentStudent'
 import { SKILLS_BY_ROLE } from '../../constants/activitySkills'
+import { skillDetail } from '../../utils/skillProfiles.js'
 import ActivityHoursSummary from '../../components/common/ActivityHoursSummary.vue'
 import { useLanguage } from '../../composables/useLanguage'
 
@@ -170,10 +171,6 @@ const currentComparison = computed(() =>
 
 // ทักษะของฉันเฉพาะกิจกรรมในขอบเขตที่เลือก (สาขา / คณะ)
 
-const currentSkills = computed(() =>
-  currentComparison.value.skills || {}
-)
-
 // ค่าเฉลี่ยของขอบเขตที่เลือก (ค่าเฉลี่ยสาขา / ค่าเฉลี่ยคณะ)
 const facultySkills = computed(() =>
   isExternalComparison.value ? {} : currentComparison.value.average || {}
@@ -233,7 +230,9 @@ watch(
 const skillItems = computed(() =>
   skillDefinitions.value.map((definition) => ({
     ...definition,
-    value: currentSkills.value[definition.key] ?? null
+    value: skillDetail(currentPeriod.value.sourceProfiles, comparison.value, definition.key).level,
+    exposure: skillDetail(currentPeriod.value.sourceProfiles, comparison.value, definition.key).exposure_hours,
+    activityCount: skillDetail(currentPeriod.value.sourceProfiles, comparison.value, definition.key).activity_count
   }))
 )
 
@@ -395,11 +394,8 @@ function skillPercent(value) {
 }
 
 function formatLevel(value) {
-  if (value === null || value === undefined) return '-'
-
-  return Number(value)
-    .toFixed(2)
-    .replace(/\.00$/, '')
+  if (value === null || value === undefined) return t.value.skillMetrics.noData
+  return Number(value).toFixed(2)
 }
 
 function formatDate(value) {
@@ -559,7 +555,7 @@ onMounted(() => loadSkills())
           </p>
         </div>
 
-        <ActivityHoursSummary v-if="!loading" :hours="hours" panel />
+        <ActivityHoursSummary v-if="!loading" :hours="currentPeriod.hours || hours" panel />
 
         <div class="heading-controls">
           <!-- สลับโหมด: skill ผู้เข้าร่วม / skill ผู้จัด (staff) -->
@@ -708,11 +704,21 @@ onMounted(() => loadSkills())
                   </span>
                 </span>
 
-                <strong>
-                  {{ formatLevel(skill.value) }} / 5
+                <strong :aria-label="t.skillMetrics.level">
+                  {{ formatLevel(skill.value) }}<span v-if="skill.value !== null" class="skill-score-unit"> / 5</span>
                 </strong>
               </div>
 
+              <dl class="skill-detail-metrics">
+                <div>
+                  <dt>{{ t.skillMetrics.exposureShort }}</dt>
+                  <dd>{{ skill.exposure }} {{ t.activityHours.unit }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t.skillMetrics.activities }}</dt>
+                  <dd>{{ skill.activityCount }} {{ t.skillMetrics.activities }}</dd>
+                </div>
+              </dl>
               <div class="progress-track">
                 <div
                   class="progress-value"
@@ -846,11 +852,21 @@ onMounted(() => loadSkills())
                   </span>
                 </span>
 
-                <strong>
-                  {{ formatLevel(skill.value) }} / 5
+                <strong :aria-label="t.skillMetrics.level">
+                  {{ formatLevel(skill.value) }}<span v-if="skill.value !== null" class="skill-score-unit"> / 5</span>
                 </strong>
               </div>
 
+              <dl class="skill-detail-metrics">
+                <div>
+                  <dt>{{ t.skillMetrics.exposureShort }}</dt>
+                  <dd>{{ skill.exposure }} {{ t.activityHours.unit }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t.skillMetrics.activities }}</dt>
+                  <dd>{{ skill.activityCount }} {{ t.skillMetrics.activities }}</dd>
+                </div>
+              </dl>
               <div class="progress-track">
                 <div
                   class="progress-value"
@@ -895,6 +911,7 @@ onMounted(() => loadSkills())
                 <tr>
                   <th>{{ t.studentSkills.tableActivityName }}</th>
                   <th>{{ t.studentSkills.tableDescription }}</th>
+                  <th>{{ t.activityHours.label }}</th>
                   <th>{{ t.studentSkills.tableSkillsGained }}</th>
                   <th>{{ t.studentSkills.tableDate }}</th>
                   <th>{{ t.studentSkills.tableStatus }}</th>
@@ -921,6 +938,7 @@ onMounted(() => loadSkills())
                     {{ activity.description || '-' }}
                   </td>
 
+                  <td>{{ activity.activity_hours }} {{ t.activityHours.unit }}</td>
                   <td>
                     <div class="skill-tags">
                       <span
@@ -950,7 +968,7 @@ onMounted(() => loadSkills())
                 </tr>
 
                 <tr v-if="currentActivities.length === 0">
-                  <td colspan="5">
+                  <td colspan="6">
                     <div class="empty-table">
                       <strong>
                         {{ trackText.noActivityData }}
@@ -1737,4 +1755,17 @@ td {
   .skills-page .heading-controls { align-items: flex-start; }
 }
 
+.skill-card { container-type: inline-size; }
+.skill-card-top { flex-direction: column; gap: 10px; font-size: 16px; line-height: 1.45; }
+.skill-card-name { min-height: 64px; overflow-wrap: anywhere; }
+.skill-card-name small { color: #64748b; font-size: 13px; line-height: 1.5; }
+.skill-card-top strong { font-size: 22px; line-height: 1.3; }
+.skill-score-unit { font-size: 14px; font-weight: 500; color: #52647d; }
+.skill-detail-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; margin: 12px 0; }
+.skill-detail-metrics > div { min-width: 0; }
+.skill-detail-metrics dt { color: #52647d; font-size: 13px; line-height: 1.5; }
+.skill-detail-metrics dd { margin: 3px 0 0; color: #17356e; font-size: 15px; font-weight: 600; line-height: 1.5; white-space: nowrap; }
+@container (max-width: 230px) {
+  .skill-detail-metrics { grid-template-columns: 1fr; gap: 8px; }
+}
 </style>

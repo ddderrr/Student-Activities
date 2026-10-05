@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy import func, or_
 from models import Activity, ActivityMember, ExternalActivity, Student
 from skill_scoring import activity_source
+from timeutil import now_bangkok
 
 
 def effective_completed(activity, now_value):
@@ -15,7 +16,7 @@ def effective_completed(activity, now_value):
 
 
 def earned_internal_hours(activity, now_value=None):
-    if not effective_completed(activity, now_value or datetime.now()):
+    if not effective_completed(activity, now_value or now_bangkok()):
         return Decimal(0)
     return activity.activity_hours or Decimal(0)
 
@@ -30,11 +31,11 @@ def hours_summary_from_items(items):
             'total': float(sum(totals.values(), Decimal(0)))}
 
 
-def activity_hours_summary(db, student):
-    return activity_hours_summaries(db, [student])[student.student_id]
+def activity_hours_summary(db, student, year=None, semester=None):
+    return activity_hours_summaries(db, [student], year, semester)[student.student_id]
 
 
-def activity_hours_summaries(db, students):
+def activity_hours_summaries(db, students, year=None, semester=None):
     # Composite membership key prevents duplicates; hours are independent of skill tracks.
     by_id = {student.student_id: student for student in students}
     items = {student_id: [] for student_id in by_id}
@@ -43,11 +44,22 @@ def activity_hours_summaries(db, students):
     internal = db.query(ActivityMember.student_id, Activity.major, func.sum(Activity.activity_hours)).join(
         ActivityMember, ActivityMember.activity_id == Activity.id
     ).filter(ActivityMember.student_id.in_(by_id), Activity.status != "cancelled",
-             or_(Activity.status == "completed", Activity.end_at < datetime.now()))
+             or_(Activity.status == "completed", Activity.end_at < now_bangkok()))
+    if year is not None:
+        internal = internal.filter(func.extract('year', Activity.start_at) == year)
+    if semester is not None:
+        internal = internal.filter(func.extract('month', Activity.start_at) <= 6 if semester == 1
+                                   else func.extract('month', Activity.start_at) > 6)
     internal = internal.group_by(ActivityMember.student_id, Activity.major).all()
     external = db.query(ExternalActivity.student_id, func.sum(ExternalActivity.activity_hours)).filter(
         ExternalActivity.student_id.in_(by_id), ExternalActivity.status == "approved"
-    ).group_by(ExternalActivity.student_id).all()
+    )
+    if year is not None:
+        external = external.filter(func.extract('year', ExternalActivity.start_date) == year)
+    if semester is not None:
+        external = external.filter(func.extract('month', ExternalActivity.start_date) <= 6 if semester == 1
+                                   else func.extract('month', ExternalActivity.start_date) > 6)
+    external = external.group_by(ExternalActivity.student_id).all()
     for student_id, major, hours in internal:
         items[student_id].append({'source': activity_source(major, by_id[student_id].major), 'earned_activity_hours': hours})
     for student_id, hours in external:

@@ -78,6 +78,7 @@ def student(db_session, monkeypatch):
     for index, (major, skill_key, level) in enumerate(ACTIVITIES):
         start = datetime(2026, 3, 1 + index, 9)
         activity = Activity(
+        activity_hours=3,
             activity_type="Workshop",
             name=f"Activity {index}",
             start_at=start,

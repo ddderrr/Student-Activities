@@ -49,7 +49,7 @@ def submit_and_approve(client, title):
 
 def export(client):
     return client.get(
-        "/api/student/me/skills/export?period=year-2026&include_chart=false",
+        "/api/student/me/skills/export?period=year-2026&include_chart=false&source=external",
         headers=HEADERS,
     )
 

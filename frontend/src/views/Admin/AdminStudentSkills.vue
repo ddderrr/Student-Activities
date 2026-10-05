@@ -14,6 +14,7 @@ import {
   Users
 } from 'lucide-vue-next'
 
+import { skillDetail, populationProfile } from '../../utils/skillProfiles.js'
 import ActivityHoursSummary from '../../components/common/ActivityHoursSummary.vue'
 import { useLanguage } from '../../composables/useLanguage'
 import { API_BASE } from '../../config/api'
@@ -156,6 +157,8 @@ const radarLabels = computed(() =>
 const loading = ref(false)
 const error = ref('')
 const students = ref([])
+const populationProfiles = ref({})
+const aggregateSource = ref('faculty')
 const totalFaculty = ref(0)
 const availableYears = ref([])
 // จำนวนนักศึกษาทั้งหมดแยกตาม { yearLevel, major } ใช้คำนวณ % เมื่อกรองชั้นปี/สาขา
@@ -330,7 +333,7 @@ const loadStudentSkills = async () => {
     loadedTrack.value = data.track || skillTrack.value
     skillKeys.splice(0, skillKeys.length, ...SKILL_KEYS_BY_TRACK[loadedTrack.value])
     students.value = Array.isArray(data.students) ? data.students : []
-    facultyActivityAverage.value = data.facultyActivityAverage || {}
+    populationProfiles.value = data.populationProfiles || {}
 
     // หน้ารายละเอียดนักศึกษาที่เปิดค้างไว้ ให้ใช้ข้อมูลชุดใหม่ของคนเดิม (ถ้าไม่มีในชุดนี้ให้ปิด)
     if (selectedStudent.value) {
@@ -386,36 +389,11 @@ const selectSkillTrack = async (track) => {
 /* =========================
    Helpers
 ========================= */
-const skillValueOf = (student, skillKey) => {
-  const raw = student.skills?.[skillKey]
-
-  // null / undefined = ยังไม่มีหลักฐานจากกิจกรรมที่นักศึกษาคนนี้เข้าร่วม
-  if (raw === null || raw === undefined || raw === '') return null
-
-  const value = Number(raw)
-  return Number.isFinite(value) ? value : null
-}
-
-const averageOfSkills = (student) => {
-  // เฉลี่ยเฉพาะ skill ที่นักศึกษาคนนี้มีข้อมูลจริงเท่านั้น
-  const values = skillKeys
-    .map(skill => skillValueOf(student, skill.key))
-    .filter(value => value !== null)
-
-  if (values.length === 0) return null
-  return values.reduce((sum, value) => sum + value, 0) / values.length
-}
+const averageOfSkills = (student) => student.sourceSummaries?.[aggregateSource.value]?.score ?? null
 
 const primarySkillOf = (student) => {
-  const availableSkills = skillKeys
-    .map(skill => ({
-      ...skill,
-      score: skillValueOf(student, skill.key)
-    }))
-    .filter(skill => skill.score !== null)
-    .sort((a, b) => b.score - a.score)
-
-  return availableSkills[0]?.label ?? null
+  const key = student.sourceSummaries?.[aggregateSource.value]?.primarySkill
+  return skillKeys.find(skill => skill.key === key)?.label ?? null
 }
 
 const scoreMatchesFilter = (score) => {
@@ -450,31 +428,12 @@ const facultyPercentage = computed(() => {
   return Math.min(100, (studentsEvaluated.value / studentPopulation.value) * 100).toFixed(1)
 })
 
-const averageSkillScore = computed(() => {
-  const studentAverages = semesterStudents.value
-    .map(student => averageOfSkills(student))
-    .filter(value => value !== null)
-
-  if (studentAverages.length === 0) return null
-  return (studentAverages.reduce((sum, value) => sum + value, 0) / studentAverages.length).toFixed(2)
-})
-
-const skillAveragesOf = (list) => {
-  const result = {}
-  skillKeys.forEach(skill => {
-    const values = list
-      .map(student => skillValueOf(student, skill.key))
-      .filter(value => value !== null)
-
-    result[skill.key] = values.length
-      ? values.reduce((sum, value) => sum + value, 0) / values.length
-      : null
-  })
-  return result
-}
-
-// ค่าเฉลี่ยของกลุ่มที่เลือก (radar หลัก, Top / Growth Area)
-const facultySkillAverages = computed(() => skillAveragesOf(semesterStudents.value))
+const selectedPopulationProfile = computed(() =>
+  populationProfile(populationProfiles.value, semesterStudents.value, aggregateSource.value)
+)
+const averageSkillScore = computed(() => selectedPopulationProfile.value.score?.toFixed(2) ?? null)
+const skillAveragesOf = (list) => populationProfile(populationProfiles.value, list, aggregateSource.value).skills
+const facultySkillAverages = computed(() => selectedPopulationProfile.value.skills)
 
 /* =========================
    Radar calculation
@@ -561,7 +520,7 @@ const radarGroups = computed(() => {
 
   const groups = new Map()
 
-  for (const student of evaluatedStudents.value) {
+  for (const student of semesterStudents.value) {
     const year = yearLevelGroup(student.yearLevel)
     const major = student.major || ''
     const key = radarView.value === 'YEAR'
@@ -579,9 +538,7 @@ const radarGroups = computed(() => {
     )
     .map(group => {
       const averages = skillAveragesOf(group.students)
-      const studentAverages = group.students
-        .map(student => averageOfSkills(student))
-        .filter(value => value !== null)
+      const profile = populationProfile(populationProfiles.value, group.students, aggregateSource.value)
 
       let title = majorLabel(group.major)
       if (radarView.value === 'YEAR') title = yearLevelLabel(group.year)
@@ -590,15 +547,13 @@ const radarGroups = computed(() => {
       return {
         key: group.key,
         title,
-        count: group.students.length,
+        count: profile.evaluatedCount,
         averages,
-        average: studentAverages.length
-          ? studentAverages.reduce((sum, value) => sum + value, 0) / studentAverages.length
-          : null,
+        average: profile.score,
         points: buildRadarPoints(skillKeys.map(skill => averages[skill.key] ?? 0)),
         // จุดเฉพาะ skill ที่มีข้อมูล ใช้แสดงค่าเมื่อชี้เมาส์
         vertices: skillKeys
-          .map((skill, index) => ({ skill, index, score: averages[skill.key] }))
+          .map((skill, index) => ({ skill, index, score: averages[skill.key] ?? null }))
           .filter(item => item.score !== null)
           .map(item => ({
             key: item.skill.key,
@@ -607,7 +562,7 @@ const radarGroups = computed(() => {
             ...radarVertex(item.score, item.index)
           }))
       }
-    })
+    }).filter(group => group.count > 0)
 })
 
 // สีตาม "กลุ่ม" ไม่ใช่ตามลำดับ: เอากลุ่มหนึ่งออก กลุ่มที่เหลือยังสีเดิม
@@ -752,7 +707,7 @@ const rankedFacultySkills = computed(() =>
   skillKeys
     .map(skill => ({
       ...skill,
-      score: facultySkillAverages.value[skill.key]
+      score: facultySkillAverages.value[skill.key] ?? null
     }))
     .filter(skill => skill.score !== null)
     .sort((a, b) => b.score - a.score)
@@ -823,7 +778,6 @@ const gapBasis = ref('MAJOR')
 const isExternalSource = computed(() => gapBasis.value === 'EXTERNAL')
 const hasSelectedSourceData = computed(() => selectedStudent.value && skillKeys.some(skill => scopedSkillValueOf(selectedStudent.value, skill.key) !== null))
 const selectedSourceCount = computed(() => selectedStudent.value?.activityCounts?.[gapBasis.value.toLowerCase()] ?? 0)
-const facultyActivityAverage = ref({})
 
 const GAP_BASIS_OPTIONS = ['MAJOR', 'FACULTY', 'EXTERNAL']
 
@@ -872,10 +826,8 @@ const gapBasisText = computed(() => {
 
 const currentGapBasisText = computed(() => gapBasisText.value[gapBasis.value])
 
-const scopedSkillsField = computed(() => gapBasisConfig.value.field)
-
-const scopedSkillValueOf = (student, skillKey) =>
-  skillValueOf({ skills: student?.[scopedSkillsField.value] }, skillKey)
+const selectedSkillDetail = (skillKey) => skillDetail(selectedStudent.value?.sourceProfiles, gapBasis.value.toLowerCase(), skillKey)
+const scopedSkillValueOf = (student, skillKey) => skillDetail(student?.sourceProfiles, gapBasis.value.toLowerCase(), skillKey).level
 
 const selectedStudentRadarPoints = computed(() => {
   if (!selectedStudent.value) return buildRadarPoints([0, 0, 0, 0, 0, 0])
@@ -892,20 +844,13 @@ const selectedMajorStudents = computed(() => {
   if (!selectedStudent.value) return []
 
   const major = selectedStudent.value.major || ''
-  return students.value.filter(student => (student.major || '') === major)
+  return semesterStudents.value.filter(student => (student.major || '') === major)
 })
 
-const selectedMajorAverages = computed(() =>
-  skillAveragesOf(
-    selectedMajorStudents.value.map(student => ({ skills: student.majorSkills }))
-  )
-)
-
-// ค่าเฉลี่ยที่ใช้เทียบตามกราฟที่เลือก
 const selectedCompareAverages = computed(() =>
   isExternalSource.value ? {} : gapBasis.value === 'MAJOR'
-    ? (selectedStudent.value?.majorActivityAverage || selectedMajorAverages.value)
-    : facultyActivityAverage.value
+    ? populationProfile(populationProfiles.value, selectedMajorStudents.value, 'major').skills
+    : populationProfile(populationProfiles.value, semesterStudents.value, 'faculty').skills
 )
 
 const selectedCompareRadarPoints = computed(() =>
@@ -918,11 +863,11 @@ const selectedMajorLabel = computed(() =>
   selectedStudent.value ? majorLabel(selectedStudent.value.major) : ''
 )
 
-const formatScore = (value) => (value === null || value === undefined ? '—' : value.toFixed(1))
+const formatScore = (value) => (value === null || value === undefined ? t.value.skillMetrics.noData : value.toFixed(2))
 
 const selectedStudentAverage = computed(() => {
   if (!selectedStudent.value) return null
-  return averageOfSkills({ skills: selectedStudent.value[scopedSkillsField.value] })
+  return selectedStudent.value.sourceSummaries?.[gapBasis.value.toLowerCase()]?.score ?? null
 })
 
 const selectedStrongestSkill = computed(() => {
@@ -960,10 +905,10 @@ const selectedSkillGaps = computed(() => {
   return skillKeys
     .map(skill => {
       const studentScore = scopedSkillValueOf(selectedStudent.value, skill.key)
-      const compareScore = Number(basisAverages[skill.key] ?? 0)
+      const compareScore = basisAverages[skill.key]
 
       // ไม่มีข้อมูลของนักศึกษาคนนี้ = ไม่เอาไปสรุปว่าเป็น skill gap
-      if (studentScore === null || compareScore <= 0) return null
+      if (studentScore === null || compareScore === null || compareScore === undefined || compareScore <= 0) return null
 
       const difference = studentScore - compareScore
       const percentDifference = (difference / compareScore) * 100
@@ -1183,6 +1128,12 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
+      <div class="skill-track-switch" role="group" :aria-label="t.skillSources.sourceLabel">
+        <span>{{ t.skillSources.sourceLabel }}</span>
+        <button v-for="source in ['major', 'faculty']" :key="source" type="button"
+          :class="{ active: aggregateSource === source }" :aria-pressed="aggregateSource === source"
+          @click="aggregateSource = source">{{ t.skillSources[source] }}</button>
+      </div>
       <label class="cohort-field">
         <span>{{ t.adminStudentSkills.yearLevelFilterLabel }}</span>
         <select v-model="selectedYearLevel">
@@ -1940,7 +1891,7 @@ onBeforeUnmount(() => {
               </td>
 
               <td>
-                <strong>{{ student.activityCount ?? 0 }}</strong> {{ t.adminStudentSkills.activitiesUnit }}
+                <strong>{{ student.activityCounts?.[aggregateSource] ?? 0 }}</strong> {{ t.adminStudentSkills.activitiesUnit }}
               </td>
 
               <!-- กิจกรรมภายนอกที่อนุมัติแล้ว (ชุดทักษะ + ช่วงเวลาเดียวกับคอลัมน์ก่อนหน้า) -->
@@ -2158,20 +2109,32 @@ onBeforeUnmount(() => {
                     <i class="legend-swatch" :class="gapBasisConfig.swatch"></i>{{ formatScore(selectedCompareAverages[skill.key]) }}
                   </small>
                 </div>
-                <strong>{{ scopedSkillValueOf(selectedStudent, skill.key) !== null ? scopedSkillValueOf(selectedStudent, skill.key).toFixed(1) : t.adminStudentSkills.notAvailable }}</strong>
+                <div class="individual-skill-metrics">
+                  <strong :aria-label="t.skillMetrics.level">{{ formatScore(selectedSkillDetail(skill.key).level) }}<span v-if="selectedSkillDetail(skill.key).level !== null" class="skill-score-unit"> / 5</span></strong>
+                  <dl class="skill-card-details">
+                    <div>
+                      <dt>{{ t.skillMetrics.exposureShort }}</dt>
+                      <dd>{{ selectedSkillDetail(skill.key).exposure_hours }} {{ t.activityHours.unit }}</dd>
+                    </div>
+                    <div>
+                      <dt>{{ t.skillMetrics.activities }}</dt>
+                      <dd>{{ selectedSkillDetail(skill.key).activity_count }} {{ t.skillMetrics.activities }}</dd>
+                    </div>
+                  </dl>
+                </div>
               </div>
             </div>
           </section>
 
           <!-- Right -->
           <aside class="detail-side-column">
-            <section v-if="isExternalSource" class="detail-panel"><strong>{{ t.skillSources.personalSource }}</strong><p>{{ hasSelectedSourceData ? t.skillSources.externalHint : t.skillSources.externalEmpty }}</p></section>
+            <section v-if="isExternalSource" class="detail-panel"><strong>{{ t.skillSources.personalSource }}</strong><p>{{ hasSelectedSourceData ? t.skillSources.externalHint : t.skillSources.externalEmpty }}</p><p>{{ t.skillMetrics.externalNoComparison }}</p></section>
             <section v-if="!isExternalSource || hasSelectedSourceData" class="strongest-skill-card">
               <div class="strongest-label">{{ isExternalSource ? t.skillSources.strongestExternal : t.adminStudentSkills.strongestSkill }}</div>
-              <h4>{{ selectedStrongestSkill ? skillDisplay(selectedStrongestSkill.label) : '—' }}</h4>
-              <p>
+              <h4>{{ selectedStrongestSkill ? skillDisplay(selectedStrongestSkill.label) : t.skillMetrics.noData }}</h4>
+              <p v-if="selectedStrongestSkill">
                 {{ t.adminStudentSkills.studentScore }}:
-                <strong>{{ selectedStrongestSkill ? selectedStrongestSkill.score.toFixed(1) : '—' }}</strong>
+                <strong>{{ selectedStrongestSkill ? selectedStrongestSkill.score.toFixed(2) : '—' }}</strong>
                 / 5.0
               </p>
               <p v-if="!isExternalSource" class="average-caption">
@@ -4323,18 +4286,29 @@ td {
 .student-detail-modal .detail-side-column > .detail-panel > p { font-size: 14px; line-height: 1.6; color: #64748b; }
 .student-detail-modal .detail-side-column > .detail-panel:not(.skill-gap-panel) { padding: 20px; }
 @media (max-width: 1000px) {
- .student-detail-modal .detail-content-grid { grid-template-columns: 1fr; }
- .student-detail-modal .detail-side-column { display: flex; }
+.student-detail-modal .detail-content-grid { grid-template-columns: 1fr; }
+.student-detail-modal .detail-side-column { display: flex; }
 }
 @media (max-width: 650px) {
- .student-detail-modal { width: 94vw; max-height: 90vh; }
- .student-detail-modal .detail-header { padding: 14px; }
- .student-detail-modal .student-identity-text h3 { font-size: 22px; }
+.student-detail-modal { width: 94vw; max-height: 90vh; }
+.student-detail-modal .detail-header { padding: 14px; }
+.student-detail-modal .student-identity-text h3 { font-size: 22px; }
  .detail-summary { padding: 14px 14px 0; }
- .student-detail-modal .detail-content-grid { padding: 14px; gap: 14px; }
- .student-detail-modal .radar-detail-panel { padding: 14px; }
- .student-detail-modal .student-score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.student-detail-modal .detail-content-grid { padding: 14px; gap: 14px; }
+.student-detail-modal .radar-detail-panel { padding: 14px; }
+.student-detail-modal .student-score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 360px) { .student-detail-modal .student-score-grid { grid-template-columns: 1fr; } }
 
+.student-detail-modal .student-score-item { flex-direction: column; container-type: inline-size; gap: 12px; padding: 14px; }
+.student-detail-modal .score-item-text { min-height: 72px; font-size: 16px; font-weight: 600; line-height: 1.45; }
+.individual-skill-metrics { display: flex; flex-direction: column; gap: 12px; width: 100%; min-width: 0; margin-top: auto; text-align: start; }
+.skill-score-unit { font-size: 14px; font-weight: 500; color: #52647d; }
+.skill-card-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; margin: 0; }
+.skill-card-details > div { min-width: 0; }
+.skill-card-details dt { color: #52647d; font-size: 13px; line-height: 1.5; }
+.skill-card-details dd { margin: 3px 0 0; color: #17356e; font-size: 15px; font-weight: 600; line-height: 1.5; white-space: nowrap; }
+@container (max-width: 230px) {
+  .skill-card-details { grid-template-columns: 1fr; gap: 8px; }
+}
 </style>

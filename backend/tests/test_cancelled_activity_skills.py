@@ -28,6 +28,7 @@ def create_activity_with_skill(
     skill_key="volunteerism",
 ) -> Activity:
     activity = Activity(
+        activity_hours=3,
         activity_type="Volunteer",
         name=name,
         start_at=datetime(2026, 3, 10, 9, 0, 0),
@@ -117,6 +118,7 @@ def test_faculty_average_ignores_cancelled_activities(client, db_session):
 
 def create_staff_skill_activity(db_session, name, status, level, start_at, skill_key="innovation") -> Activity:
     activity = Activity(
+        activity_hours=3,
         activity_type="Workshop",
         name=name,
         start_at=start_at,

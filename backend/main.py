@@ -25,7 +25,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
-from skill_scoring import source_skill_profiles
+from skill_scoring import (source_skill_details, completed_activity_filter,
+                           population_skill_average, profile_summary, cohort_population_profiles)
 
 from activity_hours import effective_completed, earned_internal_hours, total_activity_hours, activity_hours_summary, activity_hours_summaries
 
@@ -81,7 +82,6 @@ from transcript_pdf import STYLES as TRANSCRIPT_STYLES, render_transcript_pdf
 from transcript_i18n import LANGUAGES as TRANSCRIPT_LANGUAGES
 from skill_scoring import (
     activity_source,
-    average_activity_skills,
     average_skill_levels,
     counted_activity_filter,
     counted_external_activity_filter,
@@ -89,7 +89,6 @@ from skill_scoring import (
     round_half_up,
     skill_levels_from_activities,
     major_activity_filter,
-    student_first_average,
 )
 from skill_definitions import (
     PARTICIPANT_SKILL_DEFINITIONS,
@@ -962,6 +961,9 @@ def get_admin_student_skills(
             ActivitySkill.skill_key,
             ActivitySkill.level,
             Activity.major,
+            Activity.activity_hours,
+            Activity.name,
+            Activity.status,
         )
         .join(ActivityMember, ActivityMember.student_id == Student.student_id)
         .join(Activity, Activity.id == ActivityMember.activity_id)
@@ -969,7 +971,7 @@ def get_admin_student_skills(
         .filter(
             ActivityMember.role == member_role,
             ActivitySkill.target_role == target_role,
-            counted_activity_filter(),
+            completed_activity_filter(now_value),
             func.extract("year", Activity.start_at) == selected_year,
         ),
         admin,
@@ -985,6 +987,9 @@ def get_admin_student_skills(
             ExternalActivity.start_date,
             ExternalActivitySkill.skill_key,
             ExternalActivitySkill.level,
+            ExternalActivity.activity_hours,
+            ExternalActivity.title,
+            ExternalActivity.status,
         )
         .join(ExternalActivity, ExternalActivity.student_id == Student.student_id)
         .join(ExternalActivitySkill, ExternalActivitySkill.external_activity_id == ExternalActivity.id)
@@ -1016,22 +1021,24 @@ def get_admin_student_skills(
                 "id": student_id,
                 "name": f"{first_name} {last_name}".strip(),
                 "major": major or "",
-                "skill_values": {key: [] for key in definitions},
                 # แยกตามขอบเขตกิจกรรม ให้หน้ารายละเอียดนักศึกษาสลับกราฟ สาขา / คณะ
                 # (ไม่นับกิจกรรมภายนอกและกิจกรรมของสาขาอื่น)
                 "source_activities": {},
-                "skill_activity_ids": {key: set() for key in definitions},
                 "activity_ids": set(),
             }
         evidence_id = f"{source}:{activity_id}"
         entry = grouped[student_id]
         scope = activity_source(row[8], major) if source == "internal" else "external"
-        activity = entry["source_activities"].setdefault(evidence_id, {"scope": scope, "skills": {}})
-        activity["skills"][skill_key] = float(level)
+        hours, title, status = row[9:12] if source == "internal" else row[8:11]
+        activity = entry["source_activities"].setdefault(evidence_id, {
+            "key": evidence_id, "id": activity_id, "scope": scope, "source": source,
+            "activity_hours": float(hours or 0), "title": title, "start_at": start_at,
+            "status": status, "skills": {},
+        })
+        if level is not None:
+            activity["skills"][skill_key] = float(level)
         if source == "internal":
             entry["activity_ids"].add(evidence_id)
-            entry["skill_activity_ids"][skill_key].add(evidence_id)
-            entry["skill_values"][skill_key].append(float(level))
 
 
     for row in internal_rows:
@@ -1046,16 +1053,21 @@ def get_admin_student_skills(
         now_value.date(),
     )
     students = []
-    hours_by_student = activity_hours_summaries(db, db.query(Student).filter(Student.student_id.in_(grouped)).all())
+    selected_semester_no = {"SEMESTER_1": 1, "SEMESTER_2": 2}.get(selected_semester)
+    hours_by_student = activity_hours_summaries(
+        db, db.query(Student).filter(Student.student_id.in_(grouped)).all(), selected_year, selected_semester_no
+    )
+    aggregate_source = "major" if admin.major else "faculty"
     major_average_cache = {}
     for entry in grouped.values():
-        skills = average_skill_levels(entry["skill_values"])
-        skill_activity_counts = {
-            skill_key: len(entry["skill_activity_ids"][skill_key])
-            for skill_key in definitions
-        }
-
-        profiles = source_skill_profiles(list(entry["source_activities"].values()), definitions)
+        details = source_skill_details(entry["source_activities"].values(), definitions)
+        for source, profile in details.items():
+            profile["source_activity_hours"] = hours_by_student[entry["id"]][source]
+        profiles = {source: {key: value["level"] for key, value in profile["skills"].items()}
+                    for source, profile in details.items()}
+        skills = profiles[aggregate_source]
+        skill_activity_counts = {key: detail["activity_count"]
+                                 for key, detail in details[aggregate_source]["skills"].items()}
         major = entry["major"]
         if major not in major_average_cache:
             major_average_cache[major] = scoped_skill_average_for_period(
@@ -1073,7 +1085,7 @@ def get_admin_student_skills(
             "periodLabel": period_label,
             "year": selected_year,
             "period": selected_semester,
-            "activityCount": len(entry["activity_ids"]),
+            "activityCount": sum(a["scope"] == aggregate_source for a in entry["source_activities"].values()),
             "skillActivityCounts": skill_activity_counts,
             "skills": skills,
             "majorSkills": profiles["major"],
@@ -1085,7 +1097,11 @@ def get_admin_student_skills(
                 source: sum(a["scope"] == source for a in entry["source_activities"].values())
                 for source in ("major", "faculty", "external")
             },
-            "skillsScope": "internal",
+            "skillsScope": aggregate_source,
+            "sourceProfiles": details,
+            "sourceSummaries": {source: profile_summary(profile) for source, profile in details.items()},
+            "activitiesBySource": {source: [a for a in entry["source_activities"].values()
+                                           if a["scope"] == source] for source in details},
         })
 
     students.sort(key=lambda item: item["id"])
@@ -1149,6 +1165,8 @@ def get_admin_student_skills(
             for key, label in definitions.items()
         ],
         "students": students,
+        "aggregateSource": aggregate_source,
+        "populationProfiles": cohort_population_profiles(students, definitions),
     }
 
 
@@ -4530,6 +4548,7 @@ def scoped_skill_average_for_period(
     semester: int | None,
     track: str,
     major: str | None,
+    include_counts: bool = False,
 ) -> dict:
     """
     ค่าเฉลี่ยทักษะแบบ student-first เหมือน faculty_skill_average_for_period
@@ -4548,6 +4567,8 @@ def scoped_skill_average_for_period(
             Activity.start_at,
             ActivitySkill.skill_key,
             ActivitySkill.level,
+            Activity.id,
+            Activity.activity_hours,
         )
         .join(
             ActivityMember,
@@ -4564,7 +4585,7 @@ def scoped_skill_average_for_period(
         .filter(
             ActivityMember.role == member_role,
             ActivitySkill.target_role == target_role,
-            counted_activity_filter(),
+            completed_activity_filter(),
             func.extract("year", Activity.start_at) == year,
         )
     )
@@ -4577,22 +4598,22 @@ def scoped_skill_average_for_period(
             func.trim(Student.major) == major,
         )
 
-    grouped: dict[str, dict[str, list[float]]] = {}
-
-    for student_id, when, skill_key, level in query.all():
+    grouped = {}
+    source = "faculty" if major is None else "major"
+    for student_id, when, skill_key, level, activity_id, hours in query.all():
         if when is None or skill_key not in definitions:
             continue
-
-        sem_no = 1 if when.month <= 6 else 2
-        if semester is not None and sem_no != semester:
+        if semester is not None and (1 if when.month <= 6 else 2) != semester:
             continue
-
-        grouped.setdefault(
-            student_id,
-            {key: [] for key in definitions},
-        )[skill_key].append(float(level))
-
-    return student_first_average(grouped, definitions)
+        activity = grouped.setdefault(student_id, {}).setdefault(activity_id, {
+            "id": activity_id, "source": "internal", "scope": source,
+            "activity_hours": float(hours or 0), "skills": {},
+        })
+        if level is not None:
+            activity["skills"][skill_key] = float(level)
+    personal = [source_skill_details(activities.values(), definitions)[source] for activities in grouped.values()]
+    averages = population_skill_average(personal, definitions)
+    return averages if include_counts else {key: value["average"] for key, value in averages.items()}
 
 
 def student_skill_periods(
@@ -4645,7 +4666,7 @@ def student_skill_periods(
             ActivityMember.student_id == student.student_id,
             ActivityMember.role == member_role,
             ActivitySkill.target_role == target_role,
-            counted_activity_filter(),
+            completed_activity_filter(),
         )
         .all()
     )
@@ -4680,7 +4701,8 @@ def student_skill_periods(
                 "skills": {},
             }
 
-        activity_map[key]["skills"][skill_key] = int(level)
+        if level is not None:
+            activity_map[key]["skills"][skill_key] = float(level)
 
     # กิจกรรมภายนอก:
     # นับเฉพาะ approved + บทบาทตรงกับ track เท่านั้น
@@ -4739,7 +4761,8 @@ def student_skill_periods(
                 "skills": {},
             }
 
-        activity_map[key]["skills"][skill_key] = int(level)
+        if level is not None:
+            activity_map[key]["skills"][skill_key] = float(level)
 
     activities = sorted(
         activity_map.values(),
@@ -4751,10 +4774,13 @@ def student_skill_periods(
         reverse=True,
     )
 
-    years = sorted(
-        {item["start_at"].year for item in activities},
-        reverse=True,
-    )
+    internal_dates = db.query(Activity.start_at).join(
+        ActivityMember, ActivityMember.activity_id == Activity.id
+    ).filter(ActivityMember.student_id == student.student_id, completed_activity_filter()).all()
+    external_dates = db.query(ExternalActivity.start_date).filter(
+        ExternalActivity.student_id == student.student_id, counted_external_activity_filter()
+    ).all()
+    years = sorted({when.year for (when,) in internal_dates + external_dates if when is not None}, reverse=True)
 
     if not years:
         years = [today_bangkok().year]
@@ -4806,47 +4832,27 @@ def student_skill_periods(
 
             period_activities.append(activity)
 
-        skills = average_activity_skills(period_activities, definitions)
+        details = source_skill_details(period_activities, definitions)
+        skills = {key: value["level"] for key, value in details["faculty"]["skills"].items()}
 
-        faculty_average = faculty_skill_average_for_period(
-            db=db,
-            year=period["year"],
-            semester=period["semester"],
-            track=track,
-        )
-
-        # กราฟเปรียบเทียบแยก 2 แบบ (ไม่นับกิจกรรมภายนอกและกิจกรรมของสาขาอื่น)
-        # major:   กิจกรรมสาขาของฉัน   vs ค่าเฉลี่ยนักศึกษาสาขาเดียวกัน
-        # faculty: กิจกรรมของคณะของฉัน vs ค่าเฉลี่ยนักศึกษาทั้งคณะ
-        profiles = source_skill_profiles(period_activities, definitions)
-        comparisons = {
-            "major": {
-                "skills": profiles["major"],
-                "average": (
-                    scoped_skill_average_for_period(
-                        db,
-                        period["year"],
-                        period["semester"],
-                        track,
-                        student_major,
-                    )
-                    if student_major
-                    else {skill_key: None for skill_key in definitions}
-                ),
-            },
-            "faculty": {
-                "skills": profiles["faculty"],
-                "average": scoped_skill_average_for_period(
-                    db,
-                    period["year"],
-                    period["semester"],
-                    track,
-                    None,
-                ),
-            },
-            # External skills belong only to this student; no population comparison.
-            "external": {"skills": profiles["external"], "average": None},
-        }
+        period_hours = activity_hours_summary(db, student, period["year"], period["semester"])
+        comparisons = {}
+        profiles = {}
+        for source, profile in details.items():
+            profile["source_activity_hours"] = period_hours[source]
+            profiles[source] = {key: value["level"] for key, value in profile["skills"].items()}
+            comparison = {"skills": profiles[source], "profile": profile, "average": None}
+            if source != "external":
+                population = scoped_skill_average_for_period(
+                    db, period["year"], period["semester"], track,
+                    student_major if source == "major" else None, include_counts=True
+                ) if source != "major" or student_major else {
+                    key: {"average": None, "sample_count": 0} for key in definitions
+                }
+                comparison["average"] = {key: value["average"] for key, value in population.items()}
+                comparison["sampleCounts"] = {key: value["sample_count"] for key, value in population.items()}
+            comparisons[source] = comparison
+        faculty_average = comparisons["faculty"]["average"]
 
         periods[period["key"]] = {
             "key": period["key"],
@@ -4854,7 +4860,9 @@ def student_skill_periods(
             "year": period["year"],
             "semester": period["semester"],
             "skills": skills,
-            "skillsScope": "personal_all_sources",
+            "skillsScope": "faculty",
+            "sourceProfiles": details,
+            "hours": period_hours,
             "skillsBySource": profiles,
             "facultyAverage": faculty_average,
             "comparisons": comparisons,
@@ -5133,13 +5141,11 @@ def export_my_skills_pdf(
 
     if source not in {"all", "major", "faculty", "external"}:
         raise HTTPException(status_code=400, detail="Invalid skill source")
+    source = "faculty" if source == "all" else source
     selected = dict(selected)
-    if source != "all":
-        selected["skills"] = selected["comparisons"][source]["skills"]
-        selected["facultyAverage"] = selected["comparisons"][source]["average"] or {}
-        selected["activities"] = [a for a in selected["activities"] if a["scope"] == source]
-    else:
-        selected["facultyAverage"] = {}  # Personal all-sources has no population benchmark.
+    selected["skills"] = selected["comparisons"][source]["skills"]
+    selected["facultyAverage"] = selected["comparisons"][source]["average"] or {}
+    selected["activities"] = [a for a in selected["activities"] if a["scope"] == source]
 
     buffer = BytesIO()
     font_name = skill_pdf_font_name()

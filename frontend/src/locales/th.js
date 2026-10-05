@@ -1,4 +1,12 @@
 export default {
+  skillMetrics: {
+    exposureShort: 'ประสบการณ์ทักษะ',
+    level: 'ระดับทักษะ',
+    exposure: 'ชั่วโมงประสบการณ์ทักษะ',
+    activities: 'กิจกรรม',
+    noData: 'ไม่มีข้อมูลทักษะ',
+    externalNoComparison: 'กิจกรรมภายนอกไม่มีการเปรียบเทียบค่าเฉลี่ย'
+  },
   skillSources: {
     major: "กิจกรรมสาขา",
     faculty: "กิจกรรมคณะ",

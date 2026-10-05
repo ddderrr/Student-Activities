@@ -230,14 +230,17 @@
   </table>
 
   <h2>{{ tx.skills_heading_out_of_5 }}</h2>
+  {% for section in skill_sections %}
+  <p class="note">{{ section.label }}</p>
   <div class="skills">
-    {% for skill in skill_rows %}
+    {% for skill in section.skill_rows %}
     <div class="skill">
       <div class="score">{{ skill.score | score }}</div>
       <div class="label">{{ skill.label_local }}</div>
     </div>
     {% endfor %}
   </div>
+  {% endfor %}
   <p class="note">{{ tx.skills_note }}</p>
 
   <div class="signature">

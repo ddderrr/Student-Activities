@@ -38,6 +38,7 @@ def fixed_today(monkeypatch):
 
 def add_activity(db_session, name, start, status="active", role="participant", skills=None, major=None):
     activity = Activity(
+        activity_hours=3,
         activity_type="Workshop",
         name=name,
         start_at=start,
@@ -67,6 +68,7 @@ def add_activity(db_session, name, start, status="active", role="participant", s
 
 def add_external(db_session, title, start, status="approved", skills=None):
     activity = ExternalActivity(
+        activity_hours=3,
         student_id=STUDENT_ID,
         title=title,
         organization="Some Org",
@@ -225,9 +227,9 @@ def test_pdf_skill_scores_match_my_skills(client, student, captured, db_session)
             assert item["skills"] == my_skills[key]["skills"]
 
     # ค่าเฉลี่ยในเอกสาร = ค่าเฉลี่ยจากกิจกรรมทั้งหมดของ My Skills
-    assert data["skills"] == average(my_skills.values())
-    assert data["skills"]["academics"] == 3.0
-    assert data["skills"]["volunteerism"] == 4.0
+    assert data["skills"] == average(a for a in my_skills.values() if a["scope"] == "faculty")
+    assert data["skills"]["academics"] == 4.0
+    assert data["skills"]["volunteerism"] is None
     assert data["skills"]["health_promotion"] is None  # มีแค่ในกิจกรรมที่ยกเลิก/ไม่อนุมัติ
 
 
@@ -269,7 +271,7 @@ def test_rendered_transcript_pdf_has_no_cancelled_activities(client, student, st
 
 def test_my_skills_pdf_has_no_cancelled_activities(client, student):
     response = client.get(
-        "/api/student/me/skills/export?period=year-2025&include_chart=false",
+        "/api/student/me/skills/export?period=year-2025&include_chart=false&source=major",
         headers=HEADERS,
     )
 

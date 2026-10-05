@@ -1,4 +1,12 @@
 export default {
+  skillMetrics: {
+    exposureShort: 'Skill Exposure',
+    level: 'Skill Level',
+    exposure: 'Exposure Hours',
+    activities: 'Activities',
+    noData: 'No skill data',
+    externalNoComparison: 'Population comparison is not available for external activities'
+  },
   skillSources: {
     major: "Major Activities",
     faculty: "Faculty Activities",
