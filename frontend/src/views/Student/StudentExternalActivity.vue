@@ -2,7 +2,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  CheckCircle2,
   ImagePlus,
   Info,
   LoaderCircle,
@@ -76,12 +75,9 @@ const fileInput = ref(null)
 const isDragging = ref(false)
 
 const formError = ref('')
-// ขั้นตอนส่ง: กดส่ง -> popup ยืนยัน -> ส่งจริง -> popup สำเร็จ
-// ทั้งสอง popup ปิดด้วยปุ่มในกรอบเท่านั้น (ยืนยันกด Esc = ยกเลิกได้)
+// ขั้นตอนส่ง: กดส่ง -> popup ยืนยัน (กด Esc = ยกเลิกได้) -> ส่งจริง -> ไปแท็บรายการที่ส่ง
 const showSubmitConfirm = ref(false)
 const submitConfirmButton = ref(null)
-const submitResult = ref(null)
-const submitResultPrimary = ref(null)
 const submitting = ref(false)
 
 /* =========================
@@ -438,21 +434,6 @@ function resetForm() {
   if (fileInput.value) fileInput.value.value = ''
 }
 
-async function addAnotherActivity() {
-  submitResult.value = null
-  resetForm()
-
-  // มาจากลิงก์แก้ไข: ล้าง ?edit ออก ไม่งั้น refresh แล้วจะพยายามโหลดรายการเดิม
-  if (route.query.edit) await router.replace({ query: {} })
-
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-
-function viewSubmissions() {
-  submitResult.value = null
-  router.push({ path: '/student/activities', query: { tab: 'submissions' } })
-}
-
 async function submitActivity() {
   if (submitting.value) return
 
@@ -521,12 +502,10 @@ async function confirmSubmit() {
       throw new Error(errorDetail(data, t.value.studentExternalActivity.submitFailedFallback))
     }
 
-    const resubmit = Boolean(editingId.value)
     showSubmitConfirm.value = false
     resetForm()
-    submitResult.value = { resubmit, title: data.title }
-    await nextTick()
-    submitResultPrimary.value?.focus()
+    // ไม่มี popup สำเร็จ: พาไปแท็บรายการที่ส่ง เห็นคำขอที่เพิ่งส่งเป็น "รอดำเนินการ" ทันที
+    await router.push({ path: '/student/activities', query: { tab: 'submissions' } })
   } catch (error) {
     // ส่งไม่สำเร็จ: ปิด popup ยืนยัน กลับไปที่ฟอร์ม (ข้อมูลยังอยู่) แสดง error ข้างปุ่มส่ง
     showSubmitConfirm.value = false
@@ -902,52 +881,6 @@ async function confirmSubmit() {
                 ? (editingId ? t.studentExternalActivity.resubmittingButton : t.studentExternalActivity.submittingButton)
                 : t.studentExternalActivity.confirmSubmitButton
             }}
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ส่งสำเร็จ: ไม่มี @click.self คลิกนอกกรอบจึงไม่ปิด ต้องเลือกปุ่มใดปุ่มหนึ่ง -->
-    <div v-if="submitResult" class="modal-backdrop" data-testid="submit-result">
-      <div
-        class="submit-result-modal"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="submit-result-title"
-        aria-describedby="submit-result-message"
-      >
-        <span class="submit-result-icon" aria-hidden="true">
-          <CheckCircle2 :size="40" />
-        </span>
-
-        <h2 id="submit-result-title">
-          {{
-            submitResult.resubmit
-              ? t.studentExternalActivity.resubmitResultTitle
-              : t.studentExternalActivity.submitResultTitle
-          }}
-        </h2>
-
-        <p id="submit-result-message">
-          {{
-            (submitResult.resubmit
-              ? t.studentExternalActivity.resubmitResultMessage
-              : t.studentExternalActivity.submitResultMessage
-            ).replace('{name}', submitResult.title)
-          }}
-        </p>
-
-        <div class="submit-result-actions">
-          <button type="button" class="modal-secondary-button" @click="addAnotherActivity">
-            {{ t.studentExternalActivity.addAnotherActivityButton }}
-          </button>
-          <button
-            ref="submitResultPrimary"
-            type="button"
-            class="modal-confirm-button"
-            @click="viewSubmissions"
-          >
-            {{ t.studentExternalActivity.viewSubmissionsButton }}
           </button>
         </div>
       </div>
