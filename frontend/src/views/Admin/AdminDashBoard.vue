@@ -5,6 +5,7 @@ import { useLanguage } from '../../composables/useLanguage'
 import { API_BASE } from '../../config/api'
 import { adminFetch } from '../../constants/currentAdmin'
 import BranchFilterSelect from '../../components/common/BranchFilterSelect.vue'
+import ActivityCalendar from '../../components/Admin/ActivityCalendar.vue'
 import { ALL_BRANCHES_VALUE } from '../../constants/branches'
 import {
   MONTH_LABELS,
@@ -719,6 +720,13 @@ const summaryCards = computed(() => [
       </div>
 
     </section>
+
+
+    <!-- =========================
+         Activity Calendar (filter สาขาแยกจากด้านบน)
+    ========================== -->
+
+    <ActivityCalendar />
 
 
     <!-- =========================

@@ -75,6 +75,62 @@ export default {
     closeSidebar: 'ปิดแถบเมนู'
   },
 
+  studentCalendar: {
+    title: 'ปฏิทินกิจกรรม',
+    description: 'กิจกรรมที่คณะและสาขาของคุณจัด ดูล่วงหน้าเพื่อเตรียมตัว กดที่กิจกรรมเพื่อดูรายละเอียด',
+    sourceLabel: 'จัดโดย',
+    locationLabel: 'สถานที่',
+    hoursLabel: 'ชั่วโมงกิจกรรม',
+    joinLabel: 'การเข้าร่วม',
+    joinedAsParticipant: 'เข้าร่วมแล้ว (ผู้เข้าร่วม)',
+    joinedAsOrganizer: 'เข้าร่วมแล้ว (ผู้จัด)',
+    notJoined: 'ยังไม่ได้เข้าร่วม',
+    sources: {
+      faculty: 'คณะ (กิจกรรมส่วนกลาง)',
+      major: 'สาขาของคุณ',
+      external: 'กิจกรรมภายนอก'
+    }
+  },
+
+  activityCalendar: {
+    title: 'ปฏิทินกิจกรรม',
+    description: 'กิจกรรมทั้งหมดทั้งที่ผ่านมาแล้วและที่กำลังจะมาถึง กดที่กิจกรรมเพื่อดูรายละเอียด',
+    previousMonth: 'เดือนก่อนหน้า',
+    nextMonth: 'เดือนถัดไป',
+    today: 'วันนี้',
+    legendUpcoming: 'กำลังจะมาถึง / กำลังดำเนินการ',
+    legendPast: 'ผ่านมาแล้ว',
+    legendCancelled: 'ยกเลิกแล้ว',
+    more: '+{count} เพิ่มเติม',
+    empty: 'ไม่มีกิจกรรมในเดือนนี้',
+    loadError: 'โหลดกิจกรรมไม่สำเร็จ',
+    close: 'ปิด',
+    dateLabel: 'วันที่',
+    organizerLabel: 'ผู้จัด',
+    participantsLabel: 'ผู้เข้าร่วม',
+    participantsCount: '{count} คน',
+    branchLabel: 'สาขา',
+    facultyWide: 'กิจกรรมส่วนกลางของคณะ',
+    viewDetails: 'ดูรายละเอียดกิจกรรม →',
+    statusUpcoming: 'กำลังจะมาถึง',
+    statusOngoing: 'กำลังดำเนินการ',
+    statusPast: 'ผ่านมาแล้ว',
+    statusCancelled: 'ยกเลิกแล้ว',
+    typeLabel: 'ประเภท',
+    scopeLabel: 'แสดงกิจกรรม',
+    scopeAll: 'ทุกกิจกรรม',
+    scopeMine: 'เฉพาะสาขา{major}',
+    types: {
+      academic: 'กิจกรรมวิชาการ',
+      seminar: 'สัมมนา',
+      training: 'อบรม / Workshop',
+      volunteer: 'จิตอาสา',
+      skill: 'กิจกรรมพัฒนาทักษะ',
+      recreation: 'กิจกรรมนันทนาการ',
+      other: 'อื่นๆ'
+    }
+  },
+
   adminDashboard: {
   title: 'แดชบอร์ด',
   subtitle: 'ภาพรวมกิจกรรมของคณะและการเข้าร่วมของนักศึกษา',
@@ -437,6 +493,14 @@ export default {
     facultyActivitiesTab: 'กิจกรรมคณะ',
     externalActivitiesTab: 'กิจกรรมภายนอก',
     mySubmissionsTab: 'รายการที่ส่ง',
+    majorActivitiesTab: 'กิจกรรมของสาขา',
+    majorActivityLabel: 'กิจกรรมของสาขา',
+    joinedBadge: 'เข้าร่วมแล้ว',
+    notJoinedLabel: 'ยังไม่ได้เข้าร่วม',
+    notJoinedTitle: 'คุณยังไม่ได้เข้าร่วมกิจกรรมนี้',
+    notJoinedText: 'กิจกรรมนี้จัดโดยสาขาของคุณ มีผู้เข้าร่วมแล้ว {count} คน ติดต่อผู้จัดกิจกรรมหากต้องการเข้าร่วม',
+    noMajorActivitiesLabel: 'สาขาของคุณยังไม่มีกิจกรรม',
+    noMajorLabel: 'โปรไฟล์ของคุณยังไม่มีสาขา จึงยังแสดงกิจกรรมของสาขาไม่ได้',
     filterByDateLabel: 'กรองตามวันที่',
     clearLabel: 'ล้างค่า',
     loadingLabel: 'กำลังโหลดกิจกรรม...',

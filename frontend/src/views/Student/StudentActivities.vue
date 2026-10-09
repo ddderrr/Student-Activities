@@ -1,4 +1,5 @@
 <script setup>
+import StudentActivityCalendar from '../../components/Student/StudentActivityCalendar.vue'
 
 import {
   ref,
@@ -121,6 +122,9 @@ const error = ref(null)
 
 const hours = ref({})
 const activities = ref([])
+// แท็บ "กิจกรรมของสาขา": กิจกรรมทั้งหมดที่สาขาของนักศึกษาจัด (เข้าร่วมหรือไม่ก็ได้)
+const majorActivities = ref([])
+const studentMajor = ref('')
 
 
 /* =====================================================
@@ -187,6 +191,40 @@ const toActivityView = (item, student) => {
   }
 
 }
+
+// GET /api/student/me/major-activities
+const toMajorActivityView = (item, student) => ({
+  key: `major_activity-${item.id}`,
+  id: item.id,
+  source: 'major_activity',
+  tab: 'major_activities',
+  joined: item.joined,
+  participants: item.participants ?? 0,
+  sourceLabel: t.value.studentActivities.majorActivityLabel,
+  title: item.title,
+  description: item.description || '',
+  activityHours: item.activity_hours ?? 0,
+  studentName: student ? `${student.first_name} ${student.last_name}` : '',
+  studentId: student?.student_id || '',
+  status: item.status,
+  statusLabel: STATUS_LABELS.value[item.status] || item.status,
+  date: String(item.start_at).slice(0, 10),
+  endDate: String(item.end_at).slice(0, 10),
+  category: item.activity_type,
+  organizer: item.organizer,
+  location: item.location,
+  role: !item.joined
+    ? t.value.studentActivities.notJoinedLabel
+    : item.role === 'organizer'
+      ? t.value.studentActivities.roleOrganizer
+      : t.value.studentActivities.roleParticipant,
+  skills: Object.entries(item.skills || {}).map(([key, level]) => ({
+    key,
+    label: SKILL_LABELS[key] || key,
+    level
+  })),
+  evidenceFiles: []
+})
 
 const SUBMISSION_STATUS_LABELS = computed(() => ({
   pending: t.value.studentActivities.statusPending,
@@ -266,6 +304,7 @@ const SOURCE_TABS = computed(() => [
   { value: 'all', label: t.value.studentActivities.allTab },
   { value: 'activity', label: t.value.studentActivities.facultyActivitiesTab },
   { value: 'external_activity', label: t.value.studentActivities.externalActivitiesTab },
+  { value: 'major_activities', label: t.value.studentActivities.majorActivitiesTab },
   { value: 'submissions', label: t.value.studentActivities.mySubmissionsTab }
 ])
 
@@ -306,6 +345,7 @@ const sourceCounts = computed(() => {
     all: activities.value.length,
     activity: 0,
     external_activity: 0,
+    major_activities: majorActivities.value.length,
     submissions: submissions.value.length
   }
 
@@ -337,7 +377,9 @@ const filteredActivities = computed(() => {
           submissionStatus.value === 'all' ||
           item.status === submissionStatus.value
       )
-      : activities.value
+      : sourceFilter.value === 'major_activities'
+        ? majorActivities.value
+        : activities.value
 
 
   return baseList.filter(
@@ -372,6 +414,7 @@ const filteredActivities = computed(() => {
       const matchSource =
         sourceFilter.value === 'all' ||
         sourceFilter.value === 'submissions' ||
+        sourceFilter.value === 'major_activities' ||
         activity.tab === sourceFilter.value
 
 
@@ -625,6 +668,14 @@ const fetchActivities = async () => {
 
   try {
 
+    // กิจกรรมของสาขาโหลดแยก: โหลดไม่สำเร็จแค่แท็บนั้นว่าง ไม่ทำให้ทั้งหน้า error
+    const majorRequest = fetch(
+      `${API_BASE}/api/student/me/major-activities`,
+      { headers: studentHeaders() }
+    )
+      .then(majorResponse => (majorResponse.ok ? majorResponse.json() : null))
+      .catch(() => null)
+
     const [response, submissionsResponse] =
       await Promise.all([
         fetch(
@@ -668,6 +719,12 @@ const fetchActivities = async () => {
       submissionsData.external_activities.map(
         toSubmissionView
       )
+
+    const majorData = await majorRequest
+    studentMajor.value = majorData?.major || ''
+    majorActivities.value = (majorData?.activities || []).map(
+      item => toMajorActivityView(item, data.student)
+    )
 
     dataLoaded.value = true
 
@@ -979,6 +1036,13 @@ onBeforeUnmount(() => {
                 {{ activity.sourceLabel }}
               </span>
 
+              <span
+                v-if="activity.source === 'major_activity' && activity.joined"
+                class="source-badge joined"
+              >
+                {{ t.studentActivities.joinedBadge }}
+              </span>
+
             </div>
 
             <p>
@@ -1096,7 +1160,9 @@ onBeforeUnmount(() => {
 
           <p>
             {{
-              activities.length
+              sourceFilter === 'major_activities'
+                ? (studentMajor ? t.studentActivities.noMajorActivitiesLabel : t.studentActivities.noMajorLabel)
+                : activities.length
                 ? t.studentActivities.tryAnotherLabel
                 : sourceFilter === 'submissions'
                   ? t.studentActivities.noSubmissionsYetLabel
@@ -1130,6 +1196,9 @@ onBeforeUnmount(() => {
         </button>
 
       </div>
+
+      <!-- ปฏิทินกิจกรรมที่คณะและสาขาจัด (โหลดข้อมูลเอง ไม่ขึ้นกับแท็บ / คำค้น) -->
+      <StudentActivityCalendar />
 
     </main>
 
@@ -1474,7 +1543,23 @@ onBeforeUnmount(() => {
 
 
               <div
-                v-else-if="selectedActivity.source !== 'activity'"
+                v-else-if="selectedActivity.source === 'major_activity' && !selectedActivity.joined"
+                class="
+                  status-message
+                  pending-message
+                "
+                data-testid="not-joined-message"
+              >
+                <strong>
+                  {{ t.studentActivities.notJoinedTitle }}
+                </strong>
+                <p>
+                  {{ t.studentActivities.notJoinedText.replace('{count}', selectedActivity.participants) }}
+                </p>
+              </div>
+
+              <div
+                v-else-if="!['activity', 'major_activity'].includes(selectedActivity.source)"
                 class="
                   status-message
                   approved-message
@@ -2056,6 +2141,20 @@ onBeforeUnmount(() => {
   color: #1e45c8;
 
   background: #eaf0ff;
+}
+
+
+.source-badge.major_activities {
+  color: #0f766e;
+
+  background: #e6f6f3;
+}
+
+
+.source-badge.joined {
+  color: #157a37;
+
+  background: #e3f6e8;
 }
 
 

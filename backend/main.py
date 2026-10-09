@@ -56,6 +56,7 @@ from admin_auth import (
 )
 from admin_scope import (
     can_access_student,
+    can_access_activity,
     ensure_can_access_activity,
     ensure_can_access_student,
     ensure_can_assign_major,
@@ -1504,6 +1505,8 @@ def serialize_activity(
         "activity_hours": float(activity.activity_hours),
         "earned_activity_hours": float(earned_internal_hours(activity)),
         "status": activity.status,
+        # สาขาเจ้าของกิจกรรม (None = กิจกรรมส่วนกลางของคณะ) ใช้ในปฏิทินกิจกรรมหน้า Dashboard
+        "major": activity.major,
         "created_at": activity.created_at,
 
         # field สำหรับหน้า Activities ปัจจุบัน
@@ -1587,6 +1590,62 @@ def list_activities(
             )
             for activity in activities
         ],
+    }
+
+
+CALENDAR_SCOPES = {"all", "mine"}
+
+
+@app.get("/api/admin/calendar/activities")
+def list_calendar_activities(
+    scope: str = "all",
+    major: str | None = None,
+    db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
+):
+    """
+    ปฏิทินกิจกรรมท้ายหน้า Dashboard (ข้อมูลเท่าที่ปฏิทินใช้ ไม่มีรายชื่อนักศึกษา)
+
+    แอดมินกลาง: major ว่าง = ทุกกิจกรรม, major=สาขา = เฉพาะกิจกรรมของสาขานั้น
+    แอดมินสาขา: scope=all (ค่าเริ่มต้น) = ทุกกิจกรรมในคณะ, scope=mine = เฉพาะสาขาตัวเอง
+    can_open = เปิดหน้ารายละเอียดกิจกรรมได้ไหม (แอดมินสาขาเปิดกิจกรรมของสาขาอื่นไม่ได้)
+    """
+    if scope not in CALENDAR_SCOPES:
+        raise HTTPException(status_code=400, detail="scope ต้องเป็น all หรือ mine")
+
+    query = db.query(Activity)
+    if admin.is_central:
+        selected = (major or "").strip()
+        if selected and selected != "ALL":
+            query = query.filter(major_activity_filter(selected))
+    elif scope == "mine":
+        query = query.filter(major_activity_filter(admin.major))
+
+    activities = query.order_by(Activity.start_at.asc(), Activity.id.asc()).all()
+    ids = [activity.id for activity in activities]
+    participant_counts = dict(
+        db.query(ActivityMember.activity_id, func.count())
+        .filter(ActivityMember.activity_id.in_(ids), ActivityMember.role == "participant")
+        .group_by(ActivityMember.activity_id)
+        .all()
+    ) if ids else {}
+
+    return {
+        "activities": [
+            {
+                "id": activity.id,
+                "name": activity.name,
+                "activity_type": activity.activity_type,
+                "start_at": activity.start_at,
+                "end_at": activity.end_at,
+                "organizer": activity.department or activity.responsible_person or "-",
+                "status": activity.status,
+                "major": activity.major,
+                "participants": participant_counts.get(activity.id, 0),
+                "can_open": can_access_activity(admin, activity),
+            }
+            for activity in activities
+        ]
     }
 
 
@@ -4403,6 +4462,105 @@ def mark_notification_read(
     db.commit()
 
     return serialize_notification(notification)
+
+
+def student_activity_listing(db: Session, student: Student, activities: list[Activity]) -> list[dict]:
+    """กิจกรรมของคณะ/สาขาที่นักศึกษาดูได้ พร้อมสถานะการเข้าร่วมของนักศึกษาคนนี้
+
+    joined/role = นักศึกษาคนนี้อยู่ในกิจกรรมหรือไม่ และในบทบาทอะไร
+    skills = ทักษะของบทบาทที่นักศึกษามี (ยังไม่เข้าร่วม = ทักษะผู้เข้าร่วม)
+    scope = faculty (กิจกรรมส่วนกลางของคณะ) / major (กิจกรรมของสาขาตัวเอง)
+    """
+    ids = [activity.id for activity in activities]
+    my_roles = dict(
+        db.query(ActivityMember.activity_id, ActivityMember.role)
+        .filter(ActivityMember.student_id == student.student_id, ActivityMember.activity_id.in_(ids))
+        .all()
+    ) if ids else {}
+    participant_counts = dict(
+        db.query(ActivityMember.activity_id, func.count())
+        .filter(ActivityMember.activity_id.in_(ids), ActivityMember.role == "participant")
+        .group_by(ActivityMember.activity_id)
+        .all()
+    ) if ids else {}
+
+    items = []
+    for activity in activities:
+        role = my_roles.get(activity.id)
+        target_role = "staff" if role == "organizer" else "participant"
+        items.append(
+            {
+                "source": "major_activity",
+                "scope": activity_source(activity.major, student.major),
+                "id": activity.id,
+                "title": activity.name,
+                "activity_type": activity.activity_type,
+                "organizer": activity.department or activity.responsible_person,
+                "start_at": activity.start_at,
+                "end_at": activity.end_at,
+                "location": activity.location,
+                "description": activity.description,
+                "activity_hours": float(activity.activity_hours),
+                "status": activity.status,
+                "joined": role is not None,
+                "role": role,
+                "participants": participant_counts.get(activity.id, 0),
+                "skills": {
+                    link.skill_key: link.level
+                    for link in activity.skill_levels
+                    if link.target_role == target_role
+                },
+            }
+        )
+    return items
+
+
+@app.get("/api/student/me/major-activities")
+def list_my_major_activities(
+    student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    """
+    แท็บ "กิจกรรมของสาขา" ในหน้า My Activities: กิจกรรมทั้งหมดที่สาขาของนักศึกษาจัด
+    (ทั้งที่เข้าร่วมแล้วและยังไม่ได้เข้าร่วม ผ่านมาแล้วและกำลังจะมาถึง)
+    นักศึกษาที่ยังไม่มีสาขา = รายการว่าง
+    """
+    major = (student.major or "").strip()
+    if not major:
+        return {"major": None, "activities": []}
+
+    activities = (
+        db.query(Activity)
+        .options(selectinload(Activity.skill_levels))
+        .filter(major_activity_filter(major))
+        .order_by(Activity.start_at.desc(), Activity.id.desc())
+        .all()
+    )
+    return {"major": major, "activities": student_activity_listing(db, student, activities)}
+
+
+@app.get("/api/student/me/calendar-activities")
+def list_my_calendar_activities(
+    student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    """
+    ปฏิทินกิจกรรมของนักศึกษา: กิจกรรมที่แอดมินคณะ (ส่วนกลาง) และแอดมินสาขาของนักศึกษาจัด
+    ไว้ดูล่วงหน้าว่าจะมีกิจกรรมอะไร (เข้าร่วมหรือยังก็ได้) ไม่รวมกิจกรรมของสาขาอื่น
+    """
+    major = (student.major or "").strip()
+    condition = faculty_activity_filter()
+    if major:
+        condition = or_(condition, major_activity_filter(major))
+
+    activities = (
+        db.query(Activity)
+        .options(selectinload(Activity.skill_levels))
+        .filter(condition)
+        .order_by(Activity.start_at.asc(), Activity.id.asc())
+        .all()
+    )
+    return {"major": major or None, "activities": student_activity_listing(db, student, activities)}
 
 
 @app.get("/api/student/me/activities")

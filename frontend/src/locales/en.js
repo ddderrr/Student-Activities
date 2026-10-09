@@ -74,6 +74,62 @@ export default {
     closeSidebar: 'Close sidebar'
   },
 
+  studentCalendar: {
+    title: 'Activity Calendar',
+    description: 'Activities organized by the faculty and your major. Plan ahead and click an activity for details.',
+    sourceLabel: 'Organized by',
+    locationLabel: 'Location',
+    hoursLabel: 'Activity hours',
+    joinLabel: 'Participation',
+    joinedAsParticipant: 'Joined (participant)',
+    joinedAsOrganizer: 'Joined (organizer)',
+    notJoined: 'Not joined yet',
+    sources: {
+      faculty: 'Faculty (faculty-wide)',
+      major: 'Your major',
+      external: 'External activity'
+    }
+  },
+
+  activityCalendar: {
+    title: 'Activity Calendar',
+    description: 'All activities, past and upcoming. Click an activity to see its details.',
+    previousMonth: 'Previous month',
+    nextMonth: 'Next month',
+    today: 'Today',
+    legendUpcoming: 'Upcoming / ongoing',
+    legendPast: 'Past',
+    legendCancelled: 'Cancelled',
+    more: '+{count} more',
+    empty: 'No activities this month',
+    loadError: 'Could not load activities',
+    close: 'Close',
+    dateLabel: 'Date',
+    organizerLabel: 'Organizer',
+    participantsLabel: 'Participants',
+    participantsCount: '{count} people',
+    branchLabel: 'Branch',
+    facultyWide: 'Faculty-wide activity',
+    viewDetails: 'View activity details →',
+    statusUpcoming: 'Upcoming',
+    statusOngoing: 'Ongoing',
+    statusPast: 'Past',
+    statusCancelled: 'Cancelled',
+    typeLabel: 'Type',
+    scopeLabel: 'Show activities',
+    scopeAll: 'All activities',
+    scopeMine: '{major} only',
+    types: {
+      academic: 'Academic',
+      seminar: 'Seminar',
+      training: 'Training / Workshop',
+      volunteer: 'Volunteer',
+      skill: 'Skill development',
+      recreation: 'Recreation',
+      other: 'Other'
+    }
+  },
+
   adminDashboard: {
   title: 'Dashboard',
   subtitle: 'Overview of faculty activities and student participation',
@@ -435,6 +491,14 @@ export default {
     facultyActivitiesTab: 'Faculty Activities',
     externalActivitiesTab: 'External Activities',
     mySubmissionsTab: 'My Submissions',
+    majorActivitiesTab: 'Major Activities',
+    majorActivityLabel: 'Major Activity',
+    joinedBadge: 'Joined',
+    notJoinedLabel: 'Not joined',
+    notJoinedTitle: 'You have not joined this activity',
+    notJoinedText: 'This activity is organized by your major. {count} participants have joined so far. Contact the organizer if you would like to take part.',
+    noMajorActivitiesLabel: 'Your major has no activities yet',
+    noMajorLabel: 'Your profile has no major yet, so major activities cannot be shown',
     filterByDateLabel: 'Filter By Date',
     clearLabel: 'Clear',
     loadingLabel: 'Loading activities...',
