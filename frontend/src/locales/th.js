@@ -668,6 +668,7 @@ export default {
     filterCategoryLabel: 'หมวดหมู่',
     filterClearDate: 'ล้างวันที่',
     filterDateFromLabel: 'ตั้งแต่วันที่',
+    filterDateToLabel: 'ถึงวันที่',
     filterDatePlaceholder: 'เลือกวันที่',
     filterSearchActivityLabel: 'ค้นหากิจกรรม',
     filterSearchActivityPlaceholder: 'ชื่อกิจกรรม...',

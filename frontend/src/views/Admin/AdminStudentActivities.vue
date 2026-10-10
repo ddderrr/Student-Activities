@@ -56,8 +56,19 @@ const quickSearch = ref('')
 const sortField = ref('latest')
 const sortDirection = ref('desc')
 const selectedCategory = ref('all')
+// ช่วงวันที่: แสดงกิจกรรมที่จัดอยู่ในช่วงนี้ทั้งหมด (ว่าง = ไม่จำกัดฝั่งนั้น)
 const selectedDate = ref('')
-const showFilterCalendar = ref(false)
+const selectedEndDate = ref('')
+// ช่องที่กำลังเปิดปฏิทินเลือกวัน: 'from' | 'to' | null
+const activeDatePicker = ref(null)
+const DATE_FIELDS = computed(() => [
+  { key: 'from', label: t.value.adminStudentActivities.filterDateFromLabel },
+  { key: 'to', label: t.value.adminStudentActivities.filterDateToLabel }
+])
+
+function dateFieldValue(field) {
+  return field === 'to' ? selectedEndDate.value : selectedDate.value
+}
 const filterCalendarCursor = ref(new Date())
 const filterWeekDays = computed(() => [
   t.value.adminStudentActivities.weekdayMon,
@@ -124,10 +135,13 @@ function formatFilterDate(value) {
   }).format(date)
 }
 
-function openFilterCalendar() {
-  showFilterCalendar.value = !showFilterCalendar.value
-  if (showFilterCalendar.value) {
-    filterCalendarCursor.value = parseFilterDate(selectedDate.value) || new Date()
+function openFilterCalendar(field) {
+  activeDatePicker.value = activeDatePicker.value === field ? null : field
+  if (activeDatePicker.value) {
+    filterCalendarCursor.value =
+      parseFilterDate(dateFieldValue(field)) ||
+      parseFilterDate(field === 'to' ? selectedDate.value : selectedEndDate.value) ||
+      new Date()
   }
 }
 
@@ -141,29 +155,42 @@ function changeFilterMonth(offset) {
 }
 
 function isFilterDateSelected(day) {
-  return day.key === selectedDate.value
+  return day.key === selectedDate.value || day.key === selectedEndDate.value
+}
+
+// วันระหว่างวันเริ่มกับวันสิ้นสุดที่เลือก (ไฮไลต์ช่วง)
+function isFilterDateInRange(day) {
+  return Boolean(selectedDate.value && selectedEndDate.value) &&
+    day.key > selectedDate.value && day.key < selectedEndDate.value
 }
 
 function isFilterToday(day) {
   return day.key === filterDateKey(new Date())
 }
 
-function selectFilterDate(day) {
-  selectedDate.value = day.key
-  showFilterCalendar.value = false
+function setFilterDate(field, key) {
+  if (field === 'to') selectedEndDate.value = key
+  else selectedDate.value = key
+
+  // เลือกวันสิ้นสุดก่อนวันเริ่ม: สลับให้เป็นช่วงที่ถูกต้อง
+  if (selectedDate.value && selectedEndDate.value && selectedEndDate.value < selectedDate.value) {
+    [selectedDate.value, selectedEndDate.value] = [selectedEndDate.value, selectedDate.value]
+  }
+
+  activeDatePicker.value = null
   applyFilters()
 }
 
-function selectFilterToday() {
-  selectedDate.value = filterDateKey(new Date())
-  showFilterCalendar.value = false
-  applyFilters()
+function selectFilterDate(field, day) {
+  setFilterDate(field, day.key)
 }
 
-function clearFilterDate() {
-  selectedDate.value = ''
-  showFilterCalendar.value = false
-  applyFilters()
+function selectFilterToday(field) {
+  setFilterDate(field, filterDateKey(new Date()))
+}
+
+function clearFilterDate(field) {
+  setFilterDate(field, '')
 }
 
 const currentPage = ref(1)
@@ -434,9 +461,12 @@ const filteredActivities = computed(() => {
       selectedCategory.value === 'all' ||
       activity.category === selectedCategory.value
 
+    // อยู่ในช่วงที่เลือกทั้งหมด: เริ่มไม่ก่อน "ตั้งแต่วันที่" และจบไม่หลัง "ถึงวันที่"
+    const activityStart = dateOnly(activity.start_at)
+    const activityEnd = dateOnly(activity.end_at) || activityStart
     const matchDate =
-      !selectedDate.value ||
-      dateOnly(activity.start_at) === selectedDate.value
+      (!selectedDate.value || activityStart >= selectedDate.value) &&
+      (!selectedEndDate.value || activityEnd <= selectedEndDate.value)
 
     return matchMain && matchQuick && matchCategory && matchDate
   })
@@ -1525,23 +1555,28 @@ const confirmImportButtonText = computed(() =>
 
       <BranchFilterSelect v-model="selectedBranch" />
 
-      <div class="filter-field filter-date-field">
-        <label>{{ t.adminStudentActivities.filterDateFromLabel }}</label>
+      <div
+        v-for="field in DATE_FIELDS"
+        :key="field.key"
+        class="filter-field filter-date-field"
+        :data-testid="`filter-date-${field.key}`"
+      >
+        <label>{{ field.label }}</label>
 
         <div class="filter-date-picker" @click.stop>
           <button
             type="button"
             class="filter-date-trigger"
-            :class="{ selected: selectedDate }"
-            @click="openFilterCalendar"
+            :class="{ selected: dateFieldValue(field.key) }"
+            @click="openFilterCalendar(field.key)"
           >
             <CalendarDays :size="16" />
-            <span :class="{ placeholder: !selectedDate }">
-              {{ formatFilterDate(selectedDate) }}
+            <span :class="{ placeholder: !dateFieldValue(field.key) }">
+              {{ formatFilterDate(dateFieldValue(field.key)) }}
             </span>
           </button>
 
-          <div v-if="showFilterCalendar" class="filter-calendar-popover">
+          <div v-if="activeDatePicker === field.key" class="filter-calendar-popover">
             <div class="filter-calendar-header">
               <button type="button" @click="changeFilterMonth(-1)">
                 <ChevronLeft :size="17" />
@@ -1568,19 +1603,20 @@ const confirmImportButtonText = computed(() =>
                 :class="{
                   outside: day.outside,
                   today: isFilterToday(day),
-                  selected: isFilterDateSelected(day)
+                  selected: isFilterDateSelected(day),
+                  'in-range': isFilterDateInRange(day)
                 }"
-                @click="selectFilterDate(day)"
+                @click="selectFilterDate(field.key, day)"
               >
                 {{ day.day }}
               </button>
             </div>
 
             <div class="filter-calendar-footer">
-              <button type="button" class="clear" @click="clearFilterDate">
+              <button type="button" class="clear" @click="clearFilterDate(field.key)">
                 {{ t.adminStudentActivities.filterClearDate }}
               </button>
-              <button type="button" @click="selectFilterToday">{{ t.adminStudentActivities.filterToday }}</button>
+              <button type="button" @click="selectFilterToday(field.key)">{{ t.adminStudentActivities.filterToday }}</button>
             </div>
           </div>
         </div>
@@ -2961,6 +2997,11 @@ const confirmImportButtonText = computed(() =>
 .filter-calendar-days button.today:not(.selected) {
   box-shadow: inset 0 0 0 1px #b9a3e6;
   color: #6b2fa8;
+}
+
+.filter-calendar-days button.in-range {
+  background: #efe7fb;
+  color: #5b21b6;
 }
 
 .filter-calendar-days button.selected {

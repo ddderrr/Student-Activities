@@ -666,6 +666,7 @@ export default {
     filterCategoryLabel: 'CATEGORY',
     filterClearDate: 'Clear date',
     filterDateFromLabel: 'DATE FROM',
+    filterDateToLabel: 'DATE TO',
     filterDatePlaceholder: 'Select date',
     filterSearchActivityLabel: 'SEARCH ACTIVITY',
     filterSearchActivityPlaceholder: 'Activity name...',
