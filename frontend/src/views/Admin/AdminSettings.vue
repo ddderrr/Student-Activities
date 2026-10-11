@@ -24,6 +24,8 @@ import {
 } from 'lucide-vue-next'
 
 import { useLanguage } from '../../composables/useLanguage'
+import { useUnsavedChanges } from '../../composables/useUnsavedChanges'
+import UnsavedChangesDialog from '../../components/common/UnsavedChangesDialog.vue'
 import { adminFetch, getAdminSession } from '../../constants/currentAdmin'
 import { BRANCHES } from '../../constants/branches'
 import { API_BASE } from '../../config/api'
@@ -352,6 +354,15 @@ const studentsPage = ref(1)
 const studentsLoading = ref(false)
 const studentsError = ref('')
 const studentSearch = ref('')
+// ตัวกรอง: ชั้นปี ('' = ทุกชั้นปี, 5 = ปี 5 ขึ้นไป) และสาขา (แอดมินกลางเท่านั้น)
+const YEAR_FILTER_OPTIONS = [1, 2, 3, 4, 5]
+const studentYear = ref('')
+const studentMajor = ref('')
+const hasStudentFilters = computed(() =>
+  Boolean(studentSearch.value.trim() || studentYear.value || studentMajor.value)
+)
+// นักศึกษาที่เลือก (ค้างไว้ข้ามหน้า/ตัวกรอง) ใช้ลบหลายคนพร้อมกัน
+const selectedStudentIds = ref(new Set())
 const notice = ref('')
 
 const studentsPages = computed(() => Math.max(1, Math.ceil(studentsTotal.value / studentsPageSize.value)))
@@ -382,6 +393,8 @@ async function loadStudents() {
 
   const params = new URLSearchParams({ page: studentsPage.value, page_size: studentsPageSize.value })
   if (studentSearch.value.trim()) params.set('search', studentSearch.value.trim())
+  if (studentYear.value) params.set('year', studentYear.value)
+  if (isCentral.value && studentMajor.value) params.set('major', studentMajor.value)
 
   try {
     const response = await adminFetch(`${API_BASE}/api/admin/students?${params}`)
@@ -413,6 +426,49 @@ watch(studentSearch, () => {
     loadStudents()
   }, 300)
 })
+
+watch([studentYear, studentMajor], () => {
+  studentsPage.value = 1
+  loadStudents()
+})
+
+function yearOptionLabel(level) {
+  return fill(
+    level >= 5 ? t.value.adminSettings.yearOptionPlus : t.value.adminSettings.yearOption,
+    { n: level }
+  )
+}
+
+/* ---- เลือกหลายคน ---- */
+const allVisibleSelected = computed(() =>
+  students.value.length > 0 && students.value.every((student) => selectedStudentIds.value.has(student.student_id))
+)
+const someVisibleSelected = computed(() =>
+  !allVisibleSelected.value && students.value.some((student) => selectedStudentIds.value.has(student.student_id))
+)
+
+function toggleStudentSelection(studentId) {
+  const next = new Set(selectedStudentIds.value)
+  if (next.has(studentId)) next.delete(studentId)
+  else next.add(studentId)
+  selectedStudentIds.value = next
+}
+
+// เลือก / ยกเลิกทุกคนที่แสดงอยู่ (ตามตัวกรองและหน้าที่เห็น)
+function toggleSelectAllVisible() {
+  const next = new Set(selectedStudentIds.value)
+  if (allVisibleSelected.value) students.value.forEach((student) => next.delete(student.student_id))
+  else students.value.forEach((student) => next.add(student.student_id))
+  selectedStudentIds.value = next
+}
+
+function clearStudentSelection() {
+  selectedStudentIds.value = new Set()
+}
+
+function openBulkDelete() {
+  openDelete({ mode: 'bulk', ids: [...selectedStudentIds.value] })
+}
 
 function toggleShowAllStudents() {
   showAllStudents.value = !showAllStudents.value
@@ -462,12 +518,18 @@ async function confirmDelete() {
 
   const url = {
     all: `${API_BASE}/api/admin/students?confirm=all`,
+    bulk: `${API_BASE}/api/admin/students/bulk`,
     one: () => `${API_BASE}/api/admin/students/${encodeURIComponent(target.student.student_id)}`,
     admin: () => `${API_BASE}/api/admin/admins/${target.admin.id}`
   }[target.mode]
 
   try {
-    const response = await adminFetch(typeof url === 'function' ? url() : url, { method: 'DELETE' })
+    const response = await adminFetch(
+      typeof url === 'function' ? url() : url,
+      target.mode === 'bulk'
+        ? { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ student_ids: target.ids }) }
+        : { method: 'DELETE' }
+    )
     const data = await response.json().catch(() => null)
     if (!response.ok) throw new Error(typeof data?.detail === 'string' ? data.detail : '')
 
@@ -482,8 +544,17 @@ async function confirmDelete() {
 
     notice.value = target.mode === 'all'
       ? fill(t.value.adminSettings.deletedAll, { count: data.students })
-      : fill(t.value.adminSettings.deletedOne, { name: fullName(target.student) })
+      : target.mode === 'bulk'
+        ? fill(t.value.adminSettings.deletedSelected, { count: data.students })
+        : fill(t.value.adminSettings.deletedOne, { name: fullName(target.student) })
     if (target.mode === 'all') studentsPage.value = 1
+    // คนที่ถูกลบไม่ควรค้างอยู่ในรายการที่เลือก
+    if (target.mode === 'all' || target.mode === 'bulk') clearStudentSelection()
+    else if (target.mode === 'one') {
+      const next = new Set(selectedStudentIds.value)
+      next.delete(target.student.student_id)
+      selectedStudentIds.value = next
+    }
     loadStudents()
   } catch (error) {
     deleteError.value = error.message || t.value.adminSettings.deleteFailed
@@ -522,6 +593,22 @@ const emptyAdminForm = () => ({ email: '', major: '' })
 
 const showAddAdmin = ref(false)
 const adminForm = ref(emptyAdminForm())
+
+/* ออกจากหน้าตอนยังมีงานค้าง (หัวเอกสารที่ยังไม่บันทึก / ไฟล์นำเข้าที่ยังไม่ยืนยัน / ฟอร์มเพิ่มแอดมิน): ถามก่อนละทิ้ง */
+const unsavedWork = computed(() => {
+  if (transcriptLoaded.value && transcriptDirty.value) return 'transcript'
+  if (step.value === 'preview' || (step.value === 'select' && selectedFile.value)) return 'import'
+  if (showAddAdmin.value && (adminForm.value.email.trim() || adminForm.value.major)) return 'admin'
+  return ''
+})
+
+const unsaved = useUnsavedChanges(() => Boolean(unsavedWork.value))
+
+const unsavedMessage = computed(() => ({
+  transcript: t.value.unsavedChanges.transcriptHeader,
+  import: t.value.unsavedChanges.importStudents,
+  admin: t.value.unsavedChanges.addAdmin
+}[unsavedWork.value] || ''))
 const adminFormError = ref('')
 const savingAdmin = ref(false)
 const adminEmailField = ref(null)
@@ -863,6 +950,28 @@ onBeforeUnmount(() => {
         />
       </label>
 
+      <div class="student-filters" data-testid="student-filters">
+        <label class="filter-field">
+          <span>{{ t.adminSettings.filterYearLabel }}</span>
+          <select v-model="studentYear" data-testid="filter-year">
+            <option value="">{{ t.adminSettings.allYears }}</option>
+            <option v-for="level in YEAR_FILTER_OPTIONS" :key="level" :value="String(level)">{{ yearOptionLabel(level) }}</option>
+          </select>
+        </label>
+
+        <label v-if="isCentral" class="filter-field">
+          <span>{{ t.adminSettings.filterMajorLabel }}</span>
+          <select v-model="studentMajor" data-testid="filter-major">
+            <option value="">{{ t.adminSettings.allMajors }}</option>
+            <option v-for="branch in BRANCHES" :key="branch" :value="branch">{{ branch }}</option>
+          </select>
+        </label>
+
+        <p class="filter-count" data-testid="filter-count">
+          {{ fill(t.adminSettings.showingCount, { count: studentsTotal, all: studentsAllTotal }) }}
+        </p>
+      </div>
+
       <div v-if="notice" class="alert success" role="status">
         <CheckCircle2 :size="16" />
         <span>{{ notice }}</span>
@@ -877,14 +986,26 @@ onBeforeUnmount(() => {
       <p v-else-if="studentsLoading && !students.length" class="empty-state">{{ t.adminSettings.studentsLoading }}</p>
 
       <p v-else-if="!students.length" class="empty-state">
-        {{ studentSearch.trim() ? t.adminSettings.studentsNoMatch : t.adminSettings.studentsEmpty }}
+        {{ hasStudentFilters ? t.adminSettings.studentsNoMatch : t.adminSettings.studentsEmpty }}
       </p>
 
       <div v-else class="table-wrap students-table" :class="{ loading: studentsLoading }">
         <table>
           <thead>
             <tr>
+              <th class="select-column">
+                <input
+                  type="checkbox"
+                  :checked="allVisibleSelected"
+                  :indeterminate.prop="someVisibleSelected"
+                  :aria-label="t.adminSettings.selectAllVisible"
+                  :title="t.adminSettings.selectAllVisible"
+                  data-testid="select-all-students"
+                  @change="toggleSelectAllVisible"
+                />
+              </th>
               <th>{{ t.adminSettings.columnStudentId }}</th>
+              <th>{{ t.adminSettings.columnYear }}</th>
               <th>{{ t.adminSettings.columnName }}</th>
               <th>{{ t.adminSettings.columnEmail }}</th>
               <th>{{ t.adminSettings.columnMajor }}</th>
@@ -894,8 +1015,22 @@ onBeforeUnmount(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="student in students" :key="student.student_id" :data-student="student.student_id">
+            <tr
+              v-for="student in students"
+              :key="student.student_id"
+              :data-student="student.student_id"
+              :class="{ selected: selectedStudentIds.has(student.student_id) }"
+            >
+              <td class="select-column">
+                <input
+                  type="checkbox"
+                  :checked="selectedStudentIds.has(student.student_id)"
+                  :aria-label="fill(t.adminSettings.selectStudentAria, { name: fullName(student) || student.student_id })"
+                  @change="toggleStudentSelection(student.student_id)"
+                />
+              </td>
               <td class="mono">{{ student.student_id }}</td>
+              <td class="muted">{{ student.year_level ? yearOptionLabel(Math.min(student.year_level, 5)) : '—' }}</td>
               <td>{{ fullName(student) || '—' }}</td>
               <td>{{ student.email || '—' }}</td>
               <td>
@@ -959,6 +1094,18 @@ onBeforeUnmount(() => {
           @click="goToStudentsPage(studentsPage + 1)"
         >
           <ChevronRight :size="16" />
+        </button>
+      </div>
+
+      <!-- แถบลบหลายคน: ลอยด้านล่างเมื่อมีนักศึกษาที่เลือก -->
+      <div v-if="selectedStudentIds.size" class="bulk-action-bar" role="region" :aria-label="t.adminSettings.bulkActionsLabel" data-testid="bulk-action-bar">
+        <strong>{{ fill(t.adminSettings.selectedCount, { count: selectedStudentIds.size }) }}</strong>
+        <button type="button" class="secondary-button" :disabled="deleting" @click="clearStudentSelection">
+          {{ t.adminSettings.clearSelection }}
+        </button>
+        <button type="button" class="danger-button" :disabled="deleting" data-testid="delete-selected" @click="openBulkDelete">
+          <Trash2 :size="16" />
+          {{ t.adminSettings.deleteSelected }}
         </button>
       </div>
     </section>
@@ -1282,13 +1429,15 @@ onBeforeUnmount(() => {
         aria-labelledby="delete-modal-title"
         aria-describedby="delete-modal-message"
       >
-        <span class="modal-icon" aria-hidden="true"><Trash2 :size="26" /></span>
+        <span class="modal-icon" aria-hidden="true"><TriangleAlert :size="28" /></span>
 
         <h3 id="delete-modal-title">
           {{
             deleteTarget.mode === 'all'
               ? t.adminSettings.deleteAllTitle
-              : deleteTarget.mode === 'admin' ? t.adminSettings.deleteAdminTitle : t.adminSettings.deleteOneTitle
+              : deleteTarget.mode === 'bulk'
+                ? t.adminSettings.bulkDeleteTitle
+                : deleteTarget.mode === 'admin' ? t.adminSettings.deleteAdminTitle : t.adminSettings.deleteOneTitle
           }}
         </h3>
 
@@ -1296,6 +1445,11 @@ onBeforeUnmount(() => {
           <template v-if="deleteTarget.mode === 'admin'">
             <p>{{ fill(t.adminSettings.deleteAdminMessage, { name: deleteTarget.admin.name || deleteTarget.admin.email, email: deleteTarget.admin.email }) }}</p>
             <p class="modal-warning">{{ t.adminSettings.deleteAdminWarning }}</p>
+          </template>
+
+          <template v-else-if="deleteTarget.mode === 'bulk'">
+            <p>{{ fill(t.adminSettings.bulkDeleteMessage, { count: deleteTarget.ids.length }) }}</p>
+            <p class="modal-warning">{{ t.adminSettings.bulkDeleteRelated }}</p>
           </template>
 
           <template v-else-if="deleteTarget.mode === 'one'">
@@ -1325,7 +1479,8 @@ onBeforeUnmount(() => {
             </label>
           </template>
 
-          <p class="cannot-undo">{{ t.adminSettings.cannotUndo }}</p>
+          <!-- ข้อความลบนักศึกษาบอกว่าย้อนกลับไม่ได้อยู่แล้ว -->
+          <p v-if="deleteTarget.mode === 'admin'" class="cannot-undo">{{ t.adminSettings.cannotUndo }}</p>
         </div>
 
         <div v-if="deleteError" class="alert error" role="alert">
@@ -1354,12 +1509,19 @@ onBeforeUnmount(() => {
             {{
               deleting
                 ? t.adminSettings.deleting
-                : deleteTarget.mode === 'all' ? t.adminSettings.deleteAllButton : t.adminSettings.deleteButton
+                : t.adminSettings.confirmDeleteButton
             }}
           </button>
         </div>
       </div>
     </div>
+
+    <UnsavedChangesDialog
+      :open="unsaved.open.value"
+      :message="unsavedMessage"
+      @stay="unsaved.stay"
+      @leave="unsaved.leave"
+    />
   </div>
 </template>
 
@@ -1860,6 +2022,84 @@ tr.row-invalid .status-reason {
 ========================= */
 .students-card {
   margin-top: 24px;
+}
+
+.student-filters {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 170px;
+}
+
+.filter-field span {
+  color: #5b6b82;
+  font-size: var(--fs-caption);
+  font-weight: 700;
+}
+
+.filter-field select {
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid #dce5ef;
+  border-radius: 10px;
+  background: #fff;
+  color: #1c293d;
+  font: inherit;
+  font-size: var(--fs-small);
+}
+
+.filter-count {
+  margin: 0 0 9px auto;
+  color: #5b6b82;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.select-column {
+  width: 42px;
+  text-align: center;
+}
+
+.select-column input {
+  width: 17px;
+  height: 17px;
+  accent-color: #2f5fdb;
+  cursor: pointer;
+}
+
+.students-table tr.selected td {
+  background: #f3f7ff;
+}
+
+.bulk-action-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 900;
+  transform: translateX(-50%);
+  padding: 10px 12px 10px 20px;
+  border: 1px solid #e3e8f0;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(28, 41, 61, 0.22);
+}
+
+.bulk-action-bar strong {
+  margin-right: 6px;
+  color: #1c293d;
+  font-size: var(--fs-small);
+  white-space: nowrap;
 }
 
 .search-box {
@@ -2503,6 +2743,27 @@ tr.row-invalid .status-reason {
 
 .modal-actions button {
   min-height: 46px;
+}
+
+@media (max-width: 700px) {
+  .bulk-action-bar {
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    transform: none;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .filter-field {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+
+  .filter-count {
+    width: 100%;
+    margin: 0;
+  }
 }
 
 @media (max-width: 700px) {

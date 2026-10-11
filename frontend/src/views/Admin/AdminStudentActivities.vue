@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Eye,
   Upload,
+  Crown,
   CalendarDays,
   X,
   FileSpreadsheet,
@@ -32,6 +33,8 @@ import {
 } from 'lucide-vue-next'
 import SkillLevelEditor from '../../components/Admin/SkillLevelEditor.vue'
 import BranchFilterSelect from '../../components/common/BranchFilterSelect.vue'
+import UnsavedChangesDialog from '../../components/common/UnsavedChangesDialog.vue'
+import { useUnsavedChanges } from '../../composables/useUnsavedChanges'
 import { ALL_BRANCHES_VALUE } from '../../constants/branches'
 import {
   PARTICIPANT_SKILLS,
@@ -212,6 +215,99 @@ const roleOptions = computed(() => [
 
 // Import participants modal state
 const showImportModal = ref(false)
+// บทบาทเริ่มต้นของทุกแถว กำหนดจากปุ่มที่กด (นำเข้าผู้ร่วมกิจกรรม / ผู้จัดกิจกรรม)
+// แก้รายแถวได้ในตารางตรวจสอบก่อนยืนยัน และแก้ภายหลังได้ที่หน้ารายละเอียดกิจกรรม
+const importRole = ref('participant')
+
+// เพิ่มรายบุคคลในหน้าต่างนำเข้า: พิมพ์รหัส/ชื่อ -> รายชื่อที่ตรงขึ้นมาให้เลือก (ใช้ร่วมกับไฟล์ได้)
+const importManualStudents = ref([])
+const importQuery = ref('')
+const importSuggestions = ref([])
+const showImportSuggestions = ref(false)
+const importLookupStatus = ref('idle') // idle | loading | not_found | duplicate
+let importSearchTimer = null
+
+function resetImportManualSearch() {
+  clearTimeout(importSearchTimer)
+  importQuery.value = ''
+  importSuggestions.value = []
+  showImportSuggestions.value = false
+  importLookupStatus.value = 'idle'
+}
+
+function onImportQueryInput() {
+  importLookupStatus.value = 'idle'
+  clearTimeout(importSearchTimer)
+  const keyword = importQuery.value.trim()
+
+  if (!keyword) {
+    importSuggestions.value = []
+    showImportSuggestions.value = false
+    return
+  }
+
+  importSearchTimer = setTimeout(async () => {
+    try {
+      const response = await adminFetch(`${API_BASE}/api/admin/students/search?q=${encodeURIComponent(keyword)}`)
+      if (!response.ok) return
+      const data = await response.json()
+      // พิมพ์ต่อระหว่างรอ: ทิ้งผลของคำค้นเก่า
+      if (importQuery.value.trim() !== keyword) return
+      importSuggestions.value = data.students || []
+      showImportSuggestions.value = importSuggestions.value.length > 0
+    } catch {
+      // เงียบไว้: กด Enter ยังค้นด้วยรหัสตรง ๆ ได้
+    }
+  }, 250)
+}
+
+function addImportManualStudent(student) {
+  showImportSuggestions.value = false
+  importSuggestions.value = []
+
+  if (importManualStudents.value.some((item) => item.student_id === student.student_id)) {
+    importLookupStatus.value = 'duplicate'
+    return
+  }
+
+  importManualStudents.value.push({
+    student_id: student.student_id,
+    first_name: student.first_name || '',
+    last_name: student.last_name || '',
+    email: student.email || '',
+    faculty: student.faculty || '',
+    major: student.major || ''
+  })
+  importQuery.value = ''
+  importLookupStatus.value = 'idle'
+}
+
+// Enter: เลือกรายการแรกที่แนะนำ ถ้าไม่มี ค้นด้วยรหัสนักศึกษาตรง ๆ
+async function confirmImportManualQuery() {
+  const keyword = importQuery.value.trim()
+  if (!keyword) return
+
+  if (importSuggestions.value.length) {
+    addImportManualStudent(importSuggestions.value[0])
+    return
+  }
+
+  importLookupStatus.value = 'loading'
+  try {
+    const response = await adminFetch(`${API_BASE}/api/admin/students/lookup?student_id=${encodeURIComponent(keyword)}`)
+    if (!response.ok) {
+      importLookupStatus.value = 'not_found'
+      return
+    }
+    addImportManualStudent(await response.json())
+  } catch {
+    importLookupStatus.value = 'not_found'
+  }
+}
+
+function removeImportManualStudent(studentId) {
+  importManualStudents.value = importManualStudents.value.filter((item) => item.student_id !== studentId)
+}
 
 /* =========================
    Template สำหรับ import ผู้เข้าร่วม
@@ -722,10 +818,33 @@ function openEditActivity(activity) {
   }
 
   editSkillTarget.value = 'staff'
+  editActivitySnapshot = JSON.stringify(editActivityForm.value)
 
   selectedActivity.value = activity
   showEditActivityModal.value = true
 }
+
+/* ออกจากหน้าตอนยังมีงานค้างในหน้าต่าง (แก้ไขกิจกรรม / นำเข้ารายชื่อ / เพิ่มนักศึกษา): ถามก่อนละทิ้ง */
+let editActivitySnapshot = ''
+
+const unsavedWork = computed(() => {
+  if (showEditActivityModal.value && JSON.stringify(editActivityForm.value) !== editActivitySnapshot) return 'edit'
+  if (
+    showImportModal.value &&
+    !importSuccess.value &&
+    (selectedFiles.value.length || importManualStudents.value.length || importPreview.value)
+  ) return 'import'
+  if (showAddStudentModal.value && studentQuery.value.trim()) return 'add'
+  return ''
+})
+
+const unsaved = useUnsavedChanges(() => Boolean(unsavedWork.value))
+
+const unsavedMessage = computed(() => ({
+  edit: t.value.unsavedChanges.editActivity,
+  import: t.value.unsavedChanges.importParticipants,
+  add: t.value.unsavedChanges.addStudent
+}[unsavedWork.value] || ''))
 
 function closeEditActivityModal() {
   if (editActivityLoading.value) return
@@ -980,14 +1099,17 @@ async function addStudentManually() {
   }
 }
 
-function openImportParticipants(activity) {
+function openImportParticipants(activity, role) {
   openManageMenuId.value = null
   openActivityMenuId.value = null
-  importParticipants(activity)
+  importParticipants(activity, role)
 }
 
-function importParticipants(activity) {
+function importParticipants(activity, role = 'participant') {
+  importRole.value = role
   selectedActivity.value = activity
+  importManualStudents.value = []
+  resetImportManualSearch()
   selectedFiles.value = []
   isDraggingFile.value = false
   importPreview.value = null
@@ -1002,6 +1124,8 @@ function closeImportModal() {
 
   showImportModal.value = false
   selectedActivity.value = null
+  importManualStudents.value = []
+  resetImportManualSearch()
   selectedFiles.value = []
   isDraggingFile.value = false
   importPreview.value = null
@@ -1190,8 +1314,8 @@ function cleanStudentForConfirm(student) {
 async function previewParticipantsImport() {
   if (!selectedActivity.value) return
 
-  if (!selectedFiles.value.length) {
-    importError.value = t.value.adminStudentActivities.selectFileFirstError
+  if (!selectedFiles.value.length && !importManualStudents.value.length) {
+    importError.value = t.value.adminStudentActivities.selectFileOrStudentError
     return
   }
 
@@ -1236,7 +1360,8 @@ async function previewParticipantsImport() {
         return {
           ...student,
           ...editableValues,
-          role: String(student.role || 'participant').trim().toLowerCase(),
+          // บทบาทเริ่มต้นตามปุ่มที่กด (ไม่อ่านคอลัมน์ Role ในไฟล์) แก้รายแถวได้ในตารางตรวจสอบ
+          role: importRole.value,
           _requireEmail: requireEmail,
           _rowKey: `${fileIndex}-${index}`,
           _sourceFile: file.name,
@@ -1246,6 +1371,18 @@ async function previewParticipantsImport() {
 
       combinedPreview.students.push(...normalizedStudents)
     }
+
+    // แถวที่เพิ่มรายบุคคล (ข้อมูลจากระบบอยู่แล้ว ไม่บังคับอีเมล)
+    combinedPreview.students.push(
+      ...importManualStudents.value.map((student) => ({
+        ...student,
+        role: importRole.value,
+        _requireEmail: false,
+        _rowKey: `manual-${student.student_id}`,
+        _sourceFile: '',
+        _sourceRow: null
+      }))
+    )
 
     importPreview.value = combinedPreview
   } catch (error) {
@@ -1831,23 +1968,38 @@ const confirmImportButtonText = computed(() =>
 
                   <div
                     v-if="openManageMenuId === activity.id"
-                    class="manage-menu"
+                    class="manage-menu participants-menu"
                   >
-                    <button
-                      class="manage-menu-item"
-                      @click="openAddStudent(activity)"
-                    >
-                      <UserPlus :size="15" />
-                      {{ t.adminStudentActivities.addStudentAction }}
-                    </button>
-
-                    <button
-                      class="manage-menu-item"
-                      @click="openImportParticipants(activity)"
-                    >
-                      <Upload :size="15" />
-                      {{ t.adminStudentActivities.importFromFileMenuItem }}
-                    </button>
+                    <!-- เรียงจากบนลงล่าง สีต่างกันให้แยกง่าย: เพิ่มทีละคน / นำเข้าผู้ร่วม / นำเข้าผู้จัด -->
+                    <div class="import-role-buttons">
+                      <button
+                        type="button"
+                        class="import-role-button add-student"
+                        data-testid="add-student-button"
+                        @click="openAddStudent(activity)"
+                      >
+                        <UserPlus :size="16" />
+                        {{ t.adminStudentActivities.addStudentAction }}
+                      </button>
+                      <button
+                        type="button"
+                        class="import-role-button participant"
+                        data-testid="import-participants-button"
+                        @click="openImportParticipants(activity, 'participant')"
+                      >
+                        <Users :size="16" />
+                        {{ t.adminStudentActivities.importParticipantsButton }}
+                      </button>
+                      <button
+                        type="button"
+                        class="import-role-button organizer"
+                        data-testid="import-organizers-button"
+                        @click="openImportParticipants(activity, 'organizer')"
+                      >
+                        <Crown :size="16" />
+                        {{ t.adminStudentActivities.importOrganizersButton }}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </td>
@@ -2184,10 +2336,20 @@ const confirmImportButtonText = computed(() =>
               {{ importPreview ? t.adminStudentActivities.importPreviewEyebrow : t.adminStudentActivities.importFromFileEyebrow }}
             </p>
             <h2>
-              {{ importPreview ? t.adminStudentActivities.reviewParticipantsTitle : t.adminStudentActivities.importStudentListTitle }}
+              {{ importRole === 'organizer' ? t.adminStudentActivities.importOrganizersButton : t.adminStudentActivities.importParticipantsButton }}
             </h2>
             <p v-if="selectedActivity" class="selected-activity">
               {{ selectedActivity.name }}
+            </p>
+            <p class="import-role-chip" :class="importRole" data-testid="import-role-chip">
+              <Crown v-if="importRole === 'organizer'" :size="14" />
+              <Users v-else :size="14" />
+              {{
+                t.adminStudentActivities.importRoleNote.replace(
+                  '{role}',
+                  importRole === 'organizer' ? t.adminStudentActivities.organizerLabel : t.adminStudentActivities.participantLabel
+                )
+              }}
             </p>
           </div>
 
@@ -2214,8 +2376,74 @@ const confirmImportButtonText = computed(() =>
           </div>
         </div>
 
-        <!-- STEP 1: FILES -->
+        <!-- STEP 1: เพิ่มรายบุคคล และ/หรือ เลือกไฟล์ -->
         <template v-if="!importPreview">
+          <div class="import-manual-section" data-testid="import-manual-section">
+            <label class="import-manual-label" for="import-student-search">
+              {{ t.adminStudentActivities.importManualTitle }}
+            </label>
+
+            <div class="student-search-wrapper">
+              <input
+                id="import-student-search"
+                v-model="importQuery"
+                type="text"
+                autocomplete="off"
+                class="import-manual-input"
+                :placeholder="t.adminStudentActivities.studentSearchPlaceholder"
+                :disabled="importLoading || confirmLoading"
+                data-testid="import-student-search"
+                @input="onImportQueryInput"
+                @focus="showImportSuggestions = importSuggestions.length > 0"
+                @blur="showImportSuggestions = false"
+                @keydown.enter.prevent="confirmImportManualQuery"
+              />
+
+              <ul v-if="showImportSuggestions" class="student-suggestions" data-testid="import-student-suggestions">
+                <li
+                  v-for="student in importSuggestions"
+                  :key="student.student_id"
+                  @mousedown.prevent="addImportManualStudent(student)"
+                >
+                  <strong>{{ student.student_id }}</strong>
+                  <span>{{ student.first_name }} {{ student.last_name }}</span>
+                  <small>{{ student.major || t.adminStudentActivities.noMajorLabel }}</small>
+                </li>
+              </ul>
+            </div>
+
+            <p v-if="importLookupStatus === 'loading'" class="student-lookup-status">
+              {{ t.adminStudentActivities.studentLookupLoading }}
+            </p>
+            <p v-else-if="importLookupStatus === 'not_found'" class="student-lookup-status error">
+              {{ t.adminStudentActivities.studentIdNotFoundError }}
+            </p>
+            <p v-else-if="importLookupStatus === 'duplicate'" class="student-lookup-status error">
+              {{ t.adminStudentActivities.importManualDuplicate }}
+            </p>
+
+            <div v-if="importManualStudents.length" class="import-manual-list" data-testid="import-manual-list">
+              <span
+                v-for="student in importManualStudents"
+                :key="student.student_id"
+                class="import-manual-chip"
+              >
+                <strong>{{ student.student_id }}</strong>
+                {{ student.first_name }} {{ student.last_name }}
+                <button
+                  type="button"
+                  :title="t.adminStudentActivities.removeFileTooltip"
+                  :aria-label="t.adminStudentActivities.removeFileTooltip"
+                  @click="removeImportManualStudent(student.student_id)"
+                >
+                  <X :size="13" />
+                </button>
+              </span>
+            </div>
+          </div>
+
+          <p class="import-or-divider"><span>{{ t.adminStudentActivities.importOrFile }}</span></p>
+
           <div
             class="file-dropzone"
             :class="{ dragging: isDraggingFile, 'has-files': selectedFiles.length }"
@@ -2388,7 +2616,7 @@ const confirmImportButtonText = computed(() =>
                   >
                     {{ column.label }}
                   </th>
-                  <th>{{ t.adminStudentActivities.previewTableRole }}</th>
+                  <th>{{ t.adminStudentActivities.previewTableRoleHeader }}</th>
                   <th>{{ t.adminStudentActivities.previewTableStatus }}</th>
                 </tr>
               </thead>
@@ -2427,19 +2655,13 @@ const confirmImportButtonText = computed(() =>
                     <select
                       v-model="student.role"
                       class="preview-role-select"
-                      :class="{ invalid: importRowErrors[index]?.role }"
+                      :class="[student.role, { invalid: importRowErrors[index]?.role }]"
                       :disabled="confirmLoading"
+                      :aria-label="t.adminStudentActivities.previewTableRoleHeader"
                     >
                       <option value="participant">{{ t.adminStudentActivities.participantLabel }}</option>
                       <option value="organizer">{{ t.adminStudentActivities.organizerLabel }}</option>
                     </select>
-
-                    <small
-                      v-if="importRowErrors[index]?.role"
-                      class="preview-cell-error"
-                    >
-                      {{ importRowErrors[index].role }}
-                    </small>
                   </td>
 
                   <td>
@@ -2499,7 +2721,7 @@ const confirmImportButtonText = computed(() =>
             :disabled="
               importLoading ||
               confirmLoading ||
-              !selectedFiles.length
+              (!selectedFiles.length && !importManualStudents.length)
             "
             @click="previewParticipantsImport"
           >
@@ -2728,6 +2950,13 @@ const confirmImportButtonText = computed(() =>
         </div>
       </div>
     </div>
+
+    <UnsavedChangesDialog
+      :open="unsaved.open.value"
+      :message="unsavedMessage"
+      @stay="unsaved.stay"
+      @leave="unsaved.leave"
+    />
   </section>
 </template>
 
@@ -3480,6 +3709,202 @@ td {
   border-radius: 10px;
   background: #fff;
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+}
+
+.manage-menu.participants-menu {
+  width: 230px;
+}
+
+.import-role-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.import-role-button {
+  width: 100%;
+  /* .organizer (คอลัมน์ผู้จัดในตาราง) จำกัด max-width ไว้ ปุ่มต้องเต็มความกว้างเมนู */
+  max-width: none;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.import-role-button svg {
+  flex-shrink: 0;
+}
+
+.import-role-button.add-student {
+  border-color: #bfe5cc;
+  background: #ecfaf1;
+  color: #15803d;
+}
+
+.import-role-button.add-student:hover {
+  background: #dcf3e5;
+}
+
+.import-role-button.participant {
+  border-color: #c7d7fb;
+  background: #eef3ff;
+  color: #1d4ed8;
+}
+
+.import-role-button.participant:hover {
+  background: #dfe8ff;
+}
+
+.import-role-button.organizer {
+  border-color: #dccbf6;
+  background: #f5efff;
+  color: #6d28d9;
+}
+
+.import-role-button.organizer:hover {
+  background: #ebe0ff;
+}
+
+.import-manual-section {
+  margin-bottom: 4px;
+}
+
+.import-manual-label {
+  display: block;
+  margin-bottom: 7px;
+  color: #34445a;
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
+.import-manual-input {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid #dce5ef;
+  border-radius: 10px;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: var(--fs-small);
+}
+
+.import-manual-input:focus {
+  outline: none;
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.14);
+}
+
+.import-manual-list {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.import-manual-chip {
+  padding: 4px 6px 4px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f8fafc;
+  color: #34445a;
+  font-size: var(--fs-caption);
+}
+
+.import-manual-chip button {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.import-manual-chip button:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.import-or-divider {
+  margin: 14px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #94a3b8;
+  font-size: var(--fs-caption);
+  font-weight: 700;
+}
+
+.import-or-divider::before,
+.import-or-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e5eaf1;
+}
+
+.preview-role-select {
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid #dce5ef;
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.preview-role-select.participant {
+  color: #1d4ed8;
+}
+
+.preview-role-select.organizer {
+  color: #6d28d9;
+}
+
+.preview-role-select.invalid {
+  border-color: #f87171;
+}
+
+.import-role-chip {
+  width: fit-content;
+  max-width: 100%;
+  margin: 8px 0 0;
+  padding: 5px 12px;
+  border-radius: 999px;
+  display: flex;
+  white-space: normal;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-caption);
+  font-weight: 700;
+}
+
+.import-role-chip svg {
+  flex-shrink: 0;
+}
+
+.import-role-chip.participant {
+  background: #eef3ff;
+  color: #1d4ed8;
+}
+
+.import-role-chip.organizer {
+  background: #f5efff;
+  color: #6d28d9;
 }
 
 .manage-menu-item {
@@ -4283,15 +4708,8 @@ td {
 }
 
 .preview-cell-input.invalid,
-.preview-role-select.invalid {
-  border-color: #eeb4b4;
-}
 
 .preview-cell-input.invalid:focus,
-.preview-role-select.invalid:focus {
-  border-color: #d86a6a;
-  box-shadow: 0 0 0 3px rgba(216, 106, 106, 0.1);
-}
 
 .preview-cell-error {
   display: block;
@@ -4314,25 +4732,7 @@ td {
   background: #fffafa;
 }
 
-.preview-role-select {
-  min-width: 118px;
-  height: 32px;
-  padding: 0 28px 0 9px;
-  border: 1px solid #dce5ef;
-  border-radius: 8px;
-  outline: none;
-  background: #fff;
-  color: #40516a;
-  font: inherit;
-  font-size: var(--fs-small);
-  font-weight: 700;
-  cursor: pointer;
-}
 
-.preview-role-select:focus {
-  border-color: #8b7ee8;
-  box-shadow: 0 0 0 3px rgba(139, 126, 232, 0.08);
-}
 
 .preview-status {
   min-width: 54px;

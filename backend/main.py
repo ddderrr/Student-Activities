@@ -76,6 +76,7 @@ from import_limits import (
     read_import_upload,
 )
 import transcript_data
+from academic_calendar import academic_year_of
 import transcript_preview
 from notification_retention import prune_old_notifications
 import transcript_settings
@@ -2801,6 +2802,8 @@ def restrict_import_rows_to_admin_major(rows: list[dict], admin: AdminContext) -
 def serialize_settings_student(student: Student, activity_count: int, external_count: int) -> dict:
     return {
         "student_id": student.student_id,
+        # ชั้นปีจากรหัสนักศึกษา (None = รหัสไม่ตรงรูปแบบ มช. 9 หลัก)
+        "year_level": transcript_data.current_year_level(student.student_id),
         "first_name": student.first_name,
         "last_name": student.last_name,
         "email": student.email,
@@ -2812,9 +2815,25 @@ def serialize_settings_student(student: Student, activity_count: int, external_c
     }
 
 
+SETTINGS_MAX_YEAR_LEVEL = 5  # year=5 = ปี 5 ขึ้นไป
+
+
+def student_year_level_filter(level: int):
+    """ชั้นปีจากรหัสนักศึกษา: 2 หลักแรก = ปีที่เข้า (พ.ศ. 25xx) ชั้นปี 1 = ปีการศึกษาที่เข้า
+    (กติกาเดียวกับ transcript_data.current_year_level) level=5 = ปี 5 ขึ้นไป"""
+    entry_suffix = f"{academic_year_of(transcript_data.today()) - level + 1 - 2500:02d}"
+    prefix = func.substr(Student.student_id, 1, 2)
+    is_standard_id = func.length(Student.student_id) == 9
+    if level >= SETTINGS_MAX_YEAR_LEVEL:
+        return is_standard_id & (prefix <= entry_suffix)
+    return is_standard_id & (prefix == entry_suffix)
+
+
 @app.get("/api/admin/students")
 def list_students_for_settings(
     search: str = "",
+    major: str | None = None,
+    year: int | None = None,
     page: int = 1,
     page_size: int = 20,
     db: Session = Depends(get_db),
@@ -2824,6 +2843,14 @@ def list_students_for_settings(
     page_size = min(max(page_size, 1), 100)
     query = scope_student_query(db.query(Student), admin)
     keyword = search.strip()
+
+    # สาขา: แอดมินกลางเท่านั้น (แอดมินสาขาถูกจำกัดที่สาขาตัวเองอยู่แล้ว)
+    if admin.is_central and (major or "").strip():
+        query = query.filter(func.trim(Student.major) == major.strip())
+    if year is not None:
+        if not 1 <= year <= SETTINGS_MAX_YEAR_LEVEL:
+            raise HTTPException(status_code=400, detail=f"year ต้องอยู่ระหว่าง 1 ถึง {SETTINGS_MAX_YEAR_LEVEL}")
+        query = query.filter(student_year_level_filter(year))
 
     if keyword:
         pattern = f"%{keyword.lower()}%"
@@ -2919,6 +2946,28 @@ def delete_students_and_related(db: Session, students: list[Student]) -> dict:
     for folder in folders:
         shutil.rmtree(folder, ignore_errors=True)
 
+    return summary
+
+
+class BulkDeleteStudents(BaseModel):
+    student_ids: list[str] = Field(min_length=1, max_length=1000)
+
+
+# ต้องประกาศก่อน /api/admin/students/{student_id} ไม่งั้น "bulk" จะถูกจับเป็นรหัสนักศึกษา
+@app.delete("/api/admin/students/bulk")
+def delete_selected_students(
+    payload: BulkDeleteStudents,
+    db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
+):
+    """ลบนักศึกษาที่เลือก (หน้า Settings) แอดมินสาขาลบได้เฉพาะสาขาตัวเอง มีคนสาขาอื่นปน = 403 ไม่ลบเลย"""
+    ids = list(dict.fromkeys(student_id.strip() for student_id in payload.student_ids if student_id.strip()))
+    students = db.query(Student).filter(Student.student_id.in_(ids)).all() if ids else []
+    for student in students:
+        ensure_can_access_student(admin, student)
+
+    summary = delete_students_and_related(db, students)
+    summary["not_found"] = len(ids) - len(students)
     return summary
 
 

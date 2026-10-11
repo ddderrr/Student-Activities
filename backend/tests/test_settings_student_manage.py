@@ -178,3 +178,69 @@ def test_branch_admin_manages_only_own_major(client, db_session):
 
     db_session.expire_all()
     assert [s.student_id for s in db_session.query(Student)] == ["680510002"]
+
+
+def test_filter_students_by_major_and_year(client, db_session, monkeypatch):
+    import transcript_data
+    from datetime import date as _date
+
+    # ปีการศึกษา 2569: รหัส 69 = ปี 1, 68 = ปี 2, 67 = ปี 3, 66 = ปี 4, 65 และเก่ากว่า = ปี 5+
+    monkeypatch.setattr(transcript_data, "today", lambda: _date(2026, 10, 1))
+    make_student(db_session, "690510001", major="เคมี")
+    make_student(db_session, "680510002", major="เคมี")
+    make_student(db_session, "680510003", major="วิทยาการคอมพิวเตอร์")
+    make_student(db_session, "650510004", major="เคมี")
+    make_student(db_session, "640510005", major="เคมี")
+    make_student(db_session, "ABC", major="เคมี")
+
+    def ids(**params):
+        body = client.get("/api/admin/students", params=params).json()
+        return sorted(s["student_id"] for s in body["students"]), body["total"], body["all_total"]
+
+    assert ids(year=2) == (["680510002", "680510003"], 2, 6)
+    assert ids(year=2, major="เคมี") == (["680510002"], 1, 6)
+    assert ids(year=5) == (["640510005", "650510004"], 2, 6)
+    assert ids(major="วิทยาการคอมพิวเตอร์")[0] == ["680510003"]
+    year_levels = {s["student_id"]: s["year_level"] for s in client.get("/api/admin/students").json()["students"]}
+    assert (year_levels["690510001"], year_levels["ABC"]) == (1, None)
+    assert client.get("/api/admin/students", params={"year": 9}).status_code == 400
+
+
+def test_branch_admin_major_filter_is_ignored(client, db_session):
+    make_student(db_session, "680510001", major="เคมี")
+    make_student(db_session, "680510002", major="วิทยาการคอมพิวเตอร์")
+    body = client.get("/api/admin/students", params={"major": "วิทยาการคอมพิวเตอร์"},
+                      headers={"X-Admin-Email": CHEM_ADMIN_EMAIL}).json()
+    assert [s["student_id"] for s in body["students"]] == ["680510001"]
+
+
+def test_bulk_delete_selected_students(client, db_session):
+    for student_id in ["680510001", "680510002", "680510003"]:
+        make_student(db_session, student_id)
+    _, external_id, folder = add_related_data(db_session, "680510002")
+
+    response = client.request("DELETE", "/api/admin/students/bulk",
+                              json={"student_ids": ["680510001", "680510002", "680510002", "999999999"]})
+
+    assert response.status_code == 200
+    assert (response.json()["students"], response.json()["not_found"]) == (2, 1)
+    db_session.expire_all()
+    assert [s.student_id for s in db_session.query(Student)] == ["680510003"]
+    assert db_session.get(ExternalActivity, external_id) is None
+    assert not folder.exists()
+
+
+def test_bulk_delete_branch_admin_only_own_major(client, db_session):
+    make_student(db_session, "680510001", major="เคมี")
+    make_student(db_session, "680510002", major="วิทยาการคอมพิวเตอร์")
+    branch = {"X-Admin-Email": CHEM_ADMIN_EMAIL}
+
+    mixed = client.request("DELETE", "/api/admin/students/bulk", headers=branch,
+                           json={"student_ids": ["680510001", "680510002"]})
+    assert mixed.status_code == 403
+    db_session.expire_all()
+    assert db_session.query(Student).count() == 2  # มีคนสาขาอื่นปน = ไม่ลบเลย
+
+    own = client.request("DELETE", "/api/admin/students/bulk", headers=branch, json={"student_ids": ["680510001"]})
+    assert own.json()["students"] == 1
+    assert client.request("DELETE", "/api/admin/students/bulk", json={"student_ids": []}).status_code == 422

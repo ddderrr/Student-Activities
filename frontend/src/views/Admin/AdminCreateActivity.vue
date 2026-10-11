@@ -20,6 +20,8 @@ import {
   UserRound
 } from 'lucide-vue-next'
 import SkillLevelEditor from '../../components/Admin/SkillLevelEditor.vue'
+import UnsavedChangesDialog from '../../components/common/UnsavedChangesDialog.vue'
+import { useUnsavedChanges } from '../../composables/useUnsavedChanges'
 import {
   PARTICIPANT_SKILLS,
   STAFF_SKILLS,
@@ -75,6 +77,11 @@ const resolvedActivityType = computed(() => {
 
 const staffSkills = ref(defaultSkillLevels(STAFF_SKILLS))
 const participantSkills = ref(defaultSkillLevels(PARTICIPANT_SKILLS))
+
+// ออกจากหน้าระหว่างกรอก: ถามก่อนละทิ้ง (เทียบกับค่าตอนเปิดหน้า)
+const formSnapshot = () => JSON.stringify([form.value, customActivityType.value, staffSkills.value, participantSkills.value])
+const initialFormSnapshot = formSnapshot()
+const unsaved = useUnsavedChanges(() => formSnapshot() !== initialFormSnapshot)
 
 const activeSkillDefinitions = computed(() =>
   skillTarget.value === 'staff'
@@ -329,6 +336,7 @@ async function createActivity() {
       throw new Error(detail || t.value.adminCreateActivity.createActivityError)
     }
 
+    unsaved.allowLeave()
     router.push('/admin/activities')
   } catch (error) {
     console.error('Create activity error:', error)
@@ -724,6 +732,12 @@ async function createActivity() {
       </footer>
     </div>
   </section>
+  <UnsavedChangesDialog
+    :open="unsaved.open.value"
+    :message="t.unsavedChanges.createActivity"
+    @stay="unsaved.stay"
+    @leave="unsaved.leave"
+  />
 </template>
 
 <style scoped>
