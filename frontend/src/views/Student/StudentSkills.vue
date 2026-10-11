@@ -6,6 +6,7 @@ import {
   Info,
   LoaderCircle,
   RefreshCw,
+  Layers,
   UserCog,
   Users
 } from 'lucide-vue-next'
@@ -21,7 +22,9 @@ import { useLanguage } from '../../composables/useLanguage'
 const { t, currentLanguage } = useLanguage()
 
 // โหมดการดู skill: participant = skill จากการเข้าร่วม, staff = skill จากการเป็นผู้จัด
-const DEFAULT_TRACK = 'participant'
+// overall = รวม skill ผู้เข้าร่วม + skill ผู้จัด (เรดาร์ 12 แกน) ค่าเริ่มต้นของหน้า
+const DEFAULT_TRACK = 'overall'
+const OVERALL_TRACKS = ['participant', 'staff']
 
 const loading = ref(true)
 const trackLoading = ref(false)
@@ -92,6 +95,11 @@ const scopeLabels = computed(() => ({
 
 const trackOptions = computed(() => [
   {
+    key: 'overall',
+    label: t.value.studentSkills.overallSkillsOption,
+    icon: Layers
+  },
+  {
     key: 'participant',
     label: t.value.studentSkills.participantSkillsOption,
     icon: Users
@@ -104,10 +112,21 @@ const trackOptions = computed(() => [
 ])
 
 const isStaffTrack = computed(() => track.value === 'staff')
+const isOverallTrack = computed(() => track.value === 'overall')
 
 // ข้อความที่เปลี่ยนตามโหมด (participant / staff)
 const trackText = computed(() => {
   const text = t.value.studentSkills
+
+  if (isOverallTrack.value) {
+    return {
+      radarChartTitle: text.radarChartTitleOverall,
+      noDataInPeriod: text.noDataInPeriodOverall,
+      activitiesUsedTitle: text.activitiesUsedTitleOverall,
+      noActivityData: text.noActivityDataOverall,
+      noActivityDataSubtitle: text.noActivityDataSubtitleOverall
+    }
+  }
 
   return isStaffTrack.value
     ? {
@@ -128,7 +147,9 @@ const trackText = computed(() => {
 
 // metadata (label, คำอธิบายภาษาไทย, icon) ของ skill ใน track ปัจจุบัน
 const trackSkillMeta = computed(() =>
-  SKILLS_BY_ROLE[track.value] || []
+  isOverallTrack.value
+    ? [...SKILLS_BY_ROLE.participant, ...SKILLS_BY_ROLE.staff]
+    : SKILLS_BY_ROLE[track.value] || []
 )
 
 // ใช้ลำดับจาก API (skillDefinitions) แล้วเติม metadata จาก activitySkills.js
@@ -326,16 +347,20 @@ const hasFacultyData = computed(() =>
 // ให้ label ด้านซ้าย/ขวาไม่ล้นออกนอกกรอบ radar ไปทับการ์ด skill ข้าง ๆ
 // ภาษาไทยไม่เว้นวรรคระหว่างคำ จึงตัดคำด้วย Intl.Segmenter
 const RADAR_LABEL_MAX_CHARS = 14
+// เรดาร์หลายแกน (โหมดรวม 12 แกน) ป้ายต้องแคบลง ไม่งั้นป้ายข้างกันชนกัน
+const RADAR_DENSE_AXES = 8
+const RADAR_DENSE_LABEL_MAX_CHARS = 10
+const RADAR_DENSE_FONT_PX = 6.2 // ตรงกับ .radar-label.dense
 const RADAR_LABEL_MAX_LINES = 3
 
 const thaiWordSegmenter = typeof Intl !== 'undefined' && Intl.Segmenter
   ? new Intl.Segmenter('th', { granularity: 'word' })
   : null
 
-function splitRadarLabel(label) {
+function splitRadarLabel(label, maxChars = RADAR_LABEL_MAX_CHARS) {
   const text = String(label || '')
 
-  if (text.length <= RADAR_LABEL_MAX_CHARS) return [text]
+  if (text.length <= maxChars) return [text]
 
   const hasSpaces = /\s/.test(text)
   const words = hasSpaces || !thaiWordSegmenter
@@ -347,7 +372,7 @@ function splitRadarLabel(label) {
   for (const word of words) {
     const last = lines[lines.length - 1]
 
-    if (last !== undefined && `${last}${joiner}${word}`.length <= RADAR_LABEL_MAX_CHARS) {
+    if (last !== undefined && `${last}${joiner}${word}`.length <= maxChars) {
       lines[lines.length - 1] = `${last}${joiner}${word}`
     } else if (lines.length < RADAR_LABEL_MAX_LINES) {
       lines.push(word)
@@ -363,6 +388,8 @@ const radarLabels = computed(() => {
   const items = skillItems.value
   if (!items.length) return []
 
+  const dense = items.length > RADAR_DENSE_AXES
+
   return items.map((item, index) => {
     const [x, y] = radarPoint(
       index,
@@ -371,12 +398,18 @@ const radarLabels = computed(() => {
       RADAR_LABEL_RADIUS
     )
 
-    return {
-      ...item,
-      x,
-      y,
-      lines: splitRadarLabel(item.label)
+    if (!dense) {
+      return { ...item, x, y, lines: splitRadarLabel(item.label) }
     }
+
+    // เรดาร์หลายแกน: ป้ายบน/ล่างสุดมีที่ด้านข้างเหลือ ให้กว้างได้ (บรรทัดน้อยลง)
+    // แล้วดันออกจากกราฟครึ่งความสูงของป้าย จะได้ไม่ทับป้ายข้าง ๆ
+    const angle = radarAngle(index, items.length)
+    const vertical = Math.abs(Math.cos(angle)) < 0.35
+    const lines = splitRadarLabel(item.label, vertical ? RADAR_LABEL_MAX_CHARS : RADAR_DENSE_LABEL_MAX_CHARS)
+    const shift = vertical ? Math.sign(Math.sin(angle)) * ((lines.length - 1) * 0.6 * RADAR_DENSE_FONT_PX + 2) : 0
+
+    return { ...item, x, y: y + shift, lines }
   })
 })
 
@@ -444,6 +477,80 @@ function activitySkillChips(activity) {
     }))
 }
 
+/*
+  โหมดรวม: โหลดชุดผู้เข้าร่วมและชุดผู้จัดแล้วรวมกันที่หน้าเว็บ
+  key ของทักษะสองชุดไม่ซ้ำกัน จึงรวม dict ได้ตรง ๆ คะแนนแต่ละแกนเท่ากับตอนดูแยกชุดทุกประการ
+*/
+function mergeByKey(first = {}, second = {}) {
+  return { ...first, ...second }
+}
+
+function mergeSourceMap(first = {}, second = {}) {
+  const merged = {}
+  for (const source of new Set([...Object.keys(first), ...Object.keys(second)])) {
+    const a = first[source] || {}
+    const b = second[source] || {}
+    merged[source] = {
+      ...a,
+      ...b,
+      skills: mergeByKey(a.skills, b.skills),
+      average: a.average || b.average ? mergeByKey(a.average, b.average) : a.average ?? b.average,
+      sampleCounts: mergeByKey(a.sampleCounts, b.sampleCounts)
+    }
+  }
+  return merged
+}
+
+function mergePeriod(a, b) {
+  if (!a || !b) return a || b
+  return {
+    ...a,
+    sourceProfiles: mergeSourceMap(a.sourceProfiles, b.sourceProfiles),
+    comparisons: mergeSourceMap(a.comparisons, b.comparisons),
+    activities: [...(a.activities || []), ...(b.activities || [])]
+  }
+}
+
+function periodOrder(period) {
+  return [-period.year, period.semester ?? 0]
+}
+
+function mergeTrackPayloads(participant, staff) {
+  const definitions = new Map()
+  for (const period of [...(participant.periodDefinitions || []), ...(staff.periodDefinitions || [])]) {
+    if (!definitions.has(period.key)) definitions.set(period.key, period)
+  }
+  const periodDefinitions = [...definitions.values()].sort((x, y) => {
+    const [a1, a2] = periodOrder(x)
+    const [b1, b2] = periodOrder(y)
+    return a1 - b1 || a2 - b2
+  })
+
+  const periods = {}
+  for (const period of periodDefinitions) {
+    periods[period.key] = mergePeriod(participant.periods?.[period.key], staff.periods?.[period.key])
+  }
+
+  return {
+    ...participant,
+    track: 'overall',
+    skillDefinitions: [...(participant.skillDefinitions || []), ...(staff.skillDefinitions || [])],
+    periodDefinitions,
+    periods,
+    defaultPeriod: participant.defaultPeriod || staff.defaultPeriod
+  }
+}
+
+async function fetchTrack(trackKey) {
+  const response = await fetch(
+    `${API_BASE}/api/student/me/skills?track=${encodeURIComponent(trackKey)}`,
+    { headers: studentHeaders() }
+  )
+  const data = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(data?.detail || t.value.studentSkills.loadError)
+  return data
+}
+
 async function loadSkills(requestedTrack = track.value) {
   const requestId = ++loadRequestId
   const isInitialLoad = !student.value
@@ -458,20 +565,9 @@ async function loadSkills(requestedTrack = track.value) {
   errorMessage.value = ''
 
   try {
-    const response = await fetch(
-      `${API_BASE}/api/student/me/skills?track=${encodeURIComponent(requestedTrack)}`,
-      {
-        headers: studentHeaders()
-      }
-    )
-
-    const data = await response.json().catch(() => null)
-
-    if (!response.ok) {
-      throw new Error(
-        data?.detail || t.value.studentSkills.loadError
-      )
-    }
+    const data = requestedTrack === 'overall'
+      ? mergeTrackPayloads(...await Promise.all(OVERALL_TRACKS.map(fetchTrack)))
+      : await fetchTrack(requestedTrack)
 
     // มีการสลับโหมดใหม่ระหว่างรอ ให้ใช้ผลของคำขอล่าสุดเท่านั้น
     if (requestId !== loadRequestId) return
@@ -618,11 +714,11 @@ onMounted(() => loadSkills())
       </div>
 
       <div
-        v-if="isStaffTrack"
+        v-if="isStaffTrack || isOverallTrack"
         class="track-hint"
       >
         <Info :size="15" />
-        <span>{{ t.studentSkills.staffTrackHint }}</span>
+        <span>{{ isOverallTrack ? t.studentSkills.overallTrackHint : t.studentSkills.staffTrackHint }}</span>
       </div>
 
       <div
@@ -682,6 +778,9 @@ onMounted(() => loadSkills())
         <div class="overview-grid">
           <!-- LEFT -->
           <div class="skill-column">
+            <p v-if="isOverallTrack" class="skill-column-heading participant" data-testid="overall-participant-heading">
+              <Users :size="14" /> {{ t.studentSkills.participantColumnHeading }}
+            </p>
             <div
               v-for="skill in leftSkills"
               :key="skill.key"
@@ -778,6 +877,7 @@ onMounted(() => loadSkills())
                     text-anchor="middle"
                     dominant-baseline="middle"
                     class="radar-label"
+                    :class="{ dense: radarLabels.length > RADAR_DENSE_AXES }"
                   >
                     <title>{{ label.description || label.label }}</title>
                     <tspan
@@ -830,6 +930,9 @@ onMounted(() => loadSkills())
 
           <!-- RIGHT -->
           <div class="skill-column">
+            <p v-if="isOverallTrack" class="skill-column-heading staff" data-testid="overall-staff-heading">
+              <UserCog :size="14" /> {{ t.studentSkills.staffColumnHeading }}
+            </p>
             <div
               v-for="skill in rightSkills"
               :key="skill.key"
@@ -1210,6 +1313,29 @@ onMounted(() => loadSkills())
   gap: 14px;
 }
 
+/* โหมดรวม: ซ้าย = skill ผู้เข้าร่วม, ขวา = skill ผู้จัด */
+.skill-column-heading {
+  margin: 0;
+  padding: 5px 10px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font-size: var(--fs-caption);
+  font-weight: 800;
+}
+
+.skill-column-heading.participant {
+  background: #eef3ff;
+  color: #1d4ed8;
+}
+
+.skill-column-heading.staff {
+  background: #f5efff;
+  color: #6d28d9;
+}
+
 .skill-card {
   min-height: 88px;
   padding: 16px;
@@ -1369,6 +1495,10 @@ onMounted(() => loadSkills())
   fill: #52617d;
   font-size: 7px;
   font-weight: 600;
+}
+
+.radar-label.dense {
+  font-size: 6.2px;
 }
 
 .radar-empty {

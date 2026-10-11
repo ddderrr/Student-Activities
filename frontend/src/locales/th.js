@@ -249,7 +249,7 @@ export default {
 
   major: 'สาขาวิชา',
 
-  cohortFilterTitle: 'แสดง Skill ของ',
+  cohortFilterTitle: 'แสดงทักษะของ',
   yearLevelFilterLabel: 'ชั้นปี',
   allYearLevels: 'ทุกชั้นปี',
   yearLevel1: 'ปี 1',
@@ -284,10 +284,10 @@ export default {
   skillShortPromoteEquality: 'ความเท่าเทียม',
   skillShortAcademic: 'วิชาการ',
   skillShortNatureEnvironmental: 'สิ่งแวดล้อม',
-  skillTrackLabel: 'ชุด Skill',
-  skillTrackParticipant: 'Skill ผู้เข้าร่วม',
-  skillTrackStaff: 'Skill ผู้จัด (Staff)',
-  skillTrackStaffHint: 'Skill ผู้จัดมาจากกิจกรรมที่นักศึกษาเป็นผู้จัด (organizer)',
+  skillTrackLabel: 'ชุดทักษะ',
+  skillTrackParticipant: 'ทักษะผู้เข้าร่วม',
+  skillTrackStaff: 'ทักษะผู้จัด (Staff)',
+  skillTrackStaffHint: 'ทักษะผู้จัดมาจากกิจกรรมที่นักศึกษาเป็นผู้จัด (organizer)',
   majorFilterLabel: 'สาขาวิชา',
   allMajors: 'ทุกสาขา',
   majorNotSpecified: 'ไม่ระบุสาขา',
@@ -898,13 +898,22 @@ export default {
     noActivityDataSubtitle: 'กิจกรรมที่ถูกนำมาคำนวณทักษะจะแสดงที่นี่',
     loadError: 'โหลดข้อมูลทักษะไม่สำเร็จ',
     connectionError: 'เชื่อมต่อ Backend ไม่ได้',
-    skillTrackLabel: 'ชุด Skill',
-    participantSkillsOption: 'Skill ผู้เข้าร่วม',
-    staffSkillsOption: 'Skill ผู้จัด (Staff)',
-    staffTrackHint: 'Skill ผู้จัดคำนวณจากกิจกรรมที่คุณเป็นผู้จัด (Staff) เท่านั้น',
-    radarChartTitleStaff: 'ภาพรวม Skill ผู้จัด (Staff) - แผนภูมิเรดาร์',
-    noDataInPeriodStaff: 'ยังไม่มีข้อมูล Skill ผู้จัดในช่วงเวลานี้',
-    activitiesUsedTitleStaff: 'กิจกรรมที่เป็นผู้จัด (Staff) ที่นำมาคำนวณ Skill',
+    skillTrackLabel: 'ชุดทักษะ',
+    participantSkillsOption: 'ทักษะผู้เข้าร่วม',
+    participantColumnHeading: 'ทักษะผู้เข้าร่วม',
+    staffColumnHeading: 'ทักษะผู้จัด',
+    overallSkillsOption: 'ทักษะโดยรวม',
+    overallTrackHint: 'รวมทักษะผู้เข้าร่วม (จากกิจกรรมที่คุณเข้าร่วม) และทักษะผู้จัด (จากกิจกรรมที่คุณเป็นผู้จัด) ไว้ในกราฟเดียว 12 ทักษะ',
+    radarChartTitleOverall: 'ภาพรวมทักษะทั้งหมด (ผู้เข้าร่วม + ผู้จัด) - แผนภูมิเรดาร์',
+    noDataInPeriodOverall: 'ยังไม่มีข้อมูลทักษะในช่วงเวลานี้',
+    activitiesUsedTitleOverall: 'กิจกรรมที่นำมาคำนวณทักษะ (ผู้เข้าร่วม + ผู้จัด)',
+    noActivityDataOverall: 'ไม่มีกิจกรรมในช่วงเวลานี้',
+    noActivityDataSubtitleOverall: 'กิจกรรมที่คุณเข้าร่วมหรือเป็นผู้จัดจะแสดงที่นี่',
+    staffSkillsOption: 'ทักษะผู้จัด (Staff)',
+    staffTrackHint: 'ทักษะผู้จัดคำนวณจากกิจกรรมที่คุณเป็นผู้จัด (Staff) เท่านั้น',
+    radarChartTitleStaff: 'ภาพรวมทักษะผู้จัด (Staff) - แผนภูมิเรดาร์',
+    noDataInPeriodStaff: 'ยังไม่มีข้อมูลทักษะผู้จัดในช่วงเวลานี้',
+    activitiesUsedTitleStaff: 'กิจกรรมที่เป็นผู้จัด (Staff) ที่นำมาคำนวณทักษะ',
     noActivityDataStaff: 'ไม่มีกิจกรรมที่เป็นผู้จัดในช่วงเวลานี้',
     noActivityDataSubtitleStaff: 'กิจกรรมที่คุณเป็นผู้จัด (Staff) จะแสดงที่นี่',
     comparisonLabel: 'เปรียบเทียบกับ',
@@ -1412,7 +1421,7 @@ export default {
               'แต่ละมุมของกราฟคือ 1 ทักษะ จุดยิ่งห่างจากจุดกลาง คะแนนยิ่งสูง (เต็ม 5)',
               'คะแนนคือค่าเฉลี่ยระดับทักษะจากกิจกรรมที่นับ',
               'เลือกปีและเทอม (ทั้งปี / เทอม 1 / เทอม 2) ที่มุมขวาบนเพื่อดูแต่ละช่วง',
-              'เลือกชุด Skill: "Skill ผู้เข้าร่วม" คิดจากกิจกรรมที่คุณเข้าร่วม ส่วน "Skill ผู้จัด (Staff)" คิดจากกิจกรรมที่คุณเป็นผู้จัดเท่านั้น',
+              'เลือกชุดทักษะ: "ทักษะโดยรวม" รวมทั้งสองชุด, "ทักษะผู้เข้าร่วม" คิดจากกิจกรรมที่คุณเข้าร่วม ส่วน "ทักษะผู้จัด (Staff)" คิดจากกิจกรรมที่คุณเป็นผู้จัดเท่านั้น',
               'ตารางใต้กราฟแสดงกิจกรรมที่ใช้คำนวณคะแนน'
             ]
           },
@@ -1420,7 +1429,7 @@ export default {
             heading: 'ความหมายของแต่ละทักษะ',
             groups: [
               {
-                label: 'Skill ผู้เข้าร่วม (Participant)',
+                label: 'ทักษะผู้เข้าร่วม (Participant)',
                 items: [
                   { term: 'Arts, Culture, and Traditions', text: 'ศิลปะ วัฒนธรรม และประเพณี' },
                   { term: 'Volunteerism', text: 'จิตอาสาและการมีส่วนร่วมเพื่อสังคม' },
@@ -1431,7 +1440,7 @@ export default {
                 ]
               },
               {
-                label: 'Skill ผู้จัด (Staff)',
+                label: 'ทักษะผู้จัด (Staff)',
                 items: [
                   { term: 'Creative Leadership', text: 'ภาวะผู้นำเชิงสร้างสรรค์' },
                   { term: 'Innovation', text: 'การคิดและสร้างนวัตกรรม' },
@@ -1646,7 +1655,7 @@ export default {
             heading: 'วิธีดูภาพรวมทักษะของนักศึกษา',
             steps: [
               'การ์ด "คะแนนทักษะเฉลี่ย" และ "นักศึกษาที่ประเมินแล้ว" ด้านบนสรุปภาพรวม',
-              'ใช้ตัวกรอง "ชุด Skill" (ผู้เข้าร่วม / ผู้จัด), "ชั้นปี" และ "สาขาวิชา" เพื่อดูเฉพาะกลุ่ม กด "ล้างตัวกรอง" เพื่อกลับไปดูทั้งหมด',
+              'ใช้ตัวกรอง "ชุดทักษะ" (ผู้เข้าร่วม / ผู้จัด), "ชั้นปี" และ "สาขาวิชา" เพื่อดูเฉพาะกลุ่ม กด "ล้างตัวกรอง" เพื่อกลับไปดูทั้งหมด',
               'ส่วน "ทักษะเด่น" และ "ทักษะที่ควรพัฒนา" บอกทักษะที่สูงสุดและต่ำสุด พร้อมแนวทางพัฒนา'
             ],
             tip: 'คะแนนทักษะคิดจากกิจกรรมคณะและกิจกรรมภายนอกที่อนุมัติแล้ว'

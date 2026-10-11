@@ -5,13 +5,13 @@ import { CalendarRange } from 'lucide-vue-next'
 import CalendarMonth from '../common/CalendarMonth.vue'
 import { useLanguage } from '../../composables/useLanguage'
 import { API_BASE, studentHeaders } from '../../constants/currentStudent'
-import { STUDENT_SOURCE_COLORS, studentSourceColor } from '../../utils/activityColors'
+import { ACTIVITY_TYPE_COLORS, OTHER_TYPE_COLOR, activityTypeColor } from '../../utils/activityColors'
 import { dayOf, isPast } from '../../utils/calendarDates'
 
 /*
   ปฏิทินกิจกรรมของนักศึกษา (ใต้รายการในหน้ากิจกรรมของฉัน) วาดด้วย CalendarMonth
   GET /api/student/me/calendar-activities = กิจกรรมที่คณะ (ส่วนกลาง) และสาขาของนักศึกษาจัด
-  ไว้ดูล่วงหน้าว่าจะมีอะไรบ้าง (เข้าร่วมหรือยังก็ได้) สีตามแหล่ง: คณะ / สาขา
+  ไว้ดูล่วงหน้าว่าจะมีอะไรบ้าง (เข้าร่วมหรือยังก็ได้) สีตามประเภทกิจกรรม เหมือนปฏิทินฝั่งแอดมิน
 */
 const { t } = useLanguage()
 
@@ -42,7 +42,7 @@ const events = computed(() =>
     .map((item) => {
       const start = dayOf(item.start_at)
       const end = dayOf(item.end_at)
-      const palette = studentSourceColor(item.scope)
+      const palette = activityTypeColor(item.activity_type)
       return {
         ...item,
         key: `activity-${item.id}`,
@@ -64,12 +64,12 @@ function joinLabel(event) {
     : t.value.studentCalendar.joinedAsParticipant
 }
 
-// ปฏิทินนี้มีแค่กิจกรรมคณะและกิจกรรมสาขา
+// คำอธิบายสีเหมือนฝั่งแอดมิน: ตามประเภทกิจกรรม (แสดงเฉพาะประเภทที่มีในเดือนนั้น)
 const legend = computed(() =>
-  STUDENT_SOURCE_COLORS.filter((entry) => entry.key !== 'external').map((entry) => ({
+  [...ACTIVITY_TYPE_COLORS, OTHER_TYPE_COLOR].map((entry) => ({
     key: entry.key,
     color: entry.color,
-    label: t.value.studentCalendar.sources[entry.key]
+    label: t.value.activityCalendar.types[entry.key]
   }))
 )
 </script>
@@ -94,10 +94,13 @@ const legend = computed(() =>
         <dl>
           <div>
             <dt>{{ t.studentCalendar.sourceLabel }}</dt>
-            <dd><i class="swatch" :style="{ background: event.color }"></i>{{ t.studentCalendar.sources[event.legendKey] }}</dd>
+            <dd>{{ t.studentCalendar.sources[event.scope === 'major' ? 'major' : 'faculty'] }}</dd>
           </div>
           <div><dt>{{ t.activityCalendar.dateLabel }}</dt><dd>{{ dateRange }}</dd></div>
-          <div><dt>{{ t.activityCalendar.typeLabel }}</dt><dd>{{ event.activity_type || '-' }}</dd></div>
+          <div>
+            <dt>{{ t.activityCalendar.typeLabel }}</dt>
+            <dd><i class="swatch" :style="{ background: event.color }"></i>{{ event.activity_type || '-' }}</dd>
+          </div>
           <div><dt>{{ t.studentCalendar.locationLabel }}</dt><dd>{{ event.location || '-' }}</dd></div>
           <div><dt>{{ t.activityCalendar.organizerLabel }}</dt><dd>{{ event.organizer || '-' }}</dd></div>
           <div><dt>{{ t.studentCalendar.hoursLabel }}</dt><dd>{{ event.activity_hours }} {{ t.activityHours.unit }}</dd></div>
