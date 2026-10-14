@@ -34,6 +34,7 @@ import {
 import SkillLevelEditor from '../../components/Admin/SkillLevelEditor.vue'
 import BranchFilterSelect from '../../components/common/BranchFilterSelect.vue'
 import UnsavedChangesDialog from '../../components/common/UnsavedChangesDialog.vue'
+import ConfirmDialog from '../../components/common/ConfirmDialog.vue'
 import { useUnsavedChanges } from '../../composables/useUnsavedChanges'
 import { ALL_BRANCHES_VALUE } from '../../constants/branches'
 import {
@@ -948,14 +949,19 @@ async function setActivityStatus(activity, status) {
   }
 }
 
-async function deleteActivity(activity) {
+// กิจกรรมที่รอยืนยันลบใน ConfirmDialog (null = ปิด popup)
+const activityPendingDelete = ref(null)
+
+function deleteActivity(activity) {
   openActivityMenuId.value = null
+  activityPendingDelete.value = activity
+}
 
-  const confirmed = window.confirm(
-    t.value.adminStudentActivities.deleteActivityConfirm.replace('{name}', activity.name)
-  )
+async function confirmDeleteActivity() {
+  const activity = activityPendingDelete.value
+  activityPendingDelete.value = null
 
-  if (!confirmed) return
+  if (!activity) return
 
   activityActionLoadingId.value = activity.id
 
@@ -1978,7 +1984,6 @@ const confirmImportButtonText = computed(() =>
                         data-testid="add-student-button"
                         @click="openAddStudent(activity)"
                       >
-                        <UserPlus :size="16" />
                         {{ t.adminStudentActivities.addStudentAction }}
                       </button>
                       <button
@@ -1987,7 +1992,6 @@ const confirmImportButtonText = computed(() =>
                         data-testid="import-participants-button"
                         @click="openImportParticipants(activity, 'participant')"
                       >
-                        <Users :size="16" />
                         {{ t.adminStudentActivities.importParticipantsButton }}
                       </button>
                       <button
@@ -1996,7 +2000,6 @@ const confirmImportButtonText = computed(() =>
                         data-testid="import-organizers-button"
                         @click="openImportParticipants(activity, 'organizer')"
                       >
-                        <Crown :size="16" />
                         {{ t.adminStudentActivities.importOrganizersButton }}
                       </button>
                     </div>
@@ -2957,6 +2960,15 @@ const confirmImportButtonText = computed(() =>
       @stay="unsaved.stay"
       @leave="unsaved.leave"
     />
+
+    <ConfirmDialog
+      :open="activityPendingDelete !== null"
+      :message="t.adminStudentActivities.deleteActivityConfirm"
+      :confirm-label="t.adminStudentActivities.deleteActivityConfirmOk"
+      :cancel-label="t.adminStudentActivities.deleteActivityConfirmCancel"
+      @confirm="confirmDeleteActivity"
+      @cancel="activityPendingDelete = null"
+    />
   </section>
 </template>
 
@@ -3737,10 +3749,6 @@ td {
   font-weight: 700;
   text-align: left;
   cursor: pointer;
-}
-
-.import-role-button svg {
-  flex-shrink: 0;
 }
 
 .import-role-button.add-student {

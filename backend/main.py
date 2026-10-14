@@ -108,6 +108,8 @@ from auth_tokens import (
     warn_if_auth_secret_missing,
 )
 from branches import BRANCHES
+from major_history import change_student_major, load_major_histories, major_at
+from major_utils import normalize_major
 from models import (
     AdminNotification,
     AdminNotificationClear,
@@ -1007,6 +1009,7 @@ def get_admin_student_skills(
     # student_id -> accumulated evidence. activity_ids is a set, so one activity
     # counts once even when it contributes several skills.
     grouped: dict[str, dict] = {}
+    histories = load_major_histories(db, (row[0] for row in internal_rows))
 
     def add_row(row, source: str):
         student_id, first_name, last_name, major, activity_id, start_at, skill_key, level = row[:8]
@@ -1030,7 +1033,11 @@ def get_admin_student_skills(
             }
         evidence_id = f"{source}:{activity_id}"
         entry = grouped[student_id]
-        scope = activity_source(row[8], major) if source == "internal" else "external"
+        scope = (
+            activity_source(row[8], major_at(major, histories.get(student_id), start_at))
+            if source == "internal"
+            else "external"
+        )
         hours, title, status = row[9:12] if source == "internal" else row[8:11]
         activity = entry["source_activities"].setdefault(evidence_id, {
             "key": evidence_id, "id": activity_id, "scope": scope, "source": source,
@@ -2718,6 +2725,42 @@ def download_student_import_template(_admin: AdminContext = Depends(get_current_
     )
 
 
+@app.get("/api/admin/students/export")
+def export_students_for_settings(
+    db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
+):
+    # คอลัมน์เดียวกับ template: ไฟล์ที่ export นำเข้ากลับผ่าน /api/admin/students/import ได้ทันที
+    # แอดมินสาขาได้เฉพาะนักศึกษาสาขาตัวเอง
+    students = scope_student_query(db.query(Student), admin).order_by(Student.student_id).all()
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "students"
+    sheet.append([label for label, _ in STUDENT_IMPORT_TEMPLATE_HEADERS])
+
+    for cell in sheet[1]:
+        cell.font = openpyxl.styles.Font(bold=True)
+    for student in students:
+        sheet.append([(getattr(student, field) or "").strip() for _, field in STUDENT_IMPORT_TEMPLATE_HEADERS])
+        for cell in sheet[sheet.max_row]:
+            # เก็บเป็นข้อความเสมอ: รหัสนักศึกษาไม่กลายเป็นตัวเลข และค่าที่ขึ้นต้นด้วย "=" ไม่กลายเป็นสูตร
+            cell.data_type = "s"
+            cell.number_format = "@"
+    for letter, width in zip("ABCDE", (18, 22, 22, 32, 30)):
+        sheet.column_dimensions[letter].width = width
+    sheet.freeze_panes = "A2"
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="students-export.xlsx"'},
+    )
+
+
 @app.post("/api/admin/students/import")
 def import_students_from_settings(
     file: UploadFile = File(...),
@@ -2984,6 +3027,68 @@ def delete_student_from_settings(
     ensure_can_access_student(admin, student)
 
     return delete_students_and_related(db, [student])
+
+
+class StudentSettingsUpdate(BaseModel):
+    first_name: str
+    last_name: str
+    email: str = ""
+    # None = ไม่เปลี่ยนสาขา
+    major: str | None = None
+
+
+@app.patch("/api/admin/students/{student_id}")
+def update_student_from_settings(
+    student_id: str,
+    payload: StudentSettingsUpdate,
+    db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
+):
+    """แก้ไขข้อมูลนักศึกษา (หน้า Settings)
+
+    เปลี่ยนสาขา (ย้ายสาขา) ได้เฉพาะแอดมินกลาง สาขาเดิมถูกเก็บใน student_major_history
+    กิจกรรมที่ทำไปแล้วจึงยังนับตามสาขาเดิม (ดู major_history.py)
+    """
+    student = db.get(Student, student_id.strip())
+
+    if not student:
+        raise HTTPException(status_code=404, detail="ไม่พบนักศึกษานี้ในระบบ")
+    ensure_can_access_student(admin, student)
+
+    values = {
+        "first_name": payload.first_name.strip(),
+        "last_name": payload.last_name.strip(),
+        "email": payload.email.strip(),
+    }
+    if not values["first_name"] or not values["last_name"]:
+        raise HTTPException(status_code=400, detail="ชื่อ/นามสกุลไม่ครบ")
+    if values["email"] and "@" not in values["email"]:
+        raise HTTPException(status_code=400, detail="อีเมลไม่ถูกต้อง")
+    for field, value in values.items():
+        if len(value) > STUDENT_IMPORT_FIELD_LIMITS[field]:
+            raise HTTPException(status_code=400, detail=f"{field} ยาวเกิน {STUDENT_IMPORT_FIELD_LIMITS[field]} ตัวอักษร")
+
+    if payload.major is not None:
+        new_major = normalize_major(payload.major)
+        if new_major != normalize_major(student.major):
+            if not admin.is_central:
+                raise HTTPException(status_code=403, detail="เปลี่ยนสาขาของนักศึกษาได้เฉพาะแอดมินกลาง")
+            if new_major not in BRANCHES:
+                raise HTTPException(status_code=400, detail="สาขาไม่ถูกต้อง")
+            change_student_major(db, student, new_major)
+
+    student.first_name = values["first_name"]
+    student.last_name = values["last_name"]
+    student.email = values["email"]
+    db.commit()
+
+    activity_count = db.query(func.count()).select_from(ActivityMember).filter(
+        ActivityMember.student_id == student.student_id
+    ).scalar()
+    external_count = db.query(func.count()).select_from(ExternalActivity).filter(
+        ExternalActivity.student_id == student.student_id
+    ).scalar()
+    return serialize_settings_student(student, activity_count, external_count)
 
 
 @app.delete("/api/admin/students")
@@ -3409,7 +3514,7 @@ def confirm_activity_participants(
                 student.faculty = normalize_faculty(faculty)
             # แอดมินสาขาย้ายนักศึกษาไปสาขาอื่นไม่ได้ (เหมือน ensure_can_assign_major)
             if major and (admin.is_central or major == admin.major):
-                student.major = major
+                change_student_major(db, student, major)
         # นักศึกษาสาขาอื่น: เพิ่มเป็นผู้เข้าร่วมได้ แต่ไม่แก้ master data ของสาขานั้น
 
         existing_member = db.get(
@@ -3583,7 +3688,7 @@ def update_activity_participant(
     student.last_name = last_name
     student.email = email
     student.faculty = faculty
-    student.major = major
+    change_student_major(db, student, major)
 
     member.role = role
 
@@ -4637,8 +4742,10 @@ def list_my_activities(
         .all()
     )
 
+    history = load_major_histories(db, [student.student_id]).get(student.student_id)
+
     for member, activity in memberships:
-        scope = activity_source(activity.major, student.major)
+        scope = activity_source(activity.major, major_at(student.major, history, activity.start_at))
         target_role = (
             "staff"
             if member.role == "organizer"
@@ -4776,6 +4883,7 @@ def scoped_skill_average_for_period(
             ActivitySkill.level,
             Activity.id,
             Activity.activity_hours,
+            Student.major,
         )
         .join(
             ActivityMember,
@@ -4800,15 +4908,18 @@ def scoped_skill_average_for_period(
     if major is None:
         query = query.filter(faculty_activity_filter())
     else:
-        query = query.filter(
-            major_activity_filter(major),
-            func.trim(Student.major) == major,
-        )
+        query = query.filter(major_activity_filter(major))
+
+    rows = query.all()
+    # นับเฉพาะคนที่อยู่สาขานี้ ณ วันที่ทำกิจกรรม (ย้ายออกไปแล้วก็ยังนับกิจกรรมตอนที่อยู่)
+    histories = load_major_histories(db, (row[0] for row in rows)) if major is not None else {}
 
     grouped = {}
     source = "faculty" if major is None else "major"
-    for student_id, when, skill_key, level, activity_id, hours in query.all():
+    for student_id, when, skill_key, level, activity_id, hours, current_major in rows:
         if when is None or skill_key not in definitions:
+            continue
+        if major is not None and major_at(current_major, histories.get(student_id), when) != major:
             continue
         if semester is not None and (1 if when.month <= 6 else 2) != semester:
             continue
@@ -4843,6 +4954,7 @@ def student_skill_periods(
     target_role = SKILL_TRACKS[track]["target_role"]
     definitions = SKILL_TRACKS[track]["definitions"]
     student_major = (student.major or "").strip()
+    history = load_major_histories(db, [student.student_id]).get(student.student_id)
 
     activity_map: dict[tuple[str, int], dict] = {}
 
@@ -4904,7 +5016,8 @@ def student_skill_periods(
                 "start_at": start_at,
                 "status": status,
                 # other_major ไม่นับเข้ากราฟเปรียบเทียบทั้งสองแบบ (ดู activity_source)
-                "scope": activity_source(activity_major, student_major),
+                # ใช้สาขา ณ วันที่ทำกิจกรรม: ย้ายสาขาแล้วกราฟของตัวเองไม่เปลี่ยน
+                "scope": activity_source(activity_major, major_at(student_major, history, start_at)),
                 "skills": {},
             }
 

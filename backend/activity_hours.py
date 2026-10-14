@@ -2,6 +2,7 @@
 from datetime import datetime
 from decimal import Decimal
 from sqlalchemy import func, or_
+from major_history import load_major_histories, major_at
 from models import Activity, ActivityMember, ExternalActivity, Student
 from skill_scoring import activity_source
 from timeutil import now_bangkok
@@ -41,7 +42,8 @@ def activity_hours_summaries(db, students, year=None, semester=None):
     items = {student_id: [] for student_id in by_id}
     if not by_id:
         return {}
-    internal = db.query(ActivityMember.student_id, Activity.major, func.sum(Activity.activity_hours)).join(
+    # ทีละกิจกรรม (ไม่ group ตามสาขา) เพราะประเภท major/faculty ขึ้นกับสาขา ณ วันที่ทำกิจกรรม
+    internal = db.query(ActivityMember.student_id, Activity.major, Activity.start_at, Activity.activity_hours).join(
         ActivityMember, ActivityMember.activity_id == Activity.id
     ).filter(ActivityMember.student_id.in_(by_id), Activity.status != "cancelled",
              or_(Activity.status == "completed", Activity.end_at < now_bangkok()))
@@ -50,7 +52,7 @@ def activity_hours_summaries(db, students, year=None, semester=None):
     if semester is not None:
         internal = internal.filter(func.extract('month', Activity.start_at) <= 6 if semester == 1
                                    else func.extract('month', Activity.start_at) > 6)
-    internal = internal.group_by(ActivityMember.student_id, Activity.major).all()
+    internal = internal.all()
     external = db.query(ExternalActivity.student_id, func.sum(ExternalActivity.activity_hours)).filter(
         ExternalActivity.student_id.in_(by_id), ExternalActivity.status == "approved"
     )
@@ -60,8 +62,10 @@ def activity_hours_summaries(db, students, year=None, semester=None):
         external = external.filter(func.extract('month', ExternalActivity.start_date) <= 6 if semester == 1
                                    else func.extract('month', ExternalActivity.start_date) > 6)
     external = external.group_by(ExternalActivity.student_id).all()
-    for student_id, major, hours in internal:
-        items[student_id].append({'source': activity_source(major, by_id[student_id].major), 'earned_activity_hours': hours})
+    histories = load_major_histories(db, by_id)
+    for student_id, major, start_at, hours in internal:
+        student_major = major_at(by_id[student_id].major, histories.get(student_id), start_at)
+        items[student_id].append({'source': activity_source(major, student_major), 'earned_activity_hours': hours or 0})
     for student_id, hours in external:
         items[student_id].append({'source': 'external', 'earned_activity_hours': hours})
     return {student_id: hours_summary_from_items(values) for student_id, values in items.items()}

@@ -86,7 +86,8 @@ export default {
     addStudent: 'การเพิ่มนักศึกษายังไม่เสร็จสิ้น ต้องการละทิ้งหรือไม่?',
     importStudents: 'การนำเข้านักศึกษายังไม่เสร็จสิ้น (ยังไม่ได้กดยืนยันการนำเข้า) ต้องการละทิ้งหรือไม่?',
     transcriptHeader: 'หัวเอกสารทรานสคริปต์ที่แก้ไว้ยังไม่ได้บันทึก ต้องการละทิ้งการเปลี่ยนแปลงหรือไม่?',
-    addAdmin: 'การเพิ่มแอดมินยังไม่เสร็จสิ้น ต้องการละทิ้งหรือไม่?'
+    addAdmin: 'การเพิ่มแอดมินยังไม่เสร็จสิ้น ต้องการละทิ้งหรือไม่?',
+    editStudent: 'การแก้ไขข้อมูลนักศึกษายังไม่ได้บันทึก ต้องการละทิ้งหรือไม่?'
   },
 
   studentCalendar: {
@@ -575,7 +576,6 @@ export default {
   },
 
   adminCreateActivity: {
-    eyebrowActivityManagement: 'การจัดการกิจกรรม',
     pageTitle: 'สร้างกิจกรรมใหม่',
     stepActivityInfoTitle: 'ข้อมูลกิจกรรม',
     stepActivityInfoSubtitle: 'รายละเอียดกิจกรรม',
@@ -619,7 +619,7 @@ export default {
     tipNameAndType: 'ชื่อและประเภทกิจกรรม',
     tipDates: 'วันที่เริ่ม / สิ้นสุด',
     tipLocation: 'สถานที่จัดกิจกรรม',
-    skillsEyebrow: 'แนบ Skill',
+    skillSettingsLink: 'ตั้งค่าสกิล',
     skillsSectionTitle: 'กำหนด Skill ของกิจกรรม',
     skillsForStaffDescription: 'Skill สำหรับผู้จัดกิจกรรม',
     skillsForParticipantDescription: 'Skill สำหรับผู้เข้าร่วมกิจกรรม',
@@ -670,7 +670,9 @@ export default {
     changeStatusFailedDefault: 'เปลี่ยนสถานะกิจกรรมไม่สำเร็จ',
     confirmImportButton: 'ยืนยัน Import ({count})',
     createActivityButton: 'สร้างกิจกรรมใหม่',
-    deleteActivityConfirm: 'ต้องการลบกิจกรรม "{name}" หรือไม่?\nการลบจะลบสมาชิกและ Skill ที่ผูกกับกิจกรรมนี้ด้วย',
+    deleteActivityConfirm: 'ต้องการลบกิจกรรมใช่ไหม',
+    deleteActivityConfirmOk: 'ตกลง',
+    deleteActivityConfirmCancel: 'ยกเลิก',
     deleteActivityFailedDefault: 'ลบกิจกรรมไม่สำเร็จ',
     deleteActivityMenuItem: 'ลบกิจกรรม',
     departmentLabel: 'หน่วยงาน',
@@ -1122,6 +1124,8 @@ export default {
     importDescription: 'อัปโหลดไฟล์ Excel หรือ CSV เพื่อเพิ่มนักศึกษาใหม่เข้าระบบ รหัสนักศึกษาที่มีอยู่แล้วจะถูกข้าม',
     downloadTemplate: 'ดาวน์โหลด Template',
     templateError: 'ดาวน์โหลด Template ไม่สำเร็จ',
+    exportStudents: 'Export นักศึกษา',
+    exportStudentsError: 'Export นักศึกษาไม่สำเร็จ',
     requiredColumns: 'คอลัมน์ในไฟล์',
     dropzoneTitle: 'ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อเลือกไฟล์',
     dropzoneHint: 'รองรับ .xlsx, .xls และ .csv ขนาดไม่เกิน 5MB',
@@ -1170,6 +1174,14 @@ export default {
     noMajor: 'ไม่มีสาขา',
     noMajorHint: 'แอดมินสาขาจะไม่เห็นนักศึกษาคนนี้',
     deleteStudentAria: 'ลบ {name}',
+    editStudentAria: 'แก้ไข {name}',
+    editStudentTitle: 'แก้ไขข้อมูลนักศึกษา',
+    editStudentSubtitle: 'รหัสนักศึกษา {id}',
+    studentRequiredError: 'กรุณากรอกชื่อและนามสกุล',
+    studentSaveFailed: 'บันทึกข้อมูลนักศึกษาไม่สำเร็จ',
+    studentUpdated: 'บันทึกข้อมูล {name} แล้ว',
+    majorCentralOnlyNote: 'เปลี่ยนสาขาได้เฉพาะแอดมินกลาง',
+    majorTransferNote: 'ย้ายจากสาขา{from}ไปสาขา{to}: กิจกรรมที่ทำไปแล้วยังนับเป็นของสาขาเดิม กราฟทักษะของนักศึกษาไม่เปลี่ยน แต่ตอนเทียบสาขาจะเทียบกับค่าเฉลี่ยสาขาใหม่',
     studentsLoading: 'กำลังโหลดรายชื่อนักศึกษา...',
     studentsLoadError: 'โหลดรายชื่อนักศึกษาไม่สำเร็จ',
     retry: 'ลองใหม่',

@@ -85,7 +85,8 @@ export default {
     addStudent: 'Adding the student is not finished. Discard it?',
     importStudents: 'The student import is not finished (not confirmed yet). Discard it?',
     transcriptHeader: 'Your transcript header changes have not been saved. Discard them?',
-    addAdmin: 'Adding the admin is not finished. Discard it?'
+    addAdmin: 'Adding the admin is not finished. Discard it?',
+    editStudent: 'Your changes to this student are not saved. Discard them?'
   },
 
   studentCalendar: {
@@ -573,7 +574,6 @@ export default {
   },
 
   adminCreateActivity: {
-    eyebrowActivityManagement: 'ACTIVITY MANAGEMENT',
     pageTitle: 'Create New Activity',
     stepActivityInfoTitle: 'Activity Info',
     stepActivityInfoSubtitle: 'Activity details',
@@ -617,7 +617,7 @@ export default {
     tipNameAndType: 'Activity name and type',
     tipDates: 'Start / end date',
     tipLocation: 'Activity location',
-    skillsEyebrow: 'ATTACH SKILLS',
+    skillSettingsLink: 'Skill settings',
     skillsSectionTitle: "Set the Activity's Skills",
     skillsForStaffDescription: 'Skills for activity organizers',
     skillsForParticipantDescription: 'Skills for activity participants',
@@ -668,7 +668,9 @@ export default {
     changeStatusFailedDefault: 'Failed to change activity status',
     confirmImportButton: 'Confirm Import ({count})',
     createActivityButton: 'Create New Activity',
-    deleteActivityConfirm: 'Delete activity "{name}"?\nThis will also delete its members and linked skills.',
+    deleteActivityConfirm: 'Delete this activity?',
+    deleteActivityConfirmOk: 'OK',
+    deleteActivityConfirmCancel: 'Cancel',
     deleteActivityFailedDefault: 'Failed to delete activity',
     deleteActivityMenuItem: 'Delete Activity',
     departmentLabel: 'Department',
@@ -1120,6 +1122,8 @@ export default {
     importDescription: 'Upload an Excel or CSV file to add new students. Student IDs that already exist are skipped.',
     downloadTemplate: 'Download Template',
     templateError: 'Could not download the template',
+    exportStudents: 'Export Students',
+    exportStudentsError: 'Could not export students',
     requiredColumns: 'Columns in the file',
     dropzoneTitle: 'Drag a file here, or click to choose a file',
     dropzoneHint: '.xlsx, .xls or .csv, up to 5MB',
@@ -1168,6 +1172,14 @@ export default {
     noMajor: 'No major',
     noMajorHint: 'Branch admins cannot see this student',
     deleteStudentAria: 'Delete {name}',
+    editStudentAria: 'Edit {name}',
+    editStudentTitle: 'Edit Student',
+    editStudentSubtitle: 'Student ID {id}',
+    studentRequiredError: 'Please enter first and last name',
+    studentSaveFailed: 'Could not save the student',
+    studentUpdated: 'Saved {name}',
+    majorCentralOnlyNote: 'Only the central admin can change a student\'s major',
+    majorTransferNote: 'Moving from {from} to {to}: past activities still count for the old major, so the student\'s skill graph stays the same. The major comparison will use the new major\'s average.',
     studentsLoading: 'Loading students...',
     studentsLoadError: 'Could not load students',
     retry: 'Retry',

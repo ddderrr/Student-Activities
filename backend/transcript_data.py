@@ -13,6 +13,7 @@ import re
 from datetime import date
 
 from activity_hours import earned_internal_hours, hours_summary_from_items
+from major_history import load_major_histories, major_at
 
 from sqlalchemy.orm import Session
 
@@ -135,7 +136,7 @@ def validate_year_levels(
 
 
 def load_internal_items(db: Session, student: Student) -> list[dict]:
-    student_major = (student.major or "").strip()
+    history = load_major_histories(db, [student.student_id]).get(student.student_id)
 
     rows = (
         db.query(Activity, ActivityMember.role)
@@ -165,7 +166,7 @@ def load_internal_items(db: Session, student: Student) -> list[dict]:
 
     items = []
     for activity, role in rows:
-        source = activity_source(activity.major, student_major)
+        source = activity_source(activity.major, major_at(student.major, history, activity.start_at))
 
         items.append(
             {

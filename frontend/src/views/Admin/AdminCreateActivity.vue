@@ -12,10 +12,8 @@ import {
   CheckCircle2,
   ClipboardList,
   FileText,
-  GraduationCap,
   LoaderCircle,
   MapPin,
-  Sparkles,
   UsersRound,
   UserRound
 } from 'lucide-vue-next'
@@ -354,11 +352,6 @@ async function createActivity() {
     <div class="page-shell">
       <header class="hero-card">
         <div>
-          <div class="eyebrow">
-            <Sparkles :size="15" />
-            {{ t.adminCreateActivity.eyebrowActivityManagement }}
-          </div>
-
           <h1>{{ t.adminCreateActivity.pageTitle }}</h1>
         </div>
 
@@ -670,7 +663,6 @@ async function createActivity() {
         <section class="skills-card">
           <div class="skills-heading">
             <div>
-              <div class="eyebrow"><GraduationCap :size="15" /> {{ t.adminCreateActivity.skillsEyebrow }}</div>
               <h2>{{ t.adminCreateActivity.skillsSectionTitle }}</h2>
               <p>
                   {{
@@ -681,18 +673,25 @@ async function createActivity() {
                 </p>
             </div>
 
-            <div class="segmented-control">
-              <button
-                :class="{ active: skillTarget === 'staff' }"
-                @click="skillTarget = 'staff'"
-              >
-                {{ t.adminCreateActivity.staffLabel }}
-              </button>
-              <button
-                :class="{ active: skillTarget === 'participant' }"
-                @click="skillTarget = 'participant'"
-              >
-                {{ t.adminCreateActivity.participantLabel }}
+            <div class="skill-target">
+              <div class="segmented-control">
+                <button
+                  :class="{ active: skillTarget === 'staff' }"
+                  @click="skillTarget = 'staff'"
+                >
+                  {{ t.adminCreateActivity.staffLabel }}
+                </button>
+                <button
+                  :class="{ active: skillTarget === 'participant' }"
+                  @click="skillTarget = 'participant'"
+                >
+                  {{ t.adminCreateActivity.participantLabel }}
+                </button>
+              </div>
+
+              <!-- ยังไม่มีหน้าตั้งค่าสกิล: เตรียมไว้สำหรับกิจกรรมที่มีสกิลนอกเหนือจากชุดมาตรฐาน -->
+              <button type="button" class="skill-settings-link">
+                {{ t.adminCreateActivity.skillSettingsLink }}
               </button>
             </div>
           </div>
@@ -765,17 +764,6 @@ async function createActivity() {
   align-items: center;
   justify-content: space-between;
   gap: 30px;
-}
-
-.eyebrow {
-  margin-bottom: 7px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #7e36bd;
-  font-size: var(--fs-caption);
-  font-weight: 800;
-  letter-spacing: 0.08em;
 }
 
 .hero-card h1 {
@@ -1317,6 +1305,26 @@ async function createActivity() {
   gap: 20px;
 }
 
+.skill-target {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.skill-settings-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #5d2db2;
+  font-family: inherit;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+
 .segmented-control {
   padding: 4px;
   border-radius: 10px;
@@ -1463,6 +1471,7 @@ async function createActivity() {
     display: none;
   }
 
+  .skill-target,
   .segmented-control {
     width: 100%;
   }

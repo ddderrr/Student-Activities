@@ -153,10 +153,42 @@ class Student(Base):
         cascade="all, delete-orphan",
     )
 
+    major_history = relationship(
+        "StudentMajorHistory",
+        cascade="all, delete-orphan",
+    )
+
     @validates("major")
     def _normalize_major(self, _key, value):
         # normalize ตอนบันทึก: ตัดช่องว่าง ค่าว่าง = "" (คอลัมน์ NOT NULL ใช้ "" แทนไม่มีสาขา)
         return normalize_major(value) or ""
+
+
+class StudentMajorHistory(Base):
+    """สาขาเดิมของนักศึกษาที่ย้ายสาขา: อยู่สาขา major มาจนถึง ended_at (ไม่รวม ended_at)
+
+    ใช้ตัดสินว่ากิจกรรมเป็น "กิจกรรมสาขา" ตามสาขา ณ วันที่ทำกิจกรรม (ดู major_history.py)
+    สาขาปัจจุบันอยู่ที่ students.major เหมือนเดิม
+    """
+
+    __tablename__ = "student_major_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(
+        String(30),
+        ForeignKey("students.student_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    major = Column(String(255), nullable=False)
+
+    ended_at = Column(
+        DateTime(timezone=False),
+        nullable=False,
+        default=now_bangkok,
+    )
 
 
 class ActivityMember(Base):

@@ -10,6 +10,7 @@ import {
   FileSpreadsheet,
   FileText,
   LoaderCircle,
+  Pencil,
   RotateCcw,
   Save,
   Search,
@@ -212,6 +213,7 @@ const errorMessage = ref('')
 const isDragging = ref(false)
 const fileInput = ref(null)
 const templateDownloading = ref(false)
+const studentsExporting = ref(false)
 
 const statusLabels = computed(() => ({
   new: t.value.adminSettings.statusNew,
@@ -311,6 +313,20 @@ async function confirmImport() {
   }
 }
 
+async function downloadXlsx(path, filename) {
+  const response = await adminFetch(`${API_BASE}${path}`)
+  if (!response.ok) throw new Error()
+
+  const url = URL.createObjectURL(await response.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 async function downloadTemplate() {
   if (templateDownloading.value) return
 
@@ -318,21 +334,27 @@ async function downloadTemplate() {
   errorMessage.value = ''
 
   try {
-    const response = await adminFetch(`${API_BASE}/api/admin/students/import/template`)
-    if (!response.ok) throw new Error()
-
-    const url = URL.createObjectURL(await response.blob())
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'student-import-template.xlsx'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    await downloadXlsx('/api/admin/students/import/template', 'student-import-template.xlsx')
   } catch {
     errorMessage.value = t.value.adminSettings.templateError
   } finally {
     templateDownloading.value = false
+  }
+}
+
+// export รายชื่อนักศึกษาทั้งหมดในรูปแบบเดียวกับ template เพื่อนำเข้ากลับได้
+async function exportStudents() {
+  if (studentsExporting.value) return
+
+  studentsExporting.value = true
+  errorMessage.value = ''
+
+  try {
+    await downloadXlsx('/api/admin/students/export', 'students-export.xlsx')
+  } catch {
+    errorMessage.value = t.value.adminSettings.exportStudentsError
+  } finally {
+    studentsExporting.value = false
   }
 }
 
@@ -564,6 +586,101 @@ async function confirmDelete() {
 }
 
 /* =========================
+   แก้ไขนักศึกษา (ย้ายสาขาได้เฉพาะแอดมินกลาง)
+========================= */
+
+const editingStudent = ref(null)
+const studentForm = ref({ first_name: '', last_name: '', email: '', major: '' })
+const studentFormError = ref('')
+const savingStudent = ref(false)
+const studentFirstNameField = ref(null)
+
+// สาขาเดิมที่ไม่อยู่ในรายชื่อ (ข้อมูลเก่า) ยังเลือกค้างไว้ได้
+const studentMajorOptions = computed(() => {
+  const current = editingStudent.value?.major
+  return current && !BRANCHES.includes(current) ? [current, ...BRANCHES] : BRANCHES
+})
+
+const studentMajorChanged = computed(() =>
+  Boolean(editingStudent.value) && studentForm.value.major !== (editingStudent.value.major || '')
+)
+
+const studentFormDirty = computed(() => {
+  const original = editingStudent.value
+  if (!original) return false
+  return ['first_name', 'last_name', 'email', 'major'].some(
+    (key) => studentForm.value[key].trim() !== (original[key] || '').trim()
+  )
+})
+
+async function openEditStudent(student) {
+  editingStudent.value = student
+  studentForm.value = {
+    first_name: student.first_name || '',
+    last_name: student.last_name || '',
+    email: student.email || '',
+    major: student.major || ''
+  }
+  studentFormError.value = ''
+  notice.value = ''
+  await nextTick()
+  studentFirstNameField.value?.focus()
+}
+
+function closeEditStudent() {
+  if (!savingStudent.value) editingStudent.value = null
+}
+
+async function saveStudent() {
+  if (savingStudent.value || !editingStudent.value) return
+
+  const form = studentForm.value
+  const email = form.email.trim()
+
+  if (!form.first_name.trim() || !form.last_name.trim()) {
+    studentFormError.value = t.value.adminSettings.studentRequiredError
+    return
+  }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    studentFormError.value = t.value.adminSettings.adminEmailError
+    return
+  }
+
+  savingStudent.value = true
+  studentFormError.value = ''
+
+  try {
+    const response = await adminFetch(
+      `${API_BASE}/api/admin/students/${encodeURIComponent(editingStudent.value.student_id)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          first_name: form.first_name,
+          last_name: form.last_name,
+          email,
+          // แอดมินสาขาไม่ส่งสาขา (backend ไม่ให้เปลี่ยนอยู่แล้ว)
+          major: isCentral.value ? form.major : null
+        })
+      }
+    )
+    const data = await response.json().catch(() => null)
+    if (!response.ok) {
+      throw new Error(typeof data?.detail === 'string' ? data.detail : t.value.adminSettings.studentSaveFailed)
+    }
+
+    students.value = students.value.map((item) => (item.student_id === data.student_id ? data : item))
+    notice.value = fill(t.value.adminSettings.studentUpdated, { name: fullName(data) })
+    savingStudent.value = false
+    editingStudent.value = null
+  } catch (error) {
+    studentFormError.value = error.message || t.value.adminSettings.studentSaveFailed
+  } finally {
+    savingStudent.value = false
+  }
+}
+
+/* =========================
    แอดมินสาขา
 ========================= */
 
@@ -599,6 +716,7 @@ const unsavedWork = computed(() => {
   if (transcriptLoaded.value && transcriptDirty.value) return 'transcript'
   if (step.value === 'preview' || (step.value === 'select' && selectedFile.value)) return 'import'
   if (showAddAdmin.value && (adminForm.value.email.trim() || adminForm.value.major)) return 'admin'
+  if (studentFormDirty.value) return 'student'
   return ''
 })
 
@@ -607,7 +725,8 @@ const unsaved = useUnsavedChanges(() => Boolean(unsavedWork.value))
 const unsavedMessage = computed(() => ({
   transcript: t.value.unsavedChanges.transcriptHeader,
   import: t.value.unsavedChanges.importStudents,
-  admin: t.value.unsavedChanges.addAdmin
+  admin: t.value.unsavedChanges.addAdmin,
+  student: t.value.unsavedChanges.editStudent
 }[unsavedWork.value] || ''))
 const adminFormError = ref('')
 const savingAdmin = ref(false)
@@ -670,6 +789,7 @@ function onKeydown(event) {
   if (event.key !== 'Escape') return
   if (deleteTarget.value) closeDelete()
   else if (showAddAdmin.value) closeAddAdmin()
+  else if (editingStudent.value) closeEditStudent()
 }
 
 onMounted(() => {
@@ -730,17 +850,31 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <button
-          type="button"
-          class="secondary-button"
-          :disabled="templateDownloading"
-          data-testid="download-template"
-          @click="downloadTemplate"
-        >
-          <LoaderCircle v-if="templateDownloading" class="spin" :size="16" />
-          <Download v-else :size="16" />
-          {{ t.adminSettings.downloadTemplate }}
-        </button>
+        <div class="import-header-actions">
+          <button
+            type="button"
+            class="secondary-button"
+            :disabled="templateDownloading"
+            data-testid="download-template"
+            @click="downloadTemplate"
+          >
+            <LoaderCircle v-if="templateDownloading" class="spin" :size="16" />
+            <Download v-else :size="16" />
+            {{ t.adminSettings.downloadTemplate }}
+          </button>
+          <button
+            v-if="isCentral"
+            type="button"
+            class="secondary-button"
+            :disabled="studentsExporting"
+            data-testid="export-students"
+            @click="exportStudents"
+          >
+            <LoaderCircle v-if="studentsExporting" class="spin" :size="16" />
+            <Download v-else :size="16" />
+            {{ t.adminSettings.exportStudents }}
+          </button>
+        </div>
       </div>
 
       <div class="column-list">
@@ -1044,6 +1178,17 @@ onBeforeUnmount(() => {
               </td>
               <td class="muted">{{ formatDate(student.created_at) }}</td>
               <td class="actions-column">
+                <div class="row-actions">
+                <button
+                  type="button"
+                  class="icon-button"
+                  data-testid="edit-student"
+                  :aria-label="fill(t.adminSettings.editStudentAria, { name: fullName(student) })"
+                  :title="fill(t.adminSettings.editStudentAria, { name: fullName(student) })"
+                  @click="openEditStudent(student)"
+                >
+                  <Pencil :size="16" />
+                </button>
                 <button
                   type="button"
                   class="icon-danger-button"
@@ -1053,6 +1198,7 @@ onBeforeUnmount(() => {
                 >
                   <Trash2 :size="16" />
                 </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -1420,6 +1566,73 @@ onBeforeUnmount(() => {
       </form>
     </div>
 
+    <!-- แก้ไขนักศึกษา: คลิกนอกกรอบไม่ปิด (Esc / ยกเลิก = ปิด) -->
+    <div v-if="editingStudent" class="modal-backdrop" data-testid="edit-student-modal">
+      <form
+        class="modal form-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-student-title"
+        novalidate
+        @submit.prevent="saveStudent"
+        @input="studentFormError = ''"
+      >
+        <div class="form-modal-header">
+          <span class="form-modal-icon" aria-hidden="true"><Pencil :size="22" /></span>
+          <div>
+            <h3 id="edit-student-title">{{ t.adminSettings.editStudentTitle }}</h3>
+            <p>{{ fill(t.adminSettings.editStudentSubtitle, { id: editingStudent.student_id }) }}</p>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <label class="form-field">
+            <span>{{ t.adminSettings.columnFirstName }} <b>*</b></span>
+            <input ref="studentFirstNameField" v-model="studentForm.first_name" maxlength="150" autocomplete="off" name="first_name" />
+          </label>
+          <label class="form-field">
+            <span>{{ t.adminSettings.columnLastName }} <b>*</b></span>
+            <input v-model="studentForm.last_name" maxlength="150" autocomplete="off" name="last_name" />
+          </label>
+          <label class="form-field full">
+            <span>{{ t.adminSettings.fieldEmail }}</span>
+            <input v-model="studentForm.email" type="email" maxlength="255" autocomplete="off" name="email" placeholder="name@cmu.ac.th" />
+          </label>
+          <label class="form-field full">
+            <span>{{ t.adminSettings.fieldBranch }}</span>
+            <select v-model="studentForm.major" name="major" :disabled="!isCentral" data-testid="edit-student-major">
+              <option v-if="!editingStudent.major" disabled value="">{{ t.adminSettings.selectBranch }}</option>
+              <option v-for="branch in studentMajorOptions" :key="branch" :value="branch">{{ branch }}</option>
+            </select>
+          </label>
+        </div>
+
+        <p v-if="!isCentral" class="default-password-note">
+          <Info :size="16" />
+          <span>{{ t.adminSettings.majorCentralOnlyNote }}</span>
+        </p>
+        <p v-else-if="studentMajorChanged && editingStudent.major" class="default-password-note" data-testid="major-transfer-note">
+          <Info :size="16" />
+          <span>{{ fill(t.adminSettings.majorTransferNote, { from: editingStudent.major, to: studentForm.major }) }}</span>
+        </p>
+
+        <div v-if="studentFormError" class="alert error" role="alert">
+          <TriangleAlert :size="16" />
+          <span>{{ studentFormError }}</span>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-button" :disabled="savingStudent" @click="closeEditStudent">
+            {{ t.adminSettings.cancelButton }}
+          </button>
+          <button type="submit" class="primary-button" :disabled="savingStudent || !studentFormDirty" data-testid="save-student">
+            <LoaderCircle v-if="savingStudent" class="spin" :size="16" />
+            {{ savingStudent ? t.adminSettings.saving : t.adminSettings.saveButton }}
+          </button>
+        </div>
+      </form>
+    </div>
+
     <!-- ยืนยันการลบ: คลิกนอกกรอบไม่ปิด (Esc = ยกเลิก) -->
     <div v-if="deleteTarget" class="modal-backdrop" data-testid="delete-modal">
       <div
@@ -1580,6 +1793,14 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
+}
+
+/* ปุ่ม template และ export เรียงบนลงล่าง กว้างเท่ากัน */
+.import-header-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
 }
 
 .card-title {
@@ -2207,6 +2428,27 @@ tr.row-invalid .status-reason {
   cursor: not-allowed;
 }
 
+.row-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.icon-button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #d6e0f0;
+  border-radius: 9px;
+  display: inline-grid;
+  place-items: center;
+  background: #fff;
+  color: #2f5fdb;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: #f3f7ff;
+}
+
 .icon-danger-button {
   width: 34px;
   height: 34px;
@@ -2780,6 +3022,7 @@ tr.row-invalid .status-reason {
   }
 
   .actions > button,
+  .import-header-actions,
   .card-header .secondary-button,
   .card-header .primary-button,
   .card-header .danger-outline-button {
