@@ -25,3 +25,6 @@ export const ALL_BRANCHES_VALUE = 'ALL'
 
 // ค่า sentinel ของตัวเลือก "กิจกรรมส่วนกลางของคณะ" (กิจกรรมที่ไม่มีสาขาเจ้าของ) ใช้เฉพาะหน้า Activities
 export const FACULTY_ACTIVITIES_VALUE = 'FACULTY'
+
+// ค่า sentinel ของตัวเลือก "เฉพาะสาขาของฉัน" (แอดมินสาขา หน้า Activities) ไม่รวมกิจกรรมส่วนกลาง
+export const MY_BRANCH_ONLY_VALUE = 'MY_BRANCH'

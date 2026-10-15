@@ -1570,6 +1570,7 @@ def list_activities(
     owned_only: bool = False,
     major: str | None = None,
     faculty_only: bool = False,
+    branch_only: bool = False,
     db: Session = Depends(get_db),
     admin: AdminContext = Depends(get_current_admin),
 ):
@@ -1581,10 +1582,14 @@ def list_activities(
     # major: แอดมินกลางเลือก filter สาขาได้จากหน้า Activities (ดู resolve_branch_filter)
     # faculty_only: ตัวเลือก "กิจกรรมส่วนกลางของคณะ" ใช้ได้ทั้งแอดมินกลางและแอดมินสาขา
     # (แอดมินสาขาเห็นกิจกรรมส่วนกลางอยู่แล้ว) กติกาส่วนกลางดู skill_scoring.faculty_activity_filter
+    # branch_only: "เฉพาะกิจกรรมสาขา" ไม่รวมส่วนกลาง ใช้สาขาที่เลือก (แอดมินกลาง) หรือสาขาตัวเอง
+    # (แอดมินสาขา) ตามกติกา skill_scoring.major_activity_filter ยังไม่เลือกสาขา = ไม่มีผล
     admin = resolve_branch_filter(admin, major)
     query = scope_activity_query(db.query(Activity), admin, include_unowned=not owned_only)
     if faculty_only:
         query = query.filter(faculty_activity_filter())
+    if branch_only and not admin.is_central:
+        query = query.filter(major_activity_filter(admin.major))
     activities = (
         query
         .options(selectinload(Activity.skill_levels))

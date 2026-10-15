@@ -42,7 +42,10 @@ export default {
     settings: 'ตั้งค่า',
     branchLabel: 'สาขา',
     allBranches: 'ทุกสาขา',
-    facultyActivities: 'กิจกรรมส่วนกลางของคณะ'
+    facultyActivities: 'กิจกรรมส่วนกลางของคณะ',
+    myBranchAndFaculty: 'สาขาของฉันและส่วนกลาง',
+    myBranchOnly: 'เฉพาะสาขาของฉัน',
+    includeFacultyActivities: 'รวมกิจกรรมส่วนกลาง'
   },
 
   adminSidebar: {

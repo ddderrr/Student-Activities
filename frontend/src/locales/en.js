@@ -41,7 +41,10 @@ export default {
     settings: 'Settings',
     branchLabel: 'Branch',
     allBranches: 'All Branches',
-    facultyActivities: 'Faculty-wide Activities'
+    facultyActivities: 'Faculty-wide Activities',
+    myBranchAndFaculty: 'My Branch & Faculty-wide',
+    myBranchOnly: 'My Branch Only',
+    includeFacultyActivities: 'Include faculty-wide activities'
   },
 
   adminSidebar: {

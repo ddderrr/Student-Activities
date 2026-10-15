@@ -72,3 +72,42 @@ def test_existing_filters_are_unchanged(client, db_session):
     assert names(client.get("/api/activities", headers=CHEM_ADMIN)) == [
         "Chem Only", "Faculty Blank", "Faculty None",
     ]
+
+
+# ------------------------------------------------------------
+# "เฉพาะกิจกรรมสาขา" (?branch_only=true) ตามกติกา skill_scoring.major_activity_filter
+# ------------------------------------------------------------
+
+CS_ADMIN = {"X-Admin-Email": "cs@test.local"}
+
+
+def test_central_admin_branch_only_excludes_faculty_activities(client, db_session):
+    setup_activities(db_session)
+
+    response = client.get(f"/api/activities?major={CHEM}&branch_only=true", headers=CENTRAL)
+
+    assert names(response) == ["Chem Only"]
+
+
+def test_branch_admin_branch_only_lists_only_own_branch(client, db_session):
+    setup_activities(db_session)
+
+    assert names(client.get("/api/activities?branch_only=true", headers=CHEM_ADMIN)) == ["Chem Only"]
+    assert names(client.get("/api/activities?branch_only=true", headers=CS_ADMIN)) == ["CS Only"]
+
+
+def test_branch_admin_cannot_switch_branch_with_branch_only(client, db_session):
+    setup_activities(db_session)
+
+    response = client.get(f"/api/activities?major={CS}&branch_only=true", headers=CHEM_ADMIN)
+
+    assert names(response) == ["Chem Only"]
+
+
+def test_central_admin_branch_only_without_branch_lists_everything(client, db_session):
+    # ยังไม่ได้เลือกสาขา = ไม่มีสาขาให้จำกัด แสดงทุกกิจกรรมเหมือน "ทุกสาขา"
+    setup_activities(db_session)
+
+    assert names(client.get("/api/activities?branch_only=true", headers=CENTRAL)) == [
+        "CS Only", "Chem Only", "Faculty Blank", "Faculty None",
+    ]

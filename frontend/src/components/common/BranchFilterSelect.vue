@@ -2,7 +2,12 @@
 import { computed } from 'vue'
 import { useLanguage } from '../../composables/useLanguage'
 import { getAdminSession } from '../../constants/currentAdmin'
-import { ALL_BRANCHES_VALUE, BRANCHES, FACULTY_ACTIVITIES_VALUE } from '../../constants/branches'
+import {
+  ALL_BRANCHES_VALUE,
+  BRANCHES,
+  FACULTY_ACTIVITIES_VALUE,
+  MY_BRANCH_ONLY_VALUE
+} from '../../constants/branches'
 
 /*
   Branch (สาขา) filter -- เฉพาะแอดมินกลางเท่านั้น (แอดมินสาขาถูก scope ตาม
@@ -11,8 +16,10 @@ import { ALL_BRANCHES_VALUE, BRANCHES, FACULTY_ACTIVITIES_VALUE } from '../../co
 
   v-model ค่าเป็น ALL_BRANCHES_VALUE ("ทุกสาขา") หรือชื่อสาขาจาก BRANCHES
 
-  showFacultyOption (หน้า Activities): เพิ่มตัวเลือก FACULTY_ACTIVITIES_VALUE
-  ("กิจกรรมส่วนกลางของคณะ") และแสดงให้แอดมินสาขาด้วย (เห็นเฉพาะตัวเลือกนี้กับ "ทุกสาขา")
+  activityScopeOptions (หน้า Activities): ตัวเลือกขอบเขตกิจกรรม และแสดงให้แอดมินสาขาด้วย
+  - ทุกคน: FACULTY_ACTIVITIES_VALUE ("กิจกรรมส่วนกลางของคณะ")
+  - แอดมินกลาง: เลือกสาขาแล้วมี checkbox "รวมกิจกรรมส่วนกลาง" (v-model:includeFaculty)
+  - แอดมินสาขา: "สาขาของฉันและส่วนกลาง" (= ALL_BRANCHES_VALUE) และ MY_BRANCH_ONLY_VALUE
 */
 
 const props = defineProps({
@@ -20,41 +27,68 @@ const props = defineProps({
     type: String,
     default: ALL_BRANCHES_VALUE
   },
-  showFacultyOption: {
+  activityScopeOptions: {
     type: Boolean,
     default: false
+  },
+  includeFaculty: {
+    type: Boolean,
+    default: true
   }
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'update:includeFaculty'])
 
 const { t } = useLanguage()
 
 const isCentralAdmin = computed(() => getAdminSession()?.is_central === true)
+const isBranchAdminScope = computed(() => props.activityScopeOptions && !isCentralAdmin.value)
+// checkbox มีผลเฉพาะตอนแอดมินกลางเลือกสาขาใดสาขาหนึ่ง
+const showIncludeFaculty = computed(() =>
+  props.activityScopeOptions &&
+  isCentralAdmin.value &&
+  BRANCHES.includes(props.modelValue)
+)
 </script>
 
 <template>
-  <div v-if="isCentralAdmin || props.showFacultyOption" class="branch-filter-field">
+  <div v-if="isCentralAdmin || props.activityScopeOptions" class="branch-filter-field">
     <label>{{ t.common.branchLabel }}</label>
 
-    <select
-      :value="modelValue"
-      @change="emit('update:modelValue', $event.target.value)"
-    >
-      <option :value="ALL_BRANCHES_VALUE">{{ t.common.allBranches }}</option>
-      <option v-if="props.showFacultyOption" :value="FACULTY_ACTIVITIES_VALUE">
-        {{ t.common.facultyActivities }}
-      </option>
-      <template v-if="isCentralAdmin">
-        <option
-          v-for="branch in BRANCHES"
-          :key="branch"
-          :value="branch"
-        >
-          {{ branch }}
+    <div class="branch-filter-controls">
+      <select
+        :value="modelValue"
+        @change="emit('update:modelValue', $event.target.value)"
+      >
+        <option :value="ALL_BRANCHES_VALUE">
+          {{ isBranchAdminScope ? t.common.myBranchAndFaculty : t.common.allBranches }}
         </option>
-      </template>
-    </select>
+        <option v-if="props.activityScopeOptions" :value="FACULTY_ACTIVITIES_VALUE">
+          {{ t.common.facultyActivities }}
+        </option>
+        <option v-if="isBranchAdminScope" :value="MY_BRANCH_ONLY_VALUE">
+          {{ t.common.myBranchOnly }}
+        </option>
+        <template v-if="isCentralAdmin">
+          <option
+            v-for="branch in BRANCHES"
+            :key="branch"
+            :value="branch"
+          >
+            {{ branch }}
+          </option>
+        </template>
+      </select>
+
+      <label v-if="showIncludeFaculty" class="include-faculty">
+        <input
+          type="checkbox"
+          :checked="includeFaculty"
+          @change="emit('update:includeFaculty', $event.target.checked)"
+        >
+        {{ t.common.includeFacultyActivities }}
+      </label>
+    </div>
   </div>
 </template>
 
@@ -88,6 +122,31 @@ const isCentralAdmin = computed(() => getAdminSession()?.is_central === true)
 
   cursor: pointer;
   max-width: 100%;
+}
+
+.branch-filter-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* เต็มความกว้างเหมือนเดิมเมื่อไม่มี checkbox (หน้าอื่น) */
+.branch-filter-controls select {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.branch-filter-field .include-faculty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #34445a;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .branch-filter-field select:focus {
