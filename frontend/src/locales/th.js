@@ -44,8 +44,7 @@ export default {
     allBranches: 'ทุกสาขา',
     facultyActivities: 'กิจกรรมส่วนกลางของคณะ',
     myBranchAndFaculty: 'สาขาของฉันและส่วนกลาง',
-    myBranchOnly: 'เฉพาะสาขาของฉัน',
-    includeFacultyActivities: 'รวมกิจกรรมส่วนกลาง'
+    myBranchOnly: 'เฉพาะสาขาของฉัน'
   },
 
   adminSidebar: {

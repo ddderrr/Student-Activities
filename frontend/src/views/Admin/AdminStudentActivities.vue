@@ -55,8 +55,6 @@ const searchText = ref('')
 const activitiesError = ref('')
 // filter สาขา: แอดมินกลางเลือกได้ทุกสาขา ส่วนตัวเลือก "กิจกรรมส่วนกลางของคณะ" ใช้ได้ทั้งแอดมินกลางและแอดมินสาขา
 const selectedBranch = ref(ALL_BRANCHES_VALUE)
-// checkbox "รวมกิจกรรมส่วนกลาง" ของแอดมินกลางตอนเลือกสาขา (ค่าเริ่มต้นรวม เหมือนเดิม)
-const includeFacultyActivities = ref(true)
 const quickSearch = ref('')
 
 // เรียงตาราง: latest = created_at, start = start_at (ค่าเริ่มต้น: รายการล่าสุดขึ้นก่อน)
@@ -741,9 +739,7 @@ async function fetchActivities() {
   tableLoading.value = true
 
   try {
-    const params = activityListParams(selectedBranch.value, {
-      includeFaculty: includeFacultyActivities.value
-    })
+    const params = activityListParams(selectedBranch.value)
 
     const response = await adminFetch(`${API_BASE}/api/activities?${params.toString()}`)
     const data = await response.json().catch(() => ({}))
@@ -768,8 +764,8 @@ onMounted(() => {
   fetchPendingEvaluations()
 })
 
-// เปลี่ยน filter สาขา/ขอบเขต หรือ checkbox รวมกิจกรรมส่วนกลาง -> โหลดรายการกิจกรรมใหม่
-watch([selectedBranch, includeFacultyActivities], () => {
+// เปลี่ยน filter สาขา/ขอบเขต -> โหลดรายการกิจกรรมใหม่
+watch(selectedBranch, () => {
   currentPage.value = 1
   fetchActivities()
 })
@@ -1698,11 +1694,7 @@ const confirmImportButtonText = computed(() =>
         </select>
       </div>
 
-      <BranchFilterSelect
-        v-model="selectedBranch"
-        v-model:include-faculty="includeFacultyActivities"
-        activity-scope-options
-      />
+      <BranchFilterSelect v-model="selectedBranch" activity-scope-options />
 
       <div
         v-for="field in DATE_FIELDS"

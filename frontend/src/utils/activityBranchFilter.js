@@ -5,8 +5,8 @@ import {
 } from '../constants/branches.js'
 
 // query ของ GET /api/activities ตามตัวเลือกใน BranchFilterSelect หน้า Activities
-// includeFaculty: checkbox "รวมกิจกรรมส่วนกลาง" ของแอดมินกลาง มีผลเฉพาะตอนเลือกสาขา
-export function activityListParams(selected, { includeFaculty = true } = {}) {
+// แอดมินกลางเลือกสาขา = เฉพาะกิจกรรมของสาขานั้น ไม่รวมส่วนกลาง (ดูส่วนกลางได้จาก FACULTY_ACTIVITIES_VALUE)
+export function activityListParams(selected) {
   const params = new URLSearchParams()
   if (selected === FACULTY_ACTIVITIES_VALUE) {
     params.set('faculty_only', 'true')
@@ -14,7 +14,7 @@ export function activityListParams(selected, { includeFaculty = true } = {}) {
     params.set('branch_only', 'true')
   } else if (selected !== ALL_BRANCHES_VALUE) {
     params.set('major', selected)
-    if (!includeFaculty) params.set('branch_only', 'true')
+    params.set('branch_only', 'true')
   }
   return params
 }

@@ -18,7 +18,7 @@ import {
 
   activityScopeOptions (หน้า Activities): ตัวเลือกขอบเขตกิจกรรม และแสดงให้แอดมินสาขาด้วย
   - ทุกคน: FACULTY_ACTIVITIES_VALUE ("กิจกรรมส่วนกลางของคณะ")
-  - แอดมินกลาง: เลือกสาขาแล้วมี checkbox "รวมกิจกรรมส่วนกลาง" (v-model:includeFaculty)
+  - แอดมินกลาง: เลือกสาขา = เฉพาะกิจกรรมของสาขานั้น ไม่รวมส่วนกลาง (ดู utils/activityBranchFilter.js)
   - แอดมินสาขา: "สาขาของฉันและส่วนกลาง" (= ALL_BRANCHES_VALUE) และ MY_BRANCH_ONLY_VALUE
 */
 
@@ -30,65 +30,44 @@ const props = defineProps({
   activityScopeOptions: {
     type: Boolean,
     default: false
-  },
-  includeFaculty: {
-    type: Boolean,
-    default: true
   }
 })
 
-const emit = defineEmits(['update:modelValue', 'update:includeFaculty'])
+const emit = defineEmits(['update:modelValue'])
 
 const { t } = useLanguage()
 
 const isCentralAdmin = computed(() => getAdminSession()?.is_central === true)
 const isBranchAdminScope = computed(() => props.activityScopeOptions && !isCentralAdmin.value)
-// checkbox มีผลเฉพาะตอนแอดมินกลางเลือกสาขาใดสาขาหนึ่ง
-const showIncludeFaculty = computed(() =>
-  props.activityScopeOptions &&
-  isCentralAdmin.value &&
-  BRANCHES.includes(props.modelValue)
-)
 </script>
 
 <template>
   <div v-if="isCentralAdmin || props.activityScopeOptions" class="branch-filter-field">
     <label>{{ t.common.branchLabel }}</label>
 
-    <div class="branch-filter-controls">
-      <select
-        :value="modelValue"
-        @change="emit('update:modelValue', $event.target.value)"
-      >
-        <option :value="ALL_BRANCHES_VALUE">
-          {{ isBranchAdminScope ? t.common.myBranchAndFaculty : t.common.allBranches }}
-        </option>
-        <option v-if="props.activityScopeOptions" :value="FACULTY_ACTIVITIES_VALUE">
-          {{ t.common.facultyActivities }}
-        </option>
-        <option v-if="isBranchAdminScope" :value="MY_BRANCH_ONLY_VALUE">
-          {{ t.common.myBranchOnly }}
-        </option>
-        <template v-if="isCentralAdmin">
-          <option
-            v-for="branch in BRANCHES"
-            :key="branch"
-            :value="branch"
-          >
-            {{ branch }}
-          </option>
-        </template>
-      </select>
-
-      <label v-if="showIncludeFaculty" class="include-faculty">
-        <input
-          type="checkbox"
-          :checked="includeFaculty"
-          @change="emit('update:includeFaculty', $event.target.checked)"
+    <select
+      :value="modelValue"
+      @change="emit('update:modelValue', $event.target.value)"
+    >
+      <option :value="ALL_BRANCHES_VALUE">
+        {{ isBranchAdminScope ? t.common.myBranchAndFaculty : t.common.allBranches }}
+      </option>
+      <option v-if="props.activityScopeOptions" :value="FACULTY_ACTIVITIES_VALUE">
+        {{ t.common.facultyActivities }}
+      </option>
+      <option v-if="isBranchAdminScope" :value="MY_BRANCH_ONLY_VALUE">
+        {{ t.common.myBranchOnly }}
+      </option>
+      <template v-if="isCentralAdmin">
+        <option
+          v-for="branch in BRANCHES"
+          :key="branch"
+          :value="branch"
         >
-        {{ t.common.includeFacultyActivities }}
-      </label>
-    </div>
+          {{ branch }}
+        </option>
+      </template>
+    </select>
   </div>
 </template>
 
@@ -122,31 +101,6 @@ const showIncludeFaculty = computed(() =>
 
   cursor: pointer;
   max-width: 100%;
-}
-
-.branch-filter-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-/* เต็มความกว้างเหมือนเดิมเมื่อไม่มี checkbox (หน้าอื่น) */
-.branch-filter-controls select {
-  flex: 1 1 180px;
-  min-width: 0;
-}
-
-.branch-filter-field .include-faculty {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #34445a;
-  font-size: var(--fs-body);
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
 }
 
 .branch-filter-field select:focus {

@@ -9,23 +9,17 @@ import {
 
 test('all branches sends no filter', () => {
   assert.equal(activityListParams(ALL_BRANCHES_VALUE).toString(), '')
-  assert.equal(activityListParams(ALL_BRANCHES_VALUE, { includeFaculty: false }).toString(), '')
 })
 
 test('faculty option asks for faculty activities only', () => {
   assert.equal(activityListParams(FACULTY_ACTIVITIES_VALUE).toString(), 'faculty_only=true')
 })
 
-test('a branch still sends major as before, including faculty activities by default', () => {
-  assert.equal(activityListParams('เคมี').get('major'), 'เคมี')
-  assert.equal(activityListParams('เคมี').has('faculty_only'), false)
-  assert.equal(activityListParams('เคมี').has('branch_only'), false)
-})
-
-test('a branch without faculty activities adds branch_only', () => {
-  const params = activityListParams('เคมี', { includeFaculty: false })
+test('a branch shows only that branch, without faculty activities', () => {
+  const params = activityListParams('เคมี')
   assert.equal(params.get('major'), 'เคมี')
   assert.equal(params.get('branch_only'), 'true')
+  assert.equal(params.has('faculty_only'), false)
 })
 
 test('branch admin "my branch only" asks for branch_only without major', () => {
