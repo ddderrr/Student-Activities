@@ -8,7 +8,6 @@ import {
   FACULTY_ACTIVITIES_VALUE,
   MY_BRANCH_ONLY_VALUE
 } from '../../constants/branches'
-import { branchFilterLabel } from '../../utils/activityBranchFilter'
 import SelectDropdown from './SelectDropdown.vue'
 
 /*
@@ -63,7 +62,7 @@ const branchOptions = computed(() => [
 
 <template>
   <div v-if="isCentralAdmin || props.activityScopeOptions" class="branch-filter-field">
-    <label :id="labelId" :for="fieldId">{{ branchFilterLabel(t, props.activityScopeOptions) }}</label>
+    <label :id="labelId" :for="fieldId">{{ t.common.branchLabel }}</label>
 
     <SelectDropdown
       :id="fieldId"

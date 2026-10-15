@@ -18,8 +18,3 @@ export function activityListParams(selected) {
   }
   return params
 }
-
-// ชื่อช่องตัวกรอง: หน้า Activities (activityScopeOptions) = "เจ้าของกิจกรรม" หน้าอื่น = "สาขา"
-export function branchFilterLabel(messages, activityScopeOptions) {
-  return activityScopeOptions ? messages.common.activityOwnerLabel : messages.common.branchLabel
-}
