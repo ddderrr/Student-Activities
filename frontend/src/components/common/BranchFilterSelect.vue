@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
 import { useLanguage } from '../../composables/useLanguage'
 import { getAdminSession } from '../../constants/currentAdmin'
 import {
@@ -9,6 +9,7 @@ import {
   MY_BRANCH_ONLY_VALUE
 } from '../../constants/branches'
 import { branchFilterLabel } from '../../utils/activityBranchFilter'
+import SelectDropdown from './SelectDropdown.vue'
 
 /*
   Branch (สาขา) filter -- เฉพาะแอดมินกลางเท่านั้น (แอดมินสาขาถูก scope ตาม
@@ -40,35 +41,37 @@ const { t } = useLanguage()
 
 const isCentralAdmin = computed(() => getAdminSession()?.is_central === true)
 const isBranchAdminScope = computed(() => props.activityScopeOptions && !isCentralAdmin.value)
+
+const fieldId = useId()
+const labelId = useId()
+
+// ลำดับตัวเลือกเหมือน <select> เดิม
+const branchOptions = computed(() => [
+  {
+    value: ALL_BRANCHES_VALUE,
+    label: isBranchAdminScope.value ? t.value.common.myBranchAndFaculty : t.value.common.allBranches
+  },
+  ...(props.activityScopeOptions
+    ? [{ value: FACULTY_ACTIVITIES_VALUE, label: t.value.common.facultyActivities }]
+    : []),
+  ...(isBranchAdminScope.value
+    ? [{ value: MY_BRANCH_ONLY_VALUE, label: t.value.common.myBranchOnly }]
+    : []),
+  ...(isCentralAdmin.value ? BRANCHES.map((branch) => ({ value: branch, label: branch })) : [])
+])
 </script>
 
 <template>
   <div v-if="isCentralAdmin || props.activityScopeOptions" class="branch-filter-field">
-    <label>{{ branchFilterLabel(t, props.activityScopeOptions) }}</label>
+    <label :id="labelId" :for="fieldId">{{ branchFilterLabel(t, props.activityScopeOptions) }}</label>
 
-    <select
-      :value="modelValue"
-      @change="emit('update:modelValue', $event.target.value)"
-    >
-      <option :value="ALL_BRANCHES_VALUE">
-        {{ isBranchAdminScope ? t.common.myBranchAndFaculty : t.common.allBranches }}
-      </option>
-      <option v-if="props.activityScopeOptions" :value="FACULTY_ACTIVITIES_VALUE">
-        {{ t.common.facultyActivities }}
-      </option>
-      <option v-if="isBranchAdminScope" :value="MY_BRANCH_ONLY_VALUE">
-        {{ t.common.myBranchOnly }}
-      </option>
-      <template v-if="isCentralAdmin">
-        <option
-          v-for="branch in BRANCHES"
-          :key="branch"
-          :value="branch"
-        >
-          {{ branch }}
-        </option>
-      </template>
-    </select>
+    <SelectDropdown
+      :id="fieldId"
+      :model-value="modelValue"
+      :options="branchOptions"
+      :labelledby="labelId"
+      @update:model-value="emit('update:modelValue', $event)"
+    />
   </div>
 </template>
 
@@ -85,28 +88,5 @@ const isBranchAdminScope = computed(() => props.activityScopeOptions && !isCentr
   font-size: var(--fs-small);
   font-weight: 600;
   color: #66758c;
-}
-
-.branch-filter-field select {
-  height: 42px;
-  padding: 0 12px;
-
-  border: 1px solid #dce5ef;
-  border-radius: 9px;
-
-  background: #fff;
-  color: #34445a;
-
-  font: inherit;
-  font-size: var(--fs-body);
-
-  cursor: pointer;
-  max-width: 100%;
-}
-
-.branch-filter-field select:focus {
-  outline: none;
-  border-color: #7bb1f5;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
 }
 </style>

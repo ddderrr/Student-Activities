@@ -33,6 +33,7 @@ import {
 } from 'lucide-vue-next'
 import SkillLevelEditor from '../../components/Admin/SkillLevelEditor.vue'
 import BranchFilterSelect from '../../components/common/BranchFilterSelect.vue'
+import SelectDropdown from '../../components/common/SelectDropdown.vue'
 import UnsavedChangesDialog from '../../components/common/UnsavedChangesDialog.vue'
 import ConfirmDialog from '../../components/common/ConfirmDialog.vue'
 import { useUnsavedChanges } from '../../composables/useUnsavedChanges'
@@ -544,6 +545,11 @@ const categories = computed(() => {
   const unique = [...new Set(activities.value.map((item) => item.category))]
   return unique.sort()
 })
+
+const categoryOptions = computed(() => [
+  { value: 'all', label: t.value.adminStudentActivities.filterAllCategoriesOption },
+  ...categories.value.map((category) => ({ value: category, label: category }))
+])
 
 const filteredActivities = computed(() => {
   const mainKeyword = searchText.value.trim().toLowerCase()
@@ -1717,21 +1723,15 @@ const confirmImportButtonText = computed(() =>
       </div>
 
       <div class="filter-field">
-        <label>{{ t.adminStudentActivities.filterCategoryLabel }}</label>
+        <label id="filter-category-label" for="filter-category">{{ t.adminStudentActivities.filterCategoryLabel }}</label>
 
-        <select
+        <SelectDropdown
+          id="filter-category"
           v-model="selectedCategory"
+          :options="categoryOptions"
+          labelledby="filter-category-label"
           @change="applyFilters"
-        >
-          <option value="all">{{ t.adminStudentActivities.filterAllCategoriesOption }}</option>
-          <option
-            v-for="category in categories"
-            :key="category"
-            :value="category"
-          >
-            {{ category }}
-          </option>
-        </select>
+        />
       </div>
 
       <BranchFilterSelect v-model="selectedBranch" activity-scope-options />
@@ -3333,8 +3333,7 @@ const confirmImportButtonText = computed(() =>
   color: #91a2b9;
 }
 
-.input-box input,
-.filter-field select {
+.input-box input {
   width: 100%;
   height: 42px;
   border: 1px solid #dfe7f2;
@@ -3350,10 +3349,6 @@ const confirmImportButtonText = computed(() =>
   height: auto;
   padding: 0;
   border: 0;
-}
-
-.filter-field select {
-  padding: 0 12px;
 }
 
 .filter-button {
