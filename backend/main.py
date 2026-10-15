@@ -3410,6 +3410,52 @@ class ConfirmImportRequest(BaseModel):
     students: list[dict] = Field(max_length=MAX_IMPORT_ROWS)
 
 
+class ExistingMembersRequest(BaseModel):
+    student_ids: list[str] = Field(max_length=MAX_IMPORT_ROWS)
+
+
+@app.post(
+    "/api/activities/{activity_id}/participants/import/existing"
+)
+def existing_activity_participants(
+    activity_id: int,
+    payload: ExistingMembersRequest,
+    db: Session = Depends(get_db),
+    admin: AdminContext = Depends(get_current_admin),
+):
+    """ตารางตรวจสอบก่อนนำเข้า: รหัสที่ส่งมาซึ่งอยู่ในกิจกรรมนี้แล้ว (สถานะ "มีอยู่แล้ว")
+
+    นับสมาชิกทุกสาขาเหมือน confirm ที่ข้ามคนเหล่านี้เป็นข้อมูลซ้ำ แต่คืนเฉพาะรหัสที่ส่งมาเอง
+    ไม่เปิดรายชื่อสมาชิกสาขาอื่นที่แอดมินสาขาไม่ได้ถามถึง
+    """
+    require_activity(
+        db,
+        activity_id,
+        admin,
+    )
+
+    student_ids = {
+        student_id.strip()
+        for student_id in payload.student_ids
+        if student_id.strip()
+    }
+
+    if not student_ids:
+        return {"existing_ids": []}
+
+    rows = (
+        db.query(ActivityMember.student_id)
+        .filter(
+            ActivityMember.activity_id == activity_id,
+            ActivityMember.student_id.in_(student_ids),
+        )
+        .order_by(ActivityMember.student_id)
+        .all()
+    )
+
+    return {"existing_ids": [student_id for (student_id,) in rows]}
+
+
 def normalize_role(value) -> str:
     role = (
         str(value or "participant")

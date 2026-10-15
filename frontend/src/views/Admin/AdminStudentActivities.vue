@@ -46,6 +46,7 @@ import {
 import { useLanguage } from '../../composables/useLanguage'
 import { validHours } from '../../utils/activityHours'
 import { activityListParams } from '../../utils/activityBranchFilter'
+import { importResultMessage, importRowStatus } from '../../utils/participantImport'
 import { API_BASE } from '../../config/api'
 import { adminFetch } from '../../constants/currentAdmin'
 
@@ -53,6 +54,8 @@ const { t } = useLanguage()
 
 const searchText = ref('')
 const activitiesError = ref('')
+// ข้อความแจ้งผลด้านบนหน้า เช่น หลังนำเข้าผู้ร่วมกิจกรรมเสร็จ (ล้างเมื่อเปิดหน้าต่างนำเข้า/เพิ่มนักศึกษาใหม่)
+const activitiesNotice = ref('')
 // filter สาขา: แอดมินกลางเลือกได้ทุกสาขา ส่วนตัวเลือก "กิจกรรมส่วนกลางของคณะ" ใช้ได้ทั้งแอดมินกลางและแอดมินสาขา
 const selectedBranch = ref(ALL_BRANCHES_VALUE)
 const quickSearch = ref('')
@@ -358,7 +361,8 @@ const importPreview = ref(null)
 const importError = ref('')
 const importLoading = ref(false)
 const confirmLoading = ref(false)
-const importSuccess = ref('')
+// รหัสที่อยู่ในกิจกรรมนี้แล้ว (เช็กตอนสร้างตารางตรวจสอบ) แสดงสถานะ "มีอยู่แล้ว" และไม่นำเข้า
+const importExistingIds = ref(new Set())
 const showImportIssues = ref(false)
 
 // Manage participants / activities
@@ -733,9 +737,10 @@ function participantPercent(activity) {
   return Math.min(100, (activity.participants / activity.capacity) * 100)
 }
 
-async function fetchActivities() {
+// background: โหลดใหม่หลังนำเข้า โดยไม่แสดง skeleton ทั้งหน้า
+async function fetchActivities({ background = false } = {}) {
   activitiesError.value = ''
-  pageLoading.value = true
+  if (!background) pageLoading.value = true
   tableLoading.value = true
 
   try {
@@ -830,7 +835,6 @@ const unsavedWork = computed(() => {
   if (showEditActivityModal.value && JSON.stringify(editActivityForm.value) !== editActivitySnapshot) return 'edit'
   if (
     showImportModal.value &&
-    !importSuccess.value &&
     (selectedFiles.value.length || importManualStudents.value.length || importPreview.value)
   ) return 'import'
   if (showAddStudentModal.value && studentQuery.value.trim()) return 'add'
@@ -1004,6 +1008,7 @@ function openAddStudent(activity) {
 
   addStudentError.value = ''
   addStudentSuccess.value = ''
+  activitiesNotice.value = ''
   showRoleDropdown.value = false
   showAddStudentModal.value = true
 }
@@ -1118,8 +1123,9 @@ function importParticipants(activity, role = 'participant') {
   isDraggingFile.value = false
   importPreview.value = null
   importError.value = ''
-  importSuccess.value = ''
   showImportIssues.value = false
+  importExistingIds.value = new Set()
+  activitiesNotice.value = ''
   showImportModal.value = true
 }
 
@@ -1134,14 +1140,12 @@ function closeImportModal() {
   isDraggingFile.value = false
   importPreview.value = null
   importError.value = ''
-  importSuccess.value = ''
   showImportIssues.value = false
 }
 
 function resetImportPreviewState() {
   importPreview.value = null
   importError.value = ''
-  importSuccess.value = ''
   showImportIssues.value = false
 }
 
@@ -1229,6 +1233,8 @@ const importRowErrors = computed(() => {
   const labels = t.value.adminStudentActivities
   const rowErrors = (importPreview.value?.students || []).map((student) => {
     const errors = {}
+    // อยู่ในกิจกรรมแล้ว: ข้ามทั้งแถว ไม่นับเป็นปัญหา
+    if (importExistingIds.value.has(String(student.student_id ?? '').trim())) return errors
     const email = String(student.email ?? '').trim()
 
     if (!String(student.student_id ?? '').trim()) {
@@ -1262,6 +1268,7 @@ const importRowErrors = computed(() => {
 
   importPreview.value?.students.forEach((student, index) => {
     if (Object.keys(rowErrors[index]).length) return
+    if (importExistingIds.value.has(String(student.student_id ?? '').trim())) return
 
     const studentId = String(student.student_id).trim()
 
@@ -1275,8 +1282,19 @@ const importRowErrors = computed(() => {
   return rowErrors
 })
 
+// สถานะของแต่ละแถว: existing (มีอยู่แล้ว) | issue (มีปัญหา) | ready (พร้อม)
+const importRowStatuses = computed(() =>
+  (importPreview.value?.students || []).map((student, index) =>
+    importRowStatus(student, importRowErrors.value[index], importExistingIds.value)
+  )
+)
+
+const importExistingCount = computed(
+  () => importRowStatuses.value.filter((status) => status === 'existing').length
+)
+
 function importRowHasIssue(index) {
-  return Object.keys(importRowErrors.value[index] || {}).length > 0
+  return importRowStatuses.value[index] === 'issue'
 }
 
 const importIssueList = computed(() =>
@@ -1295,7 +1313,7 @@ function validPreviewStudents() {
   if (!importPreview.value) return []
 
   return importPreview.value.students.filter(
-    (_student, index) => !importRowHasIssue(index)
+    (_student, index) => importRowStatuses.value[index] === 'ready'
   )
 }
 
@@ -1325,7 +1343,6 @@ async function previewParticipantsImport() {
 
   importLoading.value = true
   importError.value = ''
-  importSuccess.value = ''
   showImportIssues.value = false
 
   try {
@@ -1388,6 +1405,25 @@ async function previewParticipantsImport() {
       }))
     )
 
+    const existingResponse = await adminFetch(
+      `${API_BASE}/api/activities/${selectedActivity.value.id}/participants/import/existing`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          student_ids: combinedPreview.students.map((student) => String(student.student_id ?? '').trim())
+        })
+      }
+    )
+    const existingData = await existingResponse.json().catch(() => ({}))
+
+    if (!existingResponse.ok) {
+      throw new Error(existingData.detail || t.value.adminStudentActivities.backendConnectionError)
+    }
+
+    importExistingIds.value = new Set(existingData.existing_ids || [])
     importPreview.value = combinedPreview
   } catch (error) {
     importError.value = error.message || t.value.adminStudentActivities.backendConnectionError
@@ -1397,10 +1433,12 @@ async function previewParticipantsImport() {
 }
 
 async function confirmParticipantsImport() {
-  if (!selectedActivity.value || !importPreview.value) return
+  if (!selectedActivity.value || !importPreview.value || confirmLoading.value) return
 
   const studentsToImport = validPreviewStudents()
   const skippedIssueCount = importIssueCount.value
+  // คนที่มีอยู่แล้วในตารางตรวจสอบไม่ถูกส่งไป แต่นับเป็น "ข้ามข้อมูลซ้ำ" ในข้อความแจ้งผล (เหมือนหน้าตั้งค่า)
+  const skippedExistingCount = importExistingCount.value
 
   if (!studentsToImport.length) {
     importError.value =
@@ -1410,7 +1448,7 @@ async function confirmParticipantsImport() {
 
   confirmLoading.value = true
   importError.value = ''
-  importSuccess.value = ''
+  let resultMessage = ''
 
   try {
     const response = await adminFetch(
@@ -1433,29 +1471,26 @@ async function confirmParticipantsImport() {
     }
 
     selectedActivity.value.participants = data.total_participants
-
-    importSuccess.value =
-      t.value.adminStudentActivities.importSuccessMessage.replace(
-        '{count}',
-        data.imported_count
-      ) +
-      (data.duplicate_count
-        ? t.value.adminStudentActivities.importSuccessDuplicateSuffix.replace(
-            '{count}',
-            data.duplicate_count
-          )
-        : '') +
-      (skippedIssueCount
-        ? t.value.adminStudentActivities.importSuccessIssueSuffix.replace(
-            '{count}',
-            skippedIssueCount
-          )
-        : '')
+    resultMessage = importResultMessage(
+      t.value.adminStudentActivities,
+      {
+        imported_count: data.imported_count,
+        duplicate_count: data.duplicate_count + skippedExistingCount
+      },
+      skippedIssueCount
+    )
   } catch (error) {
     importError.value =
       error.message || t.value.adminStudentActivities.backendConnectionError
   } finally {
     confirmLoading.value = false
+  }
+
+  // สำเร็จ: ปิดหน้าต่าง โหลดรายการใหม่ และแจ้งผลด้านบนหน้า (error = ค้างหน้าต่างไว้พร้อมสาเหตุ)
+  if (resultMessage) {
+    closeImportModal()
+    activitiesNotice.value = resultMessage
+    fetchActivities({ background: true })
   }
 }
 
@@ -1480,6 +1515,11 @@ const confirmImportButtonText = computed(() =>
       <TriangleAlert :size="17" />
       {{ activitiesError }}
       <button type="button" @click="fetchActivities">{{ t.adminLogin.retry }}</button>
+    </div>
+
+    <div v-if="activitiesNotice" class="import-message success" role="status">
+      <CheckCircle2 :size="17" />
+      {{ activitiesNotice }}
     </div>
 
     <!-- FULL PAGE SKELETON -->
@@ -2517,14 +2557,6 @@ const confirmImportButtonText = computed(() =>
           {{ importError }}
         </div>
 
-        <div
-          v-if="importSuccess"
-          class="import-message success"
-        >
-          <CheckCircle2 :size="17" />
-          {{ importSuccess }}
-        </div>
-
         <!-- STEP 2: PREVIEW ONLY -->
         <div
           v-if="importPreview"
@@ -2538,12 +2570,12 @@ const confirmImportButtonText = computed(() =>
 
             <div class="preview-summary-item">
               <span>{{ t.adminStudentActivities.previewReadyLabel }}</span>
-              <strong>
-                {{
-                  importPreview.students.length -
-                  importIssueCount
-                }}
-              </strong>
+              <strong>{{ validPreviewStudents().length }}</strong>
+            </div>
+
+            <div v-if="importExistingCount" class="preview-summary-item">
+              <span>{{ t.adminStudentActivities.previewExistingLabel }}</span>
+              <strong>{{ importExistingCount }}</strong>
             </div>
 
             <button
@@ -2666,8 +2698,15 @@ const confirmImportButtonText = computed(() =>
                   </td>
 
                   <td>
+                    <span
+                      v-if="importRowStatuses[index] === 'existing'"
+                      class="preview-status existing"
+                    >
+                      {{ t.adminStudentActivities.existingStatusLabel }}
+                    </span>
+
                     <button
-                      v-if="importRowHasIssue(index)"
+                      v-else-if="importRowHasIssue(index)"
                       type="button"
                       class="preview-status issue"
                       @click="
@@ -2694,6 +2733,13 @@ const confirmImportButtonText = computed(() =>
             class="preview-note preview-issue-note"
           >
             {{ previewIssueNoteText }}
+          </p>
+
+          <p
+            v-else-if="importExistingCount && !validPreviewStudents().length"
+            class="preview-note"
+          >
+            {{ t.adminStudentActivities.previewNothingToImport }}
           </p>
         </div>
 
@@ -4472,7 +4518,9 @@ td {
 
 .preview-summary {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* 3 หรือ 4 ช่อง (มีช่อง "มีอยู่แล้ว" เมื่อมีคนอยู่ในกิจกรรมแล้ว) กว้างเท่ากันในแถวเดียว */
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   background: #f8fafc;
   border-bottom: 1px solid #e8edf4;
 }
@@ -4756,6 +4804,11 @@ td {
 .preview-status.ready {
   background: #eaf8f0;
   color: #218154;
+}
+
+.preview-status.existing {
+  background: #fff1d6;
+  color: #a15c00;
 }
 
 .preview-status.issue {
