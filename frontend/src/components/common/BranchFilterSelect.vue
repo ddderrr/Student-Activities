@@ -8,6 +8,7 @@ import {
   FACULTY_ACTIVITIES_VALUE,
   MY_BRANCH_ONLY_VALUE
 } from '../../constants/branches'
+import { branchFilterLabel } from '../../utils/activityBranchFilter'
 
 /*
   Branch (สาขา) filter -- เฉพาะแอดมินกลางเท่านั้น (แอดมินสาขาถูก scope ตาม
@@ -43,7 +44,7 @@ const isBranchAdminScope = computed(() => props.activityScopeOptions && !isCentr
 
 <template>
   <div v-if="isCentralAdmin || props.activityScopeOptions" class="branch-filter-field">
-    <label>{{ t.common.branchLabel }}</label>
+    <label>{{ branchFilterLabel(t, props.activityScopeOptions) }}</label>
 
     <select
       :value="modelValue"

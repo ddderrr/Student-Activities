@@ -25,3 +25,14 @@ test('a branch shows only that branch, without faculty activities', () => {
 test('branch admin "my branch only" asks for branch_only without major', () => {
   assert.equal(activityListParams(MY_BRANCH_ONLY_VALUE).toString(), 'branch_only=true')
 })
+
+test('activities page labels the filter "Activity Owner", other pages keep "Branch"', async () => {
+  const { branchFilterLabel } = await import('../src/utils/activityBranchFilter.js')
+  const th = (await import('../src/locales/th.js')).default
+  const en = (await import('../src/locales/en.js')).default
+
+  assert.equal(branchFilterLabel(th, true), 'เจ้าของกิจกรรม')
+  assert.equal(branchFilterLabel(en, true), 'Activity Owner')
+  assert.equal(branchFilterLabel(th, false), 'สาขา')
+  assert.equal(branchFilterLabel(en, false), 'Branch')
+})

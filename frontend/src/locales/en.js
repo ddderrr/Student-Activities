@@ -40,6 +40,7 @@ export default {
     logout: 'Logout',
     settings: 'Settings',
     branchLabel: 'Branch',
+    activityOwnerLabel: 'Activity Owner',
     allBranches: 'All Branches',
     facultyActivities: 'Faculty-wide Activities',
     myBranchAndFaculty: 'My Branch & Faculty-wide',

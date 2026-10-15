@@ -41,6 +41,7 @@ export default {
     logout: 'ออกจากระบบ',
     settings: 'ตั้งค่า',
     branchLabel: 'สาขา',
+    activityOwnerLabel: 'เจ้าของกิจกรรม',
     allBranches: 'ทุกสาขา',
     facultyActivities: 'กิจกรรมส่วนกลางของคณะ',
     myBranchAndFaculty: 'สาขาของฉันและส่วนกลาง',
