@@ -14,6 +14,7 @@ import { PARTICIPANT_SKILLS, STAFF_SKILLS } from '../../constants/activitySkills
 import { useLanguage } from '../../composables/useLanguage'
 import { API_BASE } from '../../config/api'
 import { adminFetch } from '../../constants/currentAdmin'
+import { sortParticipantsByRole } from '../../utils/participantOrder'
 
 const { t } = useLanguage()
 
@@ -87,6 +88,7 @@ const editMajorOptions = computed(() => {
   return [saved, ...majorOptions]
 })
 
+const sortedParticipants = computed(() => sortParticipantsByRole(participants.value))
 const memberCount = computed(() => participants.value.length)
 const participantCount = computed(
   () => participants.value.filter((student) => student.role === 'participant').length
@@ -535,7 +537,7 @@ function roleLabel(role) {
 
           <tbody>
             <tr
-              v-for="student in participants"
+              v-for="student in sortedParticipants"
               :key="student.student_id"
               :class="{ editing: editingRowId === student.student_id }"
             >
