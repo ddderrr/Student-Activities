@@ -110,6 +110,7 @@ from auth_tokens import (
 from branches import BRANCHES
 from major_history import change_student_major, load_major_histories, major_at
 from major_utils import normalize_major
+from student_ids import INVALID_STUDENT_ID_MESSAGE, is_science_student_id
 from models import (
     AdminNotification,
     AdminNotificationClear,
@@ -2048,6 +2049,8 @@ def validate_students(
 
         if not row["student_id"]:
             errors.append("ไม่มีรหัสนักศึกษา")
+        elif not is_science_student_id(row["student_id"]):
+            errors.append(INVALID_STUDENT_ID_MESSAGE)
 
         if not row["first_name"]:
             errors.append("ไม่มีชื่อ")
@@ -2254,6 +2257,8 @@ def import_students_from_xlsx(
 
         if not student_id:
             errors.append("ไม่มีรหัสนักศึกษา")
+        elif not is_science_student_id(student_id):
+            errors.append(INVALID_STUDENT_ID_MESSAGE)
 
         if not first_name:
             errors.append("ไม่มีชื่อ")
@@ -2482,6 +2487,16 @@ def import_students_from_legacy_xls(
             )
             continue
 
+        if not is_science_student_id(student_id):
+            errors.append(
+                {
+                    "row": row_number,
+                    "student_id": student_id,
+                    "reason": INVALID_STUDENT_ID_MESSAGE,
+                }
+            )
+            continue
+
         if (
             student_id in duplicate_ids_in_file
             and student_id in seen_ids
@@ -2676,6 +2691,8 @@ def build_student_import_rows(contents: bytes, extension: str, db: Session) -> l
         problems = []
         if not record["student_id"]:
             problems.append("ไม่มีรหัสนักศึกษา")
+        elif not is_science_student_id(record["student_id"]):
+            problems.append(INVALID_STUDENT_ID_MESSAGE)
         if not record["first_name"]:
             problems.append("ไม่มีชื่อ")
         if not record["last_name"]:
@@ -3434,6 +3451,12 @@ def confirm_activity_participants(
             raise HTTPException(
                 status_code=400,
                 detail="พบข้อมูลที่ไม่มี student_id",
+            )
+
+        if not is_science_student_id(student_id):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{student_id}: {INVALID_STUDENT_ID_MESSAGE}",
             )
 
         first_name = str(

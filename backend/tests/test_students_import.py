@@ -44,7 +44,7 @@ def test_import_valid_file_creates_students(client, db_session):
         VALID_HEADERS,
         [
             [
-                "640610001",
+                "640510001",
                 "Somchai",
                 "Jaidee",
                 "somchai_j@cmu.ac.th",
@@ -52,7 +52,7 @@ def test_import_valid_file_creates_students(client, db_session):
                 "CS",
             ],
             [
-                "640610002",
+                "640510002",
                 "Somsri",
                 "Jaidee",
                 "somsri_j@cmu.ac.th",
@@ -77,8 +77,8 @@ def test_import_valid_file_creates_students(client, db_session):
         .all()
     )
     assert [s.student_id for s in saved] == [
-        "640610001",
-        "640610002",
+        "640510001",
+        "640510002",
     ]
     assert saved[0].first_name == "Somchai"
     assert saved[0].major == "CS"
@@ -106,7 +106,7 @@ def test_import_rejects_corrupt_xlsx_content(client):
 def test_import_rejects_missing_required_columns(client):
     content = build_xlsx(
         ["student_id", "first_name"],
-        [["640610003", "Somchai"]],
+        [["640510003", "Somchai"]],
     )
 
     response = upload(client, content)
@@ -121,8 +121,8 @@ def test_import_reports_duplicate_within_file(client, db_session):
     content = build_xlsx(
         VALID_HEADERS,
         [
-            ["640610004", "A", "B", "a@cmu.ac.th", "", ""],
-            ["640610004", "C", "D", "c@cmu.ac.th", "", ""],
+            ["640510004", "A", "B", "a@cmu.ac.th", "", ""],
+            ["640510004", "C", "D", "c@cmu.ac.th", "", ""],
         ],
     )
 
@@ -142,7 +142,7 @@ def test_import_reports_duplicate_within_file(client, db_session):
 def test_import_reports_duplicate_already_in_database(client, db_session):
     db_session.add(
         Student(
-            student_id="640610005",
+            student_id="640510005",
             first_name="Existing",
             last_name="Student",
             email="existing@cmu.ac.th",
@@ -154,7 +154,7 @@ def test_import_reports_duplicate_already_in_database(client, db_session):
 
     content = build_xlsx(
         VALID_HEADERS,
-        [["640610005", "New", "Name", "new@cmu.ac.th", "", ""]],
+        [["640510005", "New", "Name", "new@cmu.ac.th", "", ""]],
     )
 
     response = upload(client, content)
@@ -168,7 +168,7 @@ def test_import_reports_duplicate_already_in_database(client, db_session):
         in body["failed_rows"][0]["errors"]
     )
 
-    student = db_session.get(Student, "640610005")
+    student = db_session.get(Student, "640510005")
     assert student.first_name == "Existing"
 
 
@@ -180,7 +180,7 @@ def test_import_skips_invalid_rows_but_saves_valid_ones(
         VALID_HEADERS,
         [
             [
-                "640610006",
+                "640510006",
                 "Valid",
                 "Row",
                 "valid@cmu.ac.th",
@@ -189,7 +189,7 @@ def test_import_skips_invalid_rows_but_saves_valid_ones(
             ],
             ["", "NoId", "Row", "noid@cmu.ac.th", "", ""],
             [
-                "640610007",
+                "640510007",
                 "",
                 "MissingFirst",
                 "missingfirst@cmu.ac.th",
@@ -197,7 +197,7 @@ def test_import_skips_invalid_rows_but_saves_valid_ones(
                 "",
             ],
             [
-                "640610008",
+                "640510008",
                 "BadEmail",
                 "Row",
                 "not-an-email",
@@ -218,4 +218,4 @@ def test_import_skips_invalid_rows_but_saves_valid_ones(
     saved_ids = {
         s.student_id for s in db_session.query(Student).all()
     }
-    assert saved_ids == {"640610006"}
+    assert saved_ids == {"640510006"}

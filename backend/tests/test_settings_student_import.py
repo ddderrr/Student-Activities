@@ -143,7 +143,7 @@ def test_rejects_other_file_types(client):
 CSV_TEXT = (
     "รหัสนักศึกษา,ชื่อ,นามสกุล,อีเมล,สาขาวิชา\n"
     "680510001,สมชาย,ใจดี,somchai@cmu.ac.th,เคมี\n"
-    "0680510002,สมหญิง,รักเรียน,,วิทยาการคอมพิวเตอร์\n"
+    "000510002,สมหญิง,รักเรียน,,วิทยาการคอมพิวเตอร์\n"
     "\n"
 )
 
@@ -156,7 +156,7 @@ def test_csv_utf8_with_bom_imports(client, db_session):
     assert (body["total"], body["success"]) == (2, 2)
     assert body["rows"][1]["email"] == ""
     # CSV ไม่ตัดเลขศูนย์นำหน้า
-    assert db_session.get(Student, "0680510002").first_name == "สมหญิง"
+    assert db_session.get(Student, "000510002").first_name == "สมหญิง"
 
 
 def test_csv_windows_thai_encoding_and_semicolon(client):

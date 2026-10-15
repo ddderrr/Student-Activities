@@ -43,9 +43,10 @@ def test_other_faculty_is_only_trimmed():
 
 def test_xlsx_import_normalizes_faculty(client, db_session):
     rows = [
-        ["640610001", "A", "One", "a@cmu.ac.th", "  คณะวิทยาศาสตร์ ", "CS"],
-        ["640610002", "B", "Two", "b@cmu.ac.th", "FACULTY OF SCIENCE", "CS"],
-        ["640610003", "C", "Three", "c@cmu.ac.th", "", "CS"],
+        ["640510001", "A", "One", "a@cmu.ac.th", "  คณะวิทยาศาสตร์ ", "CS"],
+        ["640510002", "B", "Two", "b@cmu.ac.th", "FACULTY OF SCIENCE", "CS"],
+        ["640510003", "C", "Three", "c@cmu.ac.th", "", "CS"],
+        # รหัสคณะวิศวะ (061) ไม่ใช่นักศึกษาคณะวิทย์ ไม่ถูกนำเข้า
         ["640610004", "D", "Four", "d@cmu.ac.th", "คณะวิศวกรรมศาสตร์", "CPE"],
     ]
 
@@ -54,10 +55,9 @@ def test_xlsx_import_normalizes_faculty(client, db_session):
     assert response.status_code == 201, response.text
     faculties = {s.student_id: s.faculty for s in db_session.query(Student).all()}
     assert faculties == {
-        "640610001": "Faculty of Science",
-        "640610002": "Faculty of Science",
-        "640610003": "Faculty of Science",
-        "640610004": "คณะวิศวกรรมศาสตร์",
+        "640510001": "Faculty of Science",
+        "640510002": "Faculty of Science",
+        "640510003": "Faculty of Science",
     }
 
 
