@@ -17,6 +17,7 @@ import {
 import { skillDetail, populationProfile } from '../../utils/skillProfiles.js'
 import ActivityHoursSummary from '../../components/common/ActivityHoursSummary.vue'
 import { useLanguage } from '../../composables/useLanguage'
+import { branchDisplayName } from '../../utils/branchNames'
 import { API_BASE } from '../../config/api'
 import { adminFetch } from '../../constants/currentAdmin'
 import BranchFilterSelect from '../../components/common/BranchFilterSelect.vue'
@@ -242,10 +243,11 @@ const majorOptions = computed(() => {
     [...population.value, ...students.value].map(item => item.major || '')
   )
 
+  // เรียงตามชื่อที่แสดง (ภาษาอังกฤษเรียงตามชื่ออังกฤษ)
   const named = [...majors]
     .filter(Boolean)
-    .sort((a, b) => a.localeCompare(b, 'th'))
-    .map(major => ({ value: major, label: major }))
+    .map(major => ({ value: major, label: branchDisplayName(major, currentLanguage.value) }))
+    .sort((a, b) => a.label.localeCompare(b.label, currentLanguage.value === 'EN' ? 'en' : 'th'))
 
   return majors.has('')
     ? [...named, { value: '', label: t.value.adminStudentSkills.majorNotSpecified }]

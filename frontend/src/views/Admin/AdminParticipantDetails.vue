@@ -15,8 +15,9 @@ import { useLanguage } from '../../composables/useLanguage'
 import { API_BASE } from '../../config/api'
 import { adminFetch } from '../../constants/currentAdmin'
 import { sortParticipantsByRole } from '../../utils/participantOrder'
+import { branchDisplayName } from '../../utils/branchNames'
 
-const { t } = useLanguage()
+const { t, currentLanguage } = useLanguage()
 
 
 const route = useRoute()
@@ -588,7 +589,7 @@ function roleLabel(role) {
                       :key="major"
                       :value="major"
                     >
-                      {{ major }}
+                      {{ branchDisplayName(major, currentLanguage) }}
                     </option>
                   </select>
                 </td>

@@ -29,6 +29,7 @@ import { useUnsavedChanges } from '../../composables/useUnsavedChanges'
 import UnsavedChangesDialog from '../../components/common/UnsavedChangesDialog.vue'
 import { adminFetch, getAdminSession } from '../../constants/currentAdmin'
 import { BRANCHES } from '../../constants/branches'
+import { branchDisplayName } from '../../utils/branchNames'
 import { API_BASE } from '../../config/api'
 
 const { t, currentLanguage } = useLanguage()
@@ -1097,7 +1098,7 @@ onBeforeUnmount(() => {
           <span>{{ t.adminSettings.filterMajorLabel }}</span>
           <select v-model="studentMajor" data-testid="filter-major">
             <option value="">{{ t.adminSettings.allMajors }}</option>
-            <option v-for="branch in BRANCHES" :key="branch" :value="branch">{{ branch }}</option>
+            <option v-for="branch in BRANCHES" :key="branch" :value="branch">{{ branchDisplayName(branch, currentLanguage) }}</option>
           </select>
         </label>
 
@@ -1539,7 +1540,7 @@ onBeforeUnmount(() => {
             <span>{{ t.adminSettings.fieldBranch }} <b>*</b></span>
             <select v-model="adminForm.major" name="major">
               <option disabled value="">{{ t.adminSettings.selectBranch }}</option>
-              <option v-for="branch in BRANCHES" :key="branch" :value="branch">{{ branch }}</option>
+              <option v-for="branch in BRANCHES" :key="branch" :value="branch">{{ branchDisplayName(branch, currentLanguage) }}</option>
             </select>
           </label>
         </div>
@@ -1602,7 +1603,7 @@ onBeforeUnmount(() => {
             <span>{{ t.adminSettings.fieldBranch }}</span>
             <select v-model="studentForm.major" name="major" :disabled="!isCentral" data-testid="edit-student-major">
               <option v-if="!editingStudent.major" disabled value="">{{ t.adminSettings.selectBranch }}</option>
-              <option v-for="branch in studentMajorOptions" :key="branch" :value="branch">{{ branch }}</option>
+              <option v-for="branch in studentMajorOptions" :key="branch" :value="branch">{{ branchDisplayName(branch, currentLanguage) }}</option>
             </select>
           </label>
         </div>

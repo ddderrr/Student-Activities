@@ -9,6 +9,7 @@ import { useLanguage } from '../../composables/useLanguage'
 import { API_BASE } from '../../config/api'
 import { adminFetch, getAdminSession } from '../../constants/currentAdmin'
 import { ALL_BRANCHES_VALUE } from '../../constants/branches'
+import { branchDisplayName } from '../../utils/branchNames'
 import { ACTIVITY_TYPE_COLORS, OTHER_TYPE_COLOR, activityTypeColor } from '../../utils/activityColors'
 import { dayOf, isPast } from '../../utils/calendarDates'
 
@@ -18,7 +19,7 @@ import { dayOf, isPast } from '../../utils/calendarDates'
   - แอดมินสาขา: "ทุกกิจกรรม" (ค่าเริ่มต้น ทุกกิจกรรมในคณะ) หรือ "เฉพาะสาขาของฉัน"
   - สีตามประเภทกิจกรรม (utils/activityColors.js)
 */
-const { t } = useLanguage()
+const { t, currentLanguage } = useLanguage()
 const router = useRouter()
 const admin = getAdminSession()
 const isCentral = admin?.is_central === true
@@ -113,7 +114,7 @@ onMounted(loadActivities)
         <label for="calendar-scope">{{ t.activityCalendar.scopeLabel }}</label>
         <select id="calendar-scope" v-model="branchScope" data-testid="calendar-scope">
           <option value="all">{{ t.activityCalendar.scopeAll }}</option>
-          <option value="mine">{{ t.activityCalendar.scopeMine.replace('{major}', admin?.major || '') }}</option>
+          <option value="mine">{{ t.activityCalendar.scopeMine.replace('{major}', branchDisplayName(admin?.major || '', currentLanguage)) }}</option>
         </select>
       </div>
     </div>

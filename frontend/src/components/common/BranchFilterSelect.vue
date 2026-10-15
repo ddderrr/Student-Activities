@@ -9,6 +9,7 @@ import {
   MY_BRANCH_ONLY_VALUE
 } from '../../constants/branches'
 import SelectDropdown from './SelectDropdown.vue'
+import { branchDisplayName } from '../../utils/branchNames'
 
 /*
   Branch (สาขา) filter -- เฉพาะแอดมินกลางเท่านั้น (แอดมินสาขาถูก scope ตาม
@@ -36,7 +37,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
-const { t } = useLanguage()
+const { t, currentLanguage } = useLanguage()
 
 const isCentralAdmin = computed(() => getAdminSession()?.is_central === true)
 const isBranchAdminScope = computed(() => props.activityScopeOptions && !isCentralAdmin.value)
@@ -56,7 +57,7 @@ const branchOptions = computed(() => [
   ...(isBranchAdminScope.value
     ? [{ value: MY_BRANCH_ONLY_VALUE, label: t.value.common.myBranchOnly }]
     : []),
-  ...(isCentralAdmin.value ? BRANCHES.map((branch) => ({ value: branch, label: branch })) : [])
+  ...(isCentralAdmin.value ? BRANCHES.map((branch) => ({ value: branch, label: branchDisplayName(branch, currentLanguage.value) })) : [])
 ])
 </script>
 
