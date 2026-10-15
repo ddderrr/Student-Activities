@@ -45,6 +45,7 @@ import {
 } from '../../constants/activitySkills'
 import { useLanguage } from '../../composables/useLanguage'
 import { validHours } from '../../utils/activityHours'
+import { activityListParams } from '../../utils/activityBranchFilter'
 import { API_BASE } from '../../config/api'
 import { adminFetch } from '../../constants/currentAdmin'
 
@@ -52,7 +53,7 @@ const { t } = useLanguage()
 
 const searchText = ref('')
 const activitiesError = ref('')
-// filter สาขา สำหรับแอดมินกลางเท่านั้น (BranchFilterSelect ซ่อนตัวเองให้แอดมินสาขา)
+// filter สาขา: แอดมินกลางเลือกได้ทุกสาขา ส่วนตัวเลือก "กิจกรรมส่วนกลางของคณะ" ใช้ได้ทั้งแอดมินกลางและแอดมินสาขา
 const selectedBranch = ref(ALL_BRANCHES_VALUE)
 const quickSearch = ref('')
 
@@ -738,10 +739,7 @@ async function fetchActivities() {
   tableLoading.value = true
 
   try {
-    const params = new URLSearchParams()
-    if (selectedBranch.value !== ALL_BRANCHES_VALUE) {
-      params.set('major', selectedBranch.value)
-    }
+    const params = activityListParams(selectedBranch.value)
 
     const response = await adminFetch(`${API_BASE}/api/activities?${params.toString()}`)
     const data = await response.json().catch(() => ({}))
@@ -1696,7 +1694,7 @@ const confirmImportButtonText = computed(() =>
         </select>
       </div>
 
-      <BranchFilterSelect v-model="selectedBranch" />
+      <BranchFilterSelect v-model="selectedBranch" show-faculty-option />
 
       <div
         v-for="field in DATE_FIELDS"

@@ -22,3 +22,6 @@ export const BRANCHES = [
 
 // ค่า sentinel ของตัวเลือก "ทุกสาขา" (ไม่ filter) ใช้เป็นค่าเริ่มต้นของ dropdown
 export const ALL_BRANCHES_VALUE = 'ALL'
+
+// ค่า sentinel ของตัวเลือก "กิจกรรมส่วนกลางของคณะ" (กิจกรรมที่ไม่มีสาขาเจ้าของ) ใช้เฉพาะหน้า Activities
+export const FACULTY_ACTIVITIES_VALUE = 'FACULTY'

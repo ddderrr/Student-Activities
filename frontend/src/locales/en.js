@@ -40,7 +40,8 @@ export default {
     logout: 'Logout',
     settings: 'Settings',
     branchLabel: 'Branch',
-    allBranches: 'All Branches'
+    allBranches: 'All Branches',
+    facultyActivities: 'Faculty-wide Activities'
   },
 
   adminSidebar: {

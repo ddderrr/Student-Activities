@@ -41,7 +41,8 @@ export default {
     logout: 'ออกจากระบบ',
     settings: 'ตั้งค่า',
     branchLabel: 'สาขา',
-    allBranches: 'ทุกสาขา'
+    allBranches: 'ทุกสาขา',
+    facultyActivities: 'กิจกรรมส่วนกลางของคณะ'
   },
 
   adminSidebar: {

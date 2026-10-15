@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useLanguage } from '../../composables/useLanguage'
 import { getAdminSession } from '../../constants/currentAdmin'
-import { ALL_BRANCHES_VALUE, BRANCHES } from '../../constants/branches'
+import { ALL_BRANCHES_VALUE, BRANCHES, FACULTY_ACTIVITIES_VALUE } from '../../constants/branches'
 
 /*
   Branch (สาขา) filter -- เฉพาะแอดมินกลางเท่านั้น (แอดมินสาขาถูก scope ตาม
@@ -10,12 +10,19 @@ import { ALL_BRANCHES_VALUE, BRANCHES } from '../../constants/branches'
   Activities, Student Skills, Approvals
 
   v-model ค่าเป็น ALL_BRANCHES_VALUE ("ทุกสาขา") หรือชื่อสาขาจาก BRANCHES
+
+  showFacultyOption (หน้า Activities): เพิ่มตัวเลือก FACULTY_ACTIVITIES_VALUE
+  ("กิจกรรมส่วนกลางของคณะ") และแสดงให้แอดมินสาขาด้วย (เห็นเฉพาะตัวเลือกนี้กับ "ทุกสาขา")
 */
 
-defineProps({
+const props = defineProps({
   modelValue: {
     type: String,
     default: ALL_BRANCHES_VALUE
+  },
+  showFacultyOption: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -27,7 +34,7 @@ const isCentralAdmin = computed(() => getAdminSession()?.is_central === true)
 </script>
 
 <template>
-  <div v-if="isCentralAdmin" class="branch-filter-field">
+  <div v-if="isCentralAdmin || props.showFacultyOption" class="branch-filter-field">
     <label>{{ t.common.branchLabel }}</label>
 
     <select
@@ -35,13 +42,18 @@ const isCentralAdmin = computed(() => getAdminSession()?.is_central === true)
       @change="emit('update:modelValue', $event.target.value)"
     >
       <option :value="ALL_BRANCHES_VALUE">{{ t.common.allBranches }}</option>
-      <option
-        v-for="branch in BRANCHES"
-        :key="branch"
-        :value="branch"
-      >
-        {{ branch }}
+      <option v-if="props.showFacultyOption" :value="FACULTY_ACTIVITIES_VALUE">
+        {{ t.common.facultyActivities }}
       </option>
+      <template v-if="isCentralAdmin">
+        <option
+          v-for="branch in BRANCHES"
+          :key="branch"
+          :value="branch"
+        >
+          {{ branch }}
+        </option>
+      </template>
     </select>
   </div>
 </template>

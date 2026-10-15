@@ -1569,6 +1569,7 @@ def require_activity(
 def list_activities(
     owned_only: bool = False,
     major: str | None = None,
+    faculty_only: bool = False,
     db: Session = Depends(get_db),
     admin: AdminContext = Depends(get_current_admin),
 ):
@@ -1578,9 +1579,14 @@ def list_activities(
     # เองฝั่ง frontend ส่ง owned_only=true มา เพื่อไม่นับกิจกรรมที่ยังไม่มีเจ้าของ
     # เป็นสถิติของสาขาไหนสาขาหนึ่ง
     # major: แอดมินกลางเลือก filter สาขาได้จากหน้า Activities (ดู resolve_branch_filter)
+    # faculty_only: ตัวเลือก "กิจกรรมส่วนกลางของคณะ" ใช้ได้ทั้งแอดมินกลางและแอดมินสาขา
+    # (แอดมินสาขาเห็นกิจกรรมส่วนกลางอยู่แล้ว) กติกาส่วนกลางดู skill_scoring.faculty_activity_filter
     admin = resolve_branch_filter(admin, major)
+    query = scope_activity_query(db.query(Activity), admin, include_unowned=not owned_only)
+    if faculty_only:
+        query = query.filter(faculty_activity_filter())
     activities = (
-        scope_activity_query(db.query(Activity), admin, include_unowned=not owned_only)
+        query
         .options(selectinload(Activity.skill_levels))
         .order_by(Activity.start_at.asc())
         .all()
